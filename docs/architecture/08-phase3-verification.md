@@ -296,3 +296,13 @@ attack surface examined in Check 3.
 - **D5–D9 (minors) — DEFERRED to Phase 4** with owners: the `tempF`/`temp_f` key translation lands in the Phase 4 push handler (M3/M9); the company-singleton `for all` policy + `updated_by` pinning and the payload-cast errcode contract are Phase 4 backend polish items; the seed exec-bit/typo are cosmetic.
 
 **Safe to commit:** yes, with D5–D9 tracked as Phase 4 items.
+
+## Post-merge addendum (2026-07-18)
+
+- PR review of #2 upgraded the documented `update_section` deviation to a
+  defect and fixed it in `acc79fd` (squashed into `6d44c96`): the RPC is now
+  **draft-window only** (P0001 once submitted/locked), restoring PRD
+  assumption #19 — signed content can no longer change without an amendment
+  trail. 07 §5's rationale is superseded accordingly; 06's mapping row updated.
+- PR #2 (WorkLog Phase 3 schema) and PR #3 (line-ending normalization)
+  are both squash-merged to `main` in `jobsight-backend`.
