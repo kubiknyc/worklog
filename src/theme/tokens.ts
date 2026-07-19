@@ -81,7 +81,9 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
 // unused (WorkLog's 3-stage lifecycle has no analog). `amended` is a derived
 // display state, not a lifecycle stage, so it takes each theme's `accent` color
 // (PALETTES[name].accent) rather than an item-status value.
-export const REPORT_STATUS_COLORS: Readonly<Record<ThemeName, Readonly<Record<ReportStatus, string>>>> = {
+export const REPORT_STATUS_COLORS: Readonly<
+  Record<ThemeName, Readonly<Record<ReportStatus, string>>>
+> = {
   blueprint: { draft: '#FF6B6F', submitted: '#8AA6F7', locked: '#46C98A', amended: '#4FC3F7' },
   editorial: { draft: '#E5484D', submitted: '#3E63DD', locked: '#1F8A50', amended: '#9A3B2E' },
   beton: { draft: '#BE3137', submitted: '#2F50C0', locked: '#1A7745', amended: '#E8531F' },
