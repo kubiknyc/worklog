@@ -14,7 +14,11 @@
   "jest": {
     "preset": "jest-expo",
     "testMatch": ["**/__tests__/**/*.test.{ts,tsx}", "**/?(*.)+(test).{ts,tsx}"],
-    "testPathIgnorePatterns": ["/node_modules/"]
+    "testPathIgnorePatterns": ["/node_modules/"],
+    "collectCoverageFrom": ["src/sync/*.ts", "!src/sync/types.ts"],
+    "coverageThreshold": {
+      "src/sync/mutationQueue.ts": { "branches": 100, "functions": 100, "lines": 100, "statements": 100 }
+    }
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",

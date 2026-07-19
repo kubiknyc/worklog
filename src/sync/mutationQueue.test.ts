@@ -34,6 +34,9 @@ describe('classifyError', () => {
   it('treats 5xx / unknown as retryable', () => {
     expect(classifyError({ status: 503 })).toBe('retryable');
     expect(classifyError(new Error('whatever'))).toBe('retryable');
+    // Non-object error values (primitives) should also be retryable
+    expect(classifyError('string error')).toBe('retryable');
+    expect(classifyError(123)).toBe('retryable');
   });
 
   it('treats a transport failure (no HTTP status) as offline, not retryable', () => {
@@ -50,6 +53,14 @@ describe('classifyError', () => {
     expect(classifyError({ status: 400 })).toBe('permanent');
   });
 
+  it('treats 4xx errors (other than 401) as permanent', () => {
+    // 409 Conflict on duplicate object storage
+    expect(classifyError({ status: 409 })).toBe('permanent');
+    // Other 4xx errors: 404, 410, 429, etc.
+    expect(classifyError({ status: 404 })).toBe('permanent');
+    expect(classifyError({ status: 429 })).toBe('permanent');
+  });
+
   it('classifies PL/pgSQL P0-class and custom PL001 as permanent (M4)', () => {
     expect(classifyError({ code: 'P0001' })).toBe('permanent'); // raise exception
     expect(classifyError({ code: 'PL001' })).toBe('permanent'); // stale-replace guard
@@ -60,6 +71,11 @@ describe('classifyError', () => {
     expect(classifyError({ code: 'PGRST301', status: 401 })).toBe('retryable');
     // PGRST116 with no status defaults to retryable rather than a hard park.
     expect(classifyError({ code: 'PGRST116' })).toBe('retryable');
+  });
+
+  it('handles status 0 without matching network heuristics as retryable', () => {
+    // status=0 but message doesn't match network/fetch/timeout pattern → retryable
+    expect(classifyError({ status: 0, message: 'some other error' })).toBe('retryable');
   });
 });
 
@@ -118,6 +134,13 @@ describe('normalizeStorageError (M6a [R2-6])', () => {
     );
   });
 
+  it('normalizes numeric statusCode when it is a number', () => {
+    // Some storage errors might have statusCode as a number
+    expect(normalizeStorageError({ message: 'x', statusCode: 409 })).toMatchObject({
+      status: 409,
+    });
+  });
+
   it('prefers an already-numeric status when present', () => {
     expect(normalizeStorageError({ message: 'x', status: 500, statusCode: '503' })).toMatchObject({
       status: 500,
@@ -136,6 +159,11 @@ describe('normalizeStorageError (M6a [R2-6])', () => {
     const weird = { message: 'x', statusCode: 'Duplicate' };
     expect(normalizeStorageError(weird)).toBe(weird);
   });
+
+  it('passes through when statusCode is an empty string', () => {
+    const err = { message: 'x', statusCode: '' };
+    expect(normalizeStorageError(err)).toBe(err);
+  });
 });
 
 describe('isDuplicateUpload (M6a [R2-2])', () => {
@@ -152,6 +180,15 @@ describe('isDuplicateUpload (M6a [R2-2])', () => {
         message: 'The resource already exists',
       }),
     ).toBe(true);
+  });
+
+  it('recognizes duplicate by message content when status is not 409', () => {
+    // Regex fallback: non-409 status but message contains 'already exists'
+    expect(isDuplicateUpload({ statusCode: '400', message: 'The resource already exists' })).toBe(
+      true,
+    );
+    // Or 'Duplicate' in error field
+    expect(isDuplicateUpload({ status: 400, error: 'Duplicate' })).toBe(true);
   });
 
   it('rejects everything else', () => {
