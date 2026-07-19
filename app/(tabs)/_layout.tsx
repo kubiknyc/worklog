@@ -4,13 +4,16 @@
  * Follows PunchLog's `(tabs)/_layout.tsx` styling idiom — tab bar colors and
  * fonts from `useTheme()` — with WorkLog's slot order and a raised center
  * camera action. The camera slot is a placeholder tab until the capture flow
- * lands in M5; `app/index.tsx` already gates auth before this group renders,
- * so no session guard is duplicated here.
+ * lands in M5. `app/index.tsx` only gates the `/` route, so a signed-out user
+ * deep-linking or web-refreshing directly on a `/(tabs)/*` route would render
+ * straight into the tab shell without this guard — mirrors PunchLog's
+ * `(tabs)/_layout.tsx` session check.
  */
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
+import { useAuth } from '../../src/auth';
 import { FIXED_COLORS, useTheme } from '../../src/theme';
 
 type RaisedCameraButtonProps = {
@@ -33,7 +36,11 @@ function RaisedCameraButton({ onPress }: RaisedCameraButtonProps) {
 }
 
 export default function TabsLayout() {
+  const { status } = useAuth();
   const { colors, fonts } = useTheme();
+
+  if (status === 'loading') return null;
+  if (status === 'signedOut') return <Redirect href="/(auth)/login" />;
 
   return (
     <Tabs
