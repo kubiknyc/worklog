@@ -24,6 +24,18 @@ const missingProvider = new Proxy({} as Repository, {
 });
 const RepositoryContext = createContext<Repository>(missingProvider);
 
+// Set when the native device DB fails to open and the app falls back to the
+// online-only Supabase repository. M3's sync-status surface should read this
+// (via didFallBackToOnlineOnly()) so the degraded offline posture is visible
+// to the user instead of silently behaving like a web build.
+let fellBackToOnlineOnly = false;
+
+/** True once `createPlatformRepository()` has failed and the app is running
+ * on the online-only Supabase repository instead of the device SQLite DB. */
+export function didFallBackToOnlineOnly(): boolean {
+  return fellBackToOnlineOnly;
+}
+
 interface Props {
   readonly children: ReactNode;
   /** Override for tests or explicit per-platform selection. */
@@ -46,8 +58,16 @@ export function RepositoryProvider({ children, repository }: Props) {
       .then((repo) => {
         if (active) setResolved(repo);
       })
-      .catch(() => {
-        // Device DB open failed — fall back to online so the app still functions.
+      .catch((error: unknown) => {
+        // Device DB open failed — fall back to online so the app still
+        // functions, but never silently: this converts an offline-first
+        // native app into online-only, so it must be visible in diagnostics
+        // and to M3's sync-status surface (see didFallBackToOnlineOnly above).
+        console.warn(
+          '[data] platform repository init failed; falling back to online-only Supabase repository',
+          error,
+        );
+        fellBackToOnlineOnly = true;
         if (active) setResolved(supabaseRepository);
       });
     return () => {

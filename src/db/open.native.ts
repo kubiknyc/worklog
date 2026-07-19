@@ -22,7 +22,8 @@ export async function migrate(db: Db): Promise<void> {
   let version = await userVersion(db);
   while (version < SCHEMA_VERSION) {
     const next = version + 1;
-    const statements = MIGRATIONS[next] ?? [];
+    if (!(next in MIGRATIONS)) throw new Error(`Missing migration ${next}`);
+    const statements = MIGRATIONS[next];
     await db.withTransactionAsync(async () => {
       for (const sql of statements) await db.execAsync(sql);
       // Stamp the version inside the same transaction as its DDL: SQLite honours
