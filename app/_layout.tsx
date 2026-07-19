@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
 
 import { AuthProvider } from '../src/auth';
+import { RepositoryProvider } from '../src/data';
 import { FONT_MAP, ThemeProvider, useThemeContext } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -41,7 +42,9 @@ export default function RootLayout() {
     <ThemeProvider>
       <ThemeHydrationGate>
         <AuthProvider>
-          <Stack screenOptions={{ headerShown: false }} />
+          <RepositoryProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+          </RepositoryProvider>
         </AuthProvider>
       </ThemeHydrationGate>
     </ThemeProvider>
