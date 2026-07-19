@@ -13,11 +13,27 @@
   },
   "jest": {
     "preset": "jest-expo",
-    "testMatch": ["**/__tests__/**/*.test.{ts,tsx}", "**/?(*.)+(test).{ts,tsx}"],
-    "testPathIgnorePatterns": ["/node_modules/"],
-    "collectCoverageFrom": ["src/sync/*.ts", "!src/sync/types.ts"],
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.{ts,tsx}",
+      "**/?(*.)+(test).{ts,tsx}"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ],
+    "collectCoverageFrom": [
+      "src/sync/*.ts",
+      "!src/sync/types.ts"
+    ],
     "coverageThreshold": {
-      "src/sync/mutationQueue.ts": { "branches": 100, "functions": 100, "lines": 100, "statements": 100 }
+      "src/sync/mutationQueue.ts": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      }
     }
   },
   "dependencies": {
@@ -28,6 +44,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.108.2",
     "expo": "^54.0.0",
+    "expo-asset": "~12.0.13",
     "expo-constants": "~18.0.13",
     "expo-crypto": "~15.0.7",
     "expo-font": "~14.0.12",
