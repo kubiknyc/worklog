@@ -227,6 +227,12 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       // distinguish "revoked/deleted server-side" from "transient network":
       // a revoked session must never reach this device's cached account.
       if (await isSessionRevoked()) {
+        // isSessionRevoked() was in flight for THIS (possibly stale) generation.
+        // If a newer session was installed while we awaited the verdict, that
+        // newer applySession now owns state — purging the local session and
+        // clearing caches here would wipe out the new user's just-loaded
+        // account instead of the revoked one's. Bail without side effects.
+        if (sessionGenRef.current !== gen) return;
         // Purge the stored session locally (the server already rejects it —
         // a server-side revoke call would just fail again) and clear cached
         // PII, then land on the (auth) stack.
@@ -330,6 +336,11 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   const updateProfile = useCallback(async (patch: ProfilePatch): Promise<string | null> => {
     const userId = sessionRef.current?.user.id;
     if (!userId) return 'Not signed in.';
+    // Captured before the await: if a newer session lands while this PATCH is
+    // in flight, the response belongs to a superseded user and must not
+    // overwrite the newer session's committed state (mirrors applySession's
+    // gen-token guard above).
+    const gen = sessionGenRef.current;
     const { data, error } = await supabase
       .from('profiles')
       .update(patch)
@@ -340,7 +351,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       .maybeSingle();
     // PostgREST errors can leak schema details — keep them out of the UI.
     if (error) return 'Could not save your profile. Please try again.';
-    if (data && mountedRef.current) {
+    if (data && mountedRef.current && sessionGenRef.current === gen) {
       setState((prev) => ({ ...prev, profile: data }));
     }
     return null;
