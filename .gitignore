@@ -1,6 +1,9 @@
 node_modules/
 .expo/
 dist/
+expo-env.d.ts
 .env
+.env.local
+.env*.local
 *.tsbuildinfo
 coverage/
