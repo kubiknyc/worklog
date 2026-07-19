@@ -65,12 +65,12 @@ Sync failure semantics are inherited from PunchLog, not invented: every failure 
 
 ## Definition of done (slice)
 
-- [ ] `tsc --noEmit` strict green
-- [ ] Jest green: parity test + all pure-policy sync tests (100% behavior coverage on `mutationQueue.ts`)
-- [ ] Platform-split grep guard returns nothing across `src/` and `app/`
-- [ ] App boots and signs in (seeded demo account, local Supabase) on iOS + Android + web
-- [ ] Tab shell navigates; placeholder screens present behind tabs (M2 fills them)
-- [ ] No placeholders or TODOs inside shipped modules (spec §10); placeholder *screens* are the deliberate exception
+- [x] `tsc --noEmit` strict green
+- [x] Jest green: parity test + all pure-policy sync tests (100% behavior coverage on `mutationQueue.ts`) — 12 suites / 164 tests, `mutationQueue.ts` at 100/100/100/100 enforced by threshold
+- [x] Platform-split grep guard returns nothing across `src/` and `app/`
+- [ ] App boots and signs in (seeded demo account, local Supabase) on iOS + Android + web — **web verified** (demo sign-in → Today, tab navigation, session survives reload, console clean); **iOS/Android pending a device/emulator check** — the one remaining manual item of this slice
+- [x] Tab shell navigates; placeholder screens present behind tabs (M2 fills them) — verified in-browser: all four tabs route, raised `#3FA9F0` camera button renders center-slot
+- [x] No placeholders or TODOs inside shipped modules (spec §10); placeholder *screens* are the deliberate exception — grep clean
 
 ## Exit state
 
