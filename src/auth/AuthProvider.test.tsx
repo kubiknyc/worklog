@@ -1,12 +1,15 @@
 /**
  * AuthProvider — (1) signOut revokes the Supabase session and always clears
- * local account caches, even when the revoke call itself fails. (2) When the
- * account fetch fails, a server-side session revocation (getUser → 401/403)
- * lands signed out — never on cached data — while a transient network
- * failure still restores the cached account.
+ * local account caches, even when the revoke call fails — returned error OR
+ * thrown rejection. (2) When the account fetch fails, a server-side session
+ * revocation (getUser → 401/403) lands signed out — never on cached data —
+ * while a transient network failure still restores the cached account.
+ * (3) The persisted account blob is PII-pruned (no email/phone) and a
+ * superseded session's load never persists it.
  */
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { AuthApiError } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ReactNode } from 'react';
 
 // Captured onAuthStateChange callback — tests emit fake sessions through it.
@@ -67,9 +70,33 @@ function makeReadOnlyTable<T>(result: { data: T; error: unknown }) {
   return { select: () => thenable };
 }
 
+/** loadAccount succeeds: `profiles` returns the given row, the other three
+ *  tables return empty result sets. */
+function mockAccountLoadSuccess(profile: Record<string, unknown>) {
+  mockFrom.mockImplementation((table: string) => {
+    if (table === 'profiles') {
+      return {
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: profile, error: null }) }),
+        }),
+      };
+    }
+    return makeReadOnlyTable({ data: [], error: null });
+  });
+}
+
+/** Re-pin mockFrom's default (mockImplementation survives clearAllMocks, so
+ *  describes that rely on the failing-load default must reset it). */
+function mockAccountLoadFailure() {
+  mockFrom.mockImplementation(() => {
+    throw new Error('account fetch failed');
+  });
+}
+
 describe('AuthProvider.signOut', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAccountLoadFailure();
   });
 
   test('revokes the Supabase session', async () => {
@@ -80,7 +107,37 @@ describe('AuthProvider.signOut', () => {
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
-  test('clears local session state when the revoke request fails', async () => {
+  test('success path clears caches and lands fully signed out, without a warning', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockAccountLoadSuccess({ id: 'user-1', full_name: 'User One', email: 'u1@example.com' });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      mockAuthCallback('SIGNED_IN', FAKE_SESSION);
+    });
+    await waitFor(() => expect(result.current.status).toBe('authed'));
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(mockClearAccountCaches).toHaveBeenCalledTimes(1);
+
+    // On a successful revoke supabase-js emits SIGNED_OUT — simulate it and
+    // assert the FULL state reset, not just the status flag.
+    await act(async () => {
+      mockAuthCallback('SIGNED_OUT', null);
+    });
+    await waitFor(() => expect(result.current.status).toBe('signedOut'));
+    expect(result.current.session).toBeNull();
+    expect(result.current.profile).toBeNull();
+    expect(result.current.memberships).toEqual([]);
+    expect(result.current.companyMemberships).toEqual([]);
+    expect(result.current.projectCompanies).toEqual({});
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  test('clears caches and local session state when the revoke request fails', async () => {
     // The provider logs a diagnostic warning on this path (no toast surface
     // is wired up yet, M0) — expected, so silence it for a clean test run.
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -96,6 +153,30 @@ describe('AuthProvider.signOut', () => {
       await result.current.signOut();
     });
     await waitFor(() => expect(result.current.status).toBe('signedOut'));
+    expect(mockClearAccountCaches).toHaveBeenCalledTimes(1);
+    expect(result.current.session).toBeNull();
+    expect(result.current.profile).toBeNull();
+    expect(result.current.memberships).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  test('a THROWN sign-out rejection still clears caches and forces signed out', async () => {
+    // supabase.auth.signOut() rejecting (vs returning {error}) previously
+    // skipped clearAccountCaches() entirely — this pins the try/catch fix.
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockSignOut.mockRejectedValueOnce(new Error('network down'));
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      mockAuthCallback('SIGNED_IN', FAKE_SESSION);
+    });
+    await waitFor(() => expect(result.current.status).toBe('authed'));
+    await act(async () => {
+      await result.current.signOut();
+    });
+    expect(mockClearAccountCaches).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(result.current.status).toBe('signedOut'));
+    expect(result.current.profile).toBeNull();
     expect(warnSpy).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
@@ -104,6 +185,7 @@ describe('AuthProvider.signOut', () => {
 describe('AuthProvider revoked-session detection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAccountLoadFailure();
   });
 
   test('a revoked session lands signed out, never on cached data', async () => {
@@ -262,5 +344,79 @@ describe('AuthProvider revoked-session generation guard', () => {
     expect(result.current.profile).toEqual(user2Profile);
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(mockClearAccountCaches).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthProvider account-blob persistence', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAccountLoadFailure();
+  });
+
+  test('persists the account blob without contact PII while live state keeps it', async () => {
+    mockAccountLoadSuccess({
+      id: 'user-1',
+      full_name: 'User One',
+      email: 'u1@example.com',
+      phone: '555-0100',
+    });
+    const setItemSpy = jest.spyOn(AsyncStorage, 'setItem');
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      mockAuthCallback('SIGNED_IN', FAKE_SESSION);
+    });
+    await waitFor(() => expect(result.current.status).toBe('authed'));
+    // Live state keeps the full profile for the UI…
+    expect(result.current.profile).toMatchObject({
+      email: 'u1@example.com',
+      phone: '555-0100',
+    });
+    // …but the persisted blob must carry neither contact field.
+    await waitFor(() =>
+      expect(setItemSpy.mock.calls.some(([key]) => key === 'account:user-1')).toBe(true),
+    );
+    const accountWrite = setItemSpy.mock.calls.find(([key]) => key === 'account:user-1');
+    const [, raw] = accountWrite ?? ['', '{}'];
+    const persisted = JSON.parse(raw) as { profile: Record<string, unknown> };
+    expect(persisted.profile).not.toHaveProperty('email');
+    expect(persisted.profile).not.toHaveProperty('phone');
+    expect(persisted.profile.full_name).toBe('User One');
+    setItemSpy.mockRestore();
+  });
+
+  test('a superseded account load never persists its blob after sign-out', async () => {
+    let resolveProfile: (value: { data: unknown; error: null }) => void = () => {};
+    const deferredProfile = new Promise<{ data: unknown; error: null }>((resolve) => {
+      resolveProfile = resolve;
+    });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => deferredProfile }) }),
+        };
+      }
+      return makeReadOnlyTable({ data: [], error: null });
+    });
+    const setItemSpy = jest.spyOn(AsyncStorage, 'setItem');
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      mockAuthCallback('SIGNED_IN', FAKE_SESSION);
+    });
+    // Sign-out bumps the session generation while the load is still in flight.
+    await act(async () => {
+      mockAuthCallback('SIGNED_OUT', null);
+    });
+    await waitFor(() => expect(result.current.status).toBe('signedOut'));
+    // The stale load resolving late must neither commit state nor persist PII.
+    await act(async () => {
+      resolveProfile({
+        data: { id: 'user-1', full_name: 'User One', email: 'u1@example.com', phone: null },
+        error: null,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current.status).toBe('signedOut');
+    expect(setItemSpy.mock.calls.filter(([key]) => key.startsWith('account:'))).toEqual([]);
+    setItemSpy.mockRestore();
   });
 });
