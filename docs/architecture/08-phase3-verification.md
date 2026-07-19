@@ -34,6 +34,8 @@ against the union of CREATE TABLE / ALTER TABLE across all backend migrations
 | `report_amendments` (7) | match (nullable-vs-NOT-NULL on `amendment_number` is a documented, name-only-irrelevant deviation, 06 §C #8) |
 | `report_amendment_changes` (5) | match |
 
+*Note on `profiles` parity: The table's "match" verdict reflects the app's 9 mirrored columns. The server's `profiles` table has 12 total columns, including `notify_push`, `notify_digest`, and `notify_mentions` (added by migration `20260705000001`). These three columns are deliberately server-only per 06-sync-mappings.md §Tier-1 and enforced by `src/db/schemaParity.test.ts` (Phase 4).*
+
 `20260717000004_worklog_photos.sql:32-33` creates `width integer, height integer`;
 they are in the column-scoped INSERT grant (line 161) and the provenance guard
 (lines 96-97), and `AddPhotoPayload` (`src/sync/types.ts:142-143`) pushes both.
