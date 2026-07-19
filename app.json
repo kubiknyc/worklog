@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "WorkLog",
+    "slug": "worklog",
+    "version": "0.1.0",
+    "scheme": "worklog",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.jobsight.worklog" },
+    "android": { "package": "com.jobsight.worklog", "edgeToEdgeEnabled": true },
+    "web": { "bundler": "metro", "output": "static" },
+    "plugins": ["expo-router", "expo-splash-screen", "expo-secure-store", "expo-font", "expo-sqlite"]
+  }
+}
