@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "gen:server-columns": "node scripts/gen-server-columns.mjs"
   },
   "jest": {
     "preset": "jest-expo",

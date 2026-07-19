@@ -1,0 +1,153 @@
+{
+  "profiles": [
+    "avatar_url",
+    "company",
+    "created_at",
+    "email",
+    "expo_push_token",
+    "full_name",
+    "id",
+    "notify_digest",
+    "notify_mentions",
+    "notify_push",
+    "phone",
+    "trade"
+  ],
+  "projects": [
+    "address",
+    "code_prefix",
+    "company_id",
+    "created_at",
+    "created_by",
+    "geocode_source",
+    "geocoded_at",
+    "id",
+    "lat",
+    "lng",
+    "name",
+    "timezone"
+  ],
+  "project_members": [
+    "created_at",
+    "project_id",
+    "role",
+    "user_id"
+  ],
+  "report_member_prefs": [
+    "project_id",
+    "title",
+    "user_id"
+  ],
+  "daily_reports": [
+    "created_at",
+    "created_by",
+    "has_delay",
+    "has_incident",
+    "id",
+    "locked_at",
+    "locked_by",
+    "project_id",
+    "report_date",
+    "status",
+    "submitted_at",
+    "submitted_by",
+    "updated_at"
+  ],
+  "report_sections": [
+    "is_complete",
+    "payload",
+    "report_id",
+    "section",
+    "updated_at",
+    "updated_by"
+  ],
+  "report_crew": [
+    "headcount",
+    "hours",
+    "id",
+    "is_carried_forward",
+    "report_id",
+    "trade"
+  ],
+  "report_equipment": [
+    "id",
+    "name",
+    "on_site",
+    "report_id",
+    "status"
+  ],
+  "report_work_performed": [
+    "area",
+    "id",
+    "note",
+    "report_id",
+    "trade"
+  ],
+  "report_delays": [
+    "cause",
+    "duration_hours",
+    "id",
+    "is_ongoing",
+    "note",
+    "report_id",
+    "responsible_party"
+  ],
+  "report_safety_observations": [
+    "description",
+    "id",
+    "is_incident",
+    "obs_type",
+    "report_id"
+  ],
+  "report_weather": [
+    "auto_condition",
+    "auto_fetched_at",
+    "auto_raw_response",
+    "auto_temp_f",
+    "override_at",
+    "override_by",
+    "override_condition",
+    "override_temp_f",
+    "report_id",
+    "updated_at",
+    "weather_source"
+  ],
+  "report_photos": [
+    "added_at",
+    "caption",
+    "captured_at",
+    "created_at",
+    "created_by",
+    "deleted_at",
+    "exif_datetime_original",
+    "gps_accuracy",
+    "gps_lat",
+    "gps_lng",
+    "height",
+    "id",
+    "location_tag",
+    "project_id",
+    "report_id",
+    "source",
+    "storage_path",
+    "trade_tag",
+    "updated_at",
+    "width"
+  ],
+  "report_amendments": [
+    "amendment_number",
+    "created_at",
+    "created_by",
+    "id",
+    "reason",
+    "report_id",
+    "signature_id"
+  ],
+  "report_amendment_changes": [
+    "after_payload",
+    "amendment_id",
+    "before_payload",
+    "id",
+    "section"
+  ]
+}
