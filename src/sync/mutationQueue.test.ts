@@ -107,15 +107,21 @@ describe('normalizeStorageError (M6a [R2-6])', () => {
   it('maps a string statusCode to a numeric status so classifyError can judge it', () => {
     // StorageApiError carries statusCode as a STRING; unnormalized, "403" would
     // fall through every status check and an RLS denial would retry forever.
-    expect(normalizeStorageError({ name: 'StorageApiError', message: 'denied', statusCode: '403' }))
-      .toEqual({ name: 'StorageApiError', message: 'denied', code: undefined, status: 403 });
-    expect(classifyError(normalizeStorageError({ statusCode: '403', message: 'denied' }))).toBe('evict');
-    expect(classifyError(normalizeStorageError({ statusCode: '503', message: 'oops' }))).toBe('retryable');
+    expect(
+      normalizeStorageError({ name: 'StorageApiError', message: 'denied', statusCode: '403' }),
+    ).toEqual({ name: 'StorageApiError', message: 'denied', code: undefined, status: 403 });
+    expect(classifyError(normalizeStorageError({ statusCode: '403', message: 'denied' }))).toBe(
+      'evict',
+    );
+    expect(classifyError(normalizeStorageError({ statusCode: '503', message: 'oops' }))).toBe(
+      'retryable',
+    );
   });
 
   it('prefers an already-numeric status when present', () => {
-    expect(normalizeStorageError({ message: 'x', status: 500, statusCode: '503' }))
-      .toMatchObject({ status: 500 });
+    expect(normalizeStorageError({ message: 'x', status: 500, statusCode: '503' })).toMatchObject({
+      status: 500,
+    });
   });
 
   it('passes a transport failure through unchanged so it still classifies offline', () => {
@@ -134,10 +140,18 @@ describe('normalizeStorageError (M6a [R2-6])', () => {
 
 describe('isDuplicateUpload (M6a [R2-2])', () => {
   it('recognizes a 409 by string statusCode, numeric status, or Duplicate body', () => {
-    expect(isDuplicateUpload({ statusCode: '409', message: 'The resource already exists' })).toBe(true);
+    expect(isDuplicateUpload({ statusCode: '409', message: 'The resource already exists' })).toBe(
+      true,
+    );
     expect(isDuplicateUpload({ status: 409, message: 'Conflict' })).toBe(true);
     // Older storage-api releases: 400 + error 'Duplicate'.
-    expect(isDuplicateUpload({ statusCode: '400', error: 'Duplicate', message: 'The resource already exists' })).toBe(true);
+    expect(
+      isDuplicateUpload({
+        statusCode: '400',
+        error: 'Duplicate',
+        message: 'The resource already exists',
+      }),
+    ).toBe(true);
   });
 
   it('rejects everything else', () => {
@@ -151,23 +165,40 @@ describe('isDuplicateUpload (M6a [R2-2])', () => {
 
 describe('orderForDrain (M6a two-pass [R2-6])', () => {
   const photo = (clientId: string, reportId = 'r1') =>
-    newMutation(clientId, {
-      kind: 'add_photo',
-      data: {
-        photoId: clientId, reportId, projectId: 'p1',
-        storagePath: `p1/${reportId}/${clientId}.jpg`,
-        localUri: `file:///doc/photo-outbox/${clientId}.jpg`,
-        width: 1280, height: 960,
-        capturedAt: '2026-06-28T00:00:00Z', exifDateTimeOriginal: null,
-        gpsLat: null, gpsLng: null, gpsAccuracy: null,
-        source: 'camera', tradeTag: null, locationTag: null, caption: null,
+    newMutation(
+      clientId,
+      {
+        kind: 'add_photo',
+        data: {
+          photoId: clientId,
+          reportId,
+          projectId: 'p1',
+          storagePath: `p1/${reportId}/${clientId}.jpg`,
+          localUri: `file:///doc/photo-outbox/${clientId}.jpg`,
+          width: 1280,
+          height: 960,
+          capturedAt: '2026-06-28T00:00:00Z',
+          exifDateTimeOriginal: null,
+          gpsLat: null,
+          gpsLng: null,
+          gpsAccuracy: null,
+          source: 'camera',
+          tradeTag: null,
+          locationTag: null,
+          caption: null,
+        },
       },
-    }, '2026-06-28T00:00:00Z');
+      '2026-06-28T00:00:00Z',
+    );
   const section = (clientId: string) =>
-    newMutation(clientId, {
-      kind: 'update_section',
-      data: { reportId: 'r1', section: 'crew', content: {}, isComplete: false },
-    }, '2026-06-28T00:00:00Z');
+    newMutation(
+      clientId,
+      {
+        kind: 'update_section',
+        data: { reportId: 'r1', section: 'crew', content: {}, isComplete: false },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
   it('drains JSON mutations first, add_photo last, both in original (seq) order', () => {
     const ordered = orderForDrain([photo('ph1'), section('h1'), photo('ph2'), section('h2')]);
@@ -175,72 +206,136 @@ describe('orderForDrain (M6a two-pass [R2-6])', () => {
   });
 
   it('is the identity for all-JSON and all-photo queues', () => {
-    expect(orderForDrain([section('h1'), section('h2')]).map((m) => m.clientId)).toEqual(['h1', 'h2']);
-    expect(orderForDrain([photo('ph1'), photo('ph2')]).map((m) => m.clientId)).toEqual(['ph1', 'ph2']);
+    expect(orderForDrain([section('h1'), section('h2')]).map((m) => m.clientId)).toEqual([
+      'h1',
+      'h2',
+    ]);
+    expect(orderForDrain([photo('ph1'), photo('ph2')]).map((m) => m.clientId)).toEqual([
+      'ph1',
+      'ph2',
+    ]);
     expect(orderForDrain([])).toEqual([]);
   });
 });
 
 describe('rowTargetOf / otherMutationTargetsRow (M1)', () => {
   const createReport = (clientId: string, reportId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'create_report',
-      data: { reportId, projectId: 'p1', reportDate: '2026-07-18', carryForwardSourceReportId: null },
-    }, '2026-06-28T00:00:00Z');
+    newMutation(
+      clientId,
+      {
+        kind: 'create_report',
+        data: {
+          reportId,
+          projectId: 'p1',
+          reportDate: '2026-07-18',
+          carryForwardSourceReportId: null,
+        },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
   const submitReport = (clientId: string, reportId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'submit_report',
-      data: { reportId, signaturePngBase64: 'base64data', signerName: 'Jane Doe', signerTitle: 'Superintendent' },
-    }, '2026-06-28T00:00:00Z');
+    newMutation(
+      clientId,
+      {
+        kind: 'submit_report',
+        data: {
+          reportId,
+          signaturePngBase64: 'base64data',
+          signerName: 'Jane Doe',
+          signerTitle: 'Superintendent',
+        },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
   const lockReport = (clientId: string, reportId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'lock_report',
-      data: { reportId },
-    }, '2026-06-28T00:00:00Z');
+    newMutation(
+      clientId,
+      {
+        kind: 'lock_report',
+        data: { reportId },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
-  const updateSection = (clientId: string, reportId: string, section: SectionKind = 'crew'): Mutation =>
-    newMutation(clientId, {
-      kind: 'update_section',
-      data: { reportId, section, content: {}, isComplete: false },
-    }, '2026-06-28T00:00:00Z');
+  const updateSection = (
+    clientId: string,
+    reportId: string,
+    section: SectionKind = 'crew',
+  ): Mutation =>
+    newMutation(
+      clientId,
+      {
+        kind: 'update_section',
+        data: { reportId, section, content: {}, isComplete: false },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
   const addPhoto = (clientId: string, reportId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'add_photo',
-      data: {
-        photoId: clientId, reportId, projectId: 'p1',
-        storagePath: `p1/${reportId}/${clientId}.jpg`,
-        localUri: `file:///doc/photo-outbox/${clientId}.jpg`,
-        width: 1280, height: 960,
-        capturedAt: '2026-06-28T00:00:00Z', exifDateTimeOriginal: null,
-        gpsLat: null, gpsLng: null, gpsAccuracy: null,
-        source: 'camera', tradeTag: null, locationTag: null, caption: null,
+    newMutation(
+      clientId,
+      {
+        kind: 'add_photo',
+        data: {
+          photoId: clientId,
+          reportId,
+          projectId: 'p1',
+          storagePath: `p1/${reportId}/${clientId}.jpg`,
+          localUri: `file:///doc/photo-outbox/${clientId}.jpg`,
+          width: 1280,
+          height: 960,
+          capturedAt: '2026-06-28T00:00:00Z',
+          exifDateTimeOriginal: null,
+          gpsLat: null,
+          gpsLng: null,
+          gpsAccuracy: null,
+          source: 'camera',
+          tradeTag: null,
+          locationTag: null,
+          caption: null,
+        },
       },
-    }, '2026-06-28T00:00:00Z');
+      '2026-06-28T00:00:00Z',
+    );
 
   const updatePhotoMeta = (clientId: string, reportId: string, photoId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'update_photo_meta',
-      data: { photoId, reportId, caption: 'updated caption', tradeTag: null, locationTag: null },
-    }, '2026-06-28T00:00:00Z');
+    newMutation(
+      clientId,
+      {
+        kind: 'update_photo_meta',
+        data: { photoId, reportId, caption: 'updated caption', tradeTag: null, locationTag: null },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
   const removePhoto = (clientId: string, reportId: string, photoId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'remove_photo',
-      data: { photoId, reportId, storagePath: `p1/${reportId}/${photoId}.jpg` },
-    }, '2026-06-28T00:00:00Z');
+    newMutation(
+      clientId,
+      {
+        kind: 'remove_photo',
+        data: { photoId, reportId, storagePath: `p1/${reportId}/${photoId}.jpg` },
+      },
+      '2026-06-28T00:00:00Z',
+    );
 
   const createAmendment = (clientId: string, reportId: string): Mutation =>
-    newMutation(clientId, {
-      kind: 'create_amendment',
-      data: {
-        amendmentId: clientId, reportId, reason: 'correction',
-        changes: [{ section: 'crew', content: {} }],
-        signaturePngBase64: null, signerTitle: null,
+    newMutation(
+      clientId,
+      {
+        kind: 'create_amendment',
+        data: {
+          amendmentId: clientId,
+          reportId,
+          reason: 'correction',
+          changes: [{ section: 'crew', content: {} }],
+          signaturePngBase64: null,
+          signerTitle: null,
+        },
       },
-    }, '2026-06-28T00:00:00Z');
+      '2026-06-28T00:00:00Z',
+    );
 
   it('update_section targets the (reportId, section) tuple row', () => {
     const target = rowTargetOf({
@@ -251,19 +346,40 @@ describe('rowTargetOf / otherMutationTargetsRow (M1)', () => {
   });
 
   it('create_report/submit_report/lock_report target the daily_reports row', () => {
-    expect(rowTargetOf(createReport('h1', 'r1').payload)).toEqual({ table: 'daily_reports', id: 'r1' });
-    expect(rowTargetOf(submitReport('h2', 'r1').payload)).toEqual({ table: 'daily_reports', id: 'r1' });
-    expect(rowTargetOf(lockReport('h3', 'r1').payload)).toEqual({ table: 'daily_reports', id: 'r1' });
+    expect(rowTargetOf(createReport('h1', 'r1').payload)).toEqual({
+      table: 'daily_reports',
+      id: 'r1',
+    });
+    expect(rowTargetOf(submitReport('h2', 'r1').payload)).toEqual({
+      table: 'daily_reports',
+      id: 'r1',
+    });
+    expect(rowTargetOf(lockReport('h3', 'r1').payload)).toEqual({
+      table: 'daily_reports',
+      id: 'r1',
+    });
   });
 
   it('create_amendment targets its own report_amendments row', () => {
-    expect(rowTargetOf(createAmendment('a1', 'r1').payload)).toEqual({ table: 'report_amendments', id: 'a1' });
+    expect(rowTargetOf(createAmendment('a1', 'r1').payload)).toEqual({
+      table: 'report_amendments',
+      id: 'a1',
+    });
   });
 
   it('add_photo, update_photo_meta, and remove_photo all target the same report_photos row by photoId', () => {
-    expect(rowTargetOf(addPhoto('ph1', 'r1').payload)).toEqual({ table: 'report_photos', id: 'ph1' });
-    expect(rowTargetOf(updatePhotoMeta('m1', 'r1', 'ph1').payload)).toEqual({ table: 'report_photos', id: 'ph1' });
-    expect(rowTargetOf(removePhoto('rm1', 'r1', 'ph1').payload)).toEqual({ table: 'report_photos', id: 'ph1' });
+    expect(rowTargetOf(addPhoto('ph1', 'r1').payload)).toEqual({
+      table: 'report_photos',
+      id: 'ph1',
+    });
+    expect(rowTargetOf(updatePhotoMeta('m1', 'r1', 'ph1').payload)).toEqual({
+      table: 'report_photos',
+      id: 'ph1',
+    });
+    expect(rowTargetOf(removePhoto('rm1', 'r1', 'ph1').payload)).toEqual({
+      table: 'report_photos',
+      id: 'ph1',
+    });
   });
 
   it('add_photo targets its own report_photos row, never the parent report (M6a)', () => {
@@ -299,7 +415,11 @@ describe('rowTargetOf / otherMutationTargetsRow (M1)', () => {
     expect(otherMutationTargetsRow([s, updateSection('s2', 'r1', 'safety')], s)).toBe(false);
     expect(otherMutationTargetsRow([s, updateSection('s2', 'r2', 'crew')], s)).toBe(false);
     // A parked duplicate of the same row (e.g. a superseded retry) still counts.
-    const dup = { ...updateSection('s1', 'r1', 'crew'), clientId: 'other', status: 'parked' as const };
+    const dup = {
+      ...updateSection('s1', 'r1', 'crew'),
+      clientId: 'other',
+      status: 'parked' as const,
+    };
     expect(otherMutationTargetsRow([s, dup], s)).toBe(true);
   });
 });
