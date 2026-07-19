@@ -19,7 +19,7 @@ const mockGetUser = jest.fn(
   }),
 );
 // loadAccount path: any table read fails, driving applySession into its catch.
-const mockFrom = jest.fn(() => {
+const mockFrom = jest.fn((..._args: string[]): unknown => {
   throw new Error('account fetch failed');
 });
 
@@ -147,7 +147,7 @@ describe('AuthProvider.updateProfile generation guard', () => {
       resolveUpdate = resolve;
     });
 
-    mockFrom.mockImplementation((table: unknown) => {
+    mockFrom.mockImplementation((table: string) => {
       if (table === 'profiles') {
         return {
           select: () => ({
@@ -215,7 +215,7 @@ describe('AuthProvider revoked-session generation guard', () => {
     // stays pending on deferredGetUser above.
     // Session B (user-2): loadAccount succeeds once installed.
     let sessionBInstalled = false;
-    mockFrom.mockImplementation((table: unknown) => {
+    mockFrom.mockImplementation((table: string) => {
       if (!sessionBInstalled) throw new Error('account fetch failed');
       if (table === 'profiles') {
         return {
