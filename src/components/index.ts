@@ -1,16 +1,29 @@
 /** Shared UI components — screens import from here. */
 export { AuthSplash } from './AuthSplash';
 export { BottomSheet } from './BottomSheet';
+export { Chip } from './Chip';
+export { ChipRow, type ChipOption } from './ChipRow';
 export { ConfirmSheet } from './ConfirmSheet';
 export { EmptyState } from './EmptyState';
 export { ErrorState } from './ErrorState';
+export { PrimaryButton } from './PrimaryButton';
+export { RecentsRow } from './RecentsRow';
 export { ReportStatusChip, REPORT_STATUS_LABELS } from './ReportStatusChip';
 export { SheetRow } from './SheetRow';
 export { ListSkeleton, CardSkeleton, DetailSkeleton } from './Skeleton';
 export { Stagger } from './Stagger';
+export { Stepper } from './Stepper';
+export { TextField } from './TextField';
+export { ToastProvider, useToast, type ToastApi, type UndoableToastOptions } from './ToastProvider';
+
+// Section-input scaffolding + static pick lists (report-write path).
+export { SectionSheetScaffold } from './report/SectionSheetScaffold';
 export {
-  ToastProvider,
-  useToast,
-  type ToastApi,
-  type UndoableToastOptions,
-} from './ToastProvider';
+  TRADES,
+  DELIVERY_UNITS,
+  DELAY_CAUSES,
+  VISITOR_ROLES,
+  INSPECTION_AGENCIES,
+  SAFETY_TYPES,
+  INSPECTION_RESULTS,
+} from './report/sectionConstants';

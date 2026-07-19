@@ -88,13 +88,15 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
   }, []);
 
   const dismiss = useCallback(() => {
-    Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }).start((result) => {
-      // Only clear when the fade-out actually completed. `present()` calls
-      // `opacity.setValue(0)`, which synchronously interrupts an in-flight
-      // fade-out and fires this callback with `finished: false` — clearing then
-      // would wipe the toast that just superseded this one.
-      if (result?.finished && mountedRef.current) setToast(null);
-    });
+    Animated.timing(opacity, { toValue: 0, duration: 160, useNativeDriver: true }).start(
+      (result) => {
+        // Only clear when the fade-out actually completed. `present()` calls
+        // `opacity.setValue(0)`, which synchronously interrupts an in-flight
+        // fade-out and fires this callback with `finished: false` — clearing then
+        // would wipe the toast that just superseded this one.
+        if (result?.finished && mountedRef.current) setToast(null);
+      },
+    );
   }, [opacity]);
 
   /**
@@ -212,7 +214,11 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
             accessibilityRole="alert"
             style={[
               styles.pill,
-              { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.pill },
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: radii.pill,
+              },
             ]}
           >
             <View style={[styles.dot, { backgroundColor: dotColor }]} />
@@ -234,7 +240,11 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.undoText, { color: colors.accentInk, fontFamily: fonts.ui.bold }]}>Undo</Text>
+                <Text
+                  style={[styles.undoText, { color: colors.accentInk, fontFamily: fonts.ui.bold }]}
+                >
+                  Undo
+                </Text>
               </Pressable>
             ) : null}
           </View>
