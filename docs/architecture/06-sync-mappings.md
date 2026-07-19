@@ -64,7 +64,7 @@ Two passes over one queue: **JSON kinds in `seq` order first** (`create_report`,
 |---|---|---|---|
 | `projects` | `projects` | Snapshot by id (`selectAllById`), full replace | Now carries `timezone`/`lat`/`lng`/`geocode_source`/`geocoded_at` + the PunchLog columns (full shared-table parity) |
 | `project_members` | `project_members` | Snapshot by composite key, full replace | Membership loss here drives the Tier-2 per-project eviction sweep |
-| `profiles` | `profiles` | Snapshot by id | — |
+| `profiles` | `profiles` | Snapshot by id | Mirrors the 9-column PunchLog snapshot; server-side notification prefs (notify_push/notify_digest/notify_mentions, migration 20260705000001) are never pulled — they feed server notification triggers only and have no offline reader. |
 | `report_member_prefs` | — (rides with `project_members`) | Snapshot, full replace in the same transaction | **Mirrored locally** (decision): the PM/super display title must resolve offline for the PDF signature block and `roles.ts`; the table has no `updated_at`, so it snapshots with its sibling rather than keyset-pulling |
 
 Not mirrored, never pulled: `companies`, `company_members`, `company_branding`, `report_customization`, `report_distribution_lists` (online-only; AsyncStorage account cache covers offline restore), `report_signatures` (write-only via RPC payloads), `daily_report_audit_log` (server-only).

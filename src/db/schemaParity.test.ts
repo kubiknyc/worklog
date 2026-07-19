@@ -17,7 +17,12 @@ import { DOMAIN_COLUMNS, MIGRATIONS, SCHEMA_V1 } from './schema';
  */
 const LOCAL_ONLY: Partial<Record<keyof typeof DOMAIN_COLUMNS, readonly string[]>> = {};
 /** Server-side columns the app deliberately never mirrors. */
-const SERVER_ONLY: Partial<Record<keyof typeof DOMAIN_COLUMNS, readonly string[]>> = {};
+const SERVER_ONLY: Partial<Record<keyof typeof DOMAIN_COLUMNS, readonly string[]>> = {
+  // Notification prefs feed server-side triggers only; never read offline.
+  // Sanctioned by docs/architecture/06-sync-mappings.md §Tier-1 (profiles row);
+  // matches the port source's identical exclusion (PunchLog schema.ts profiles mirror).
+  profiles: ['notify_push', 'notify_digest', 'notify_mentions'],
+};
 
 const tables = Object.keys(DOMAIN_COLUMNS) as (keyof typeof DOMAIN_COLUMNS)[];
 
@@ -46,9 +51,12 @@ describe('schema parity (app ⇄ server)', () => {
     });
 
     it(`${table}: local DDL defines every declared column`, () => {
-      const create = SCHEMA_V1.find((s) => new RegExp(`CREATE TABLE IF NOT EXISTS ${table} `).test(s));
+      const create = SCHEMA_V1.find((s) =>
+        new RegExp(`CREATE TABLE IF NOT EXISTS ${table} `).test(s),
+      );
       expect(create).toBeDefined();
-      const adds = Object.values(MIGRATIONS).flat()
+      const adds = Object.values(MIGRATIONS)
+        .flat()
         .filter((s) => new RegExp(`ALTER TABLE ${table} ADD COLUMN `).test(s));
       const ddl = [create, ...adds].join('\n');
       for (const col of DOMAIN_COLUMNS[table]) {
