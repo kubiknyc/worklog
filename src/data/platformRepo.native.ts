@@ -82,11 +82,9 @@ export async function reconcileDbOwnership(db: Db): Promise<void> {
   }
   if (sessionUserId === null) return;
 
-  const ownerRow = await first<{ value: string }>(
-    db,
-    `SELECT value FROM sync_meta WHERE key = ?`,
-    [OWNER_META_KEY],
-  );
+  const ownerRow = await first<{ value: string }>(db, `SELECT value FROM sync_meta WHERE key = ?`, [
+    OWNER_META_KEY,
+  ]);
   if (shouldWipeLocalData(ownerRow?.value ?? null, sessionUserId)) {
     await tx(db, async () => {
       for (const table of LOCAL_DATA_TABLES) {
@@ -110,7 +108,9 @@ export async function reconcileDbOwnership(db: Db): Promise<void> {
  */
 export async function seedReferenceMirror(db: Db): Promise<void> {
   try {
-    const projects = await supabase.from('projects').select('id, name, address, timezone, lat, lng');
+    const projects = await supabase
+      .from('projects')
+      .select('id, name, address, timezone, lat, lng');
     if (!projects.error && projects.data) {
       for (const p of projects.data) {
         await run(
@@ -135,7 +135,9 @@ export async function seedReferenceMirror(db: Db): Promise<void> {
       }
     }
 
-    const members = await supabase.from('project_members').select('project_id, user_id, role, created_at');
+    const members = await supabase
+      .from('project_members')
+      .select('project_id, user_id, role, created_at');
     if (!members.error && members.data) {
       for (const m of members.data) {
         await run(

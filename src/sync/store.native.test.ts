@@ -30,13 +30,24 @@ function fakeDb() {
     cursors,
     async runAsync(sql: string, params: readonly unknown[] = []): Promise<void> {
       if (/INSERT OR IGNORE INTO sync_mutations/i.test(sql)) {
-        const [client_id, kind, payload, created_at, attempts, status, last_error] = params as never[];
+        const [client_id, kind, payload, created_at, attempts, status, last_error] =
+          params as never[];
         if (rows.some((r) => r.client_id === client_id)) return; // OR IGNORE
-        rows.push({ seq: ++seq, client_id, kind, payload, created_at, attempts, status, last_error });
+        rows.push({
+          seq: ++seq,
+          client_id,
+          kind,
+          payload,
+          created_at,
+          attempts,
+          status,
+          last_error,
+        });
         return;
       }
       if (/INSERT INTO sync_mutations[\s\S]*ON CONFLICT \(client_id\) DO UPDATE/i.test(sql)) {
-        const [client_id, kind, payload, created_at, attempts, status, last_error] = params as never[];
+        const [client_id, kind, payload, created_at, attempts, status, last_error] =
+          params as never[];
         const existing = rows.find((r) => r.client_id === client_id);
         if (existing) {
           // DO UPDATE SET payload=excluded, status='pending', attempts=0, last_error=NULL
@@ -46,10 +57,21 @@ function fakeDb() {
           existing.last_error = null;
           return;
         }
-        rows.push({ seq: ++seq, client_id, kind, payload, created_at, attempts, status, last_error });
+        rows.push({
+          seq: ++seq,
+          client_id,
+          kind,
+          payload,
+          created_at,
+          attempts,
+          status,
+          last_error,
+        });
         return;
       }
-      if (/UPDATE sync_mutations SET status = 'pending', attempts = 0, last_error = NULL/i.test(sql)) {
+      if (
+        /UPDATE sync_mutations SET status = 'pending', attempts = 0, last_error = NULL/i.test(sql)
+      ) {
         const [client_id] = params as string[];
         const r = rows.find((x) => x.client_id === client_id);
         if (r) {
@@ -121,7 +143,12 @@ describe('store.native mutation store', () => {
     const store = createMutationStore(db as never);
     // First edit, then it parks (simulate a permanent failure via replace).
     await store.enqueueCoalescing(updateSection('r1', 'crew', 'first'));
-    await store.replace({ ...updateSection('r1', 'crew', 'first'), attempts: 5, status: 'parked', lastError: 'boom' });
+    await store.replace({
+      ...updateSection('r1', 'crew', 'first'),
+      attempts: 5,
+      status: 'parked',
+      lastError: 'boom',
+    });
     // A fresh user edit must supersede the parked mutation.
     await store.enqueueCoalescing(updateSection('r1', 'crew', 'second'));
 
@@ -139,7 +166,12 @@ describe('store.native mutation store', () => {
     const store = createMutationStore(db as never);
     await store.enqueue(updateSection('r1', 'crew', 'a'));
     await store.enqueue(updateSection('r1', 'safety', 'b'));
-    await store.replace({ ...updateSection('r1', 'crew', 'a'), attempts: 1, status: 'parked', lastError: 'x' });
+    await store.replace({
+      ...updateSection('r1', 'crew', 'a'),
+      attempts: 1,
+      status: 'parked',
+      lastError: 'x',
+    });
     const pending = await store.pending();
     expect(pending.map((m) => m.clientId)).toEqual(['r1:safety']);
   });
@@ -148,7 +180,12 @@ describe('store.native mutation store', () => {
     const db = fakeDb();
     const store = createMutationStore(db as never);
     await store.enqueue(updateSection('r1', 'crew', 'a'));
-    await store.replace({ ...updateSection('r1', 'crew', 'a'), attempts: 5, status: 'parked', lastError: 'x' });
+    await store.replace({
+      ...updateSection('r1', 'crew', 'a'),
+      attempts: 5,
+      status: 'parked',
+      lastError: 'x',
+    });
     await store.unpark('r1:crew');
     expect(db.rows[0].status).toBe('pending');
     expect(db.rows[0].attempts).toBe(0);

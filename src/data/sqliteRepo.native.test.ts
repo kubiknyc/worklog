@@ -23,7 +23,15 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
   async function runAsync(sql: string, params: readonly unknown[] = []): Promise<void> {
     if (/INSERT INTO daily_reports/i.test(sql)) {
       const [id, project_id, report_date] = params as string[];
-      tables.daily_reports.push({ id, project_id, report_date, status: 'draft', _dirty: 1, has_delay: 0, has_incident: 0 });
+      tables.daily_reports.push({
+        id,
+        project_id,
+        report_date,
+        status: 'draft',
+        _dirty: 1,
+        has_delay: 0,
+        has_incident: 0,
+      });
     } else if (/INSERT OR IGNORE INTO report_weather/i.test(sql)) {
       const [report_id] = params as string[];
       if (!tables.report_weather.some((r) => r.report_id === report_id)) {
@@ -32,7 +40,13 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
     } else if (/INSERT INTO report_weather/i.test(sql)) {
       const [report_id, override_condition, override_temp_f] = params as unknown[];
       const existing = tables.report_weather.find((r) => r.report_id === report_id);
-      const next = { report_id, weather_source: 'manual', override_condition, override_temp_f, _dirty: 1 };
+      const next = {
+        report_id,
+        weather_source: 'manual',
+        override_condition,
+        override_temp_f,
+        _dirty: 1,
+      };
       if (existing) Object.assign(existing, next);
       else tables.report_weather.push(next);
     } else if (/INSERT INTO report_sections/i.test(sql)) {
@@ -56,8 +70,17 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
       const [id, report_id, trade, area, note] = params as unknown[];
       tables.report_work_performed.push({ id, report_id, trade, area, note });
     } else if (/INSERT INTO report_delays/i.test(sql)) {
-      const [id, report_id, cause, responsible_party, duration_hours, is_ongoing, note] = params as unknown[];
-      tables.report_delays.push({ id, report_id, cause, responsible_party, duration_hours, is_ongoing, note });
+      const [id, report_id, cause, responsible_party, duration_hours, is_ongoing, note] =
+        params as unknown[];
+      tables.report_delays.push({
+        id,
+        report_id,
+        cause,
+        responsible_party,
+        duration_hours,
+        is_ongoing,
+        note,
+      });
     } else if (/INSERT INTO report_safety_observations/i.test(sql)) {
       const [id, report_id, obs_type, description, is_incident] = params as unknown[];
       tables.report_safety_observations.push({ id, report_id, obs_type, description, is_incident });
@@ -68,13 +91,19 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
     } else if (/UPDATE daily_reports[\s\S]*has_incident/i.test(sql)) {
       const [reportId] = params as string[];
       const dr = tables.daily_reports.find((r) => r.id === reportId);
-      if (dr) dr.has_incident = tables.report_safety_observations.some((r) => r.report_id === reportId && r.is_incident === 1) ? 1 : 0;
+      if (dr)
+        dr.has_incident = tables.report_safety_observations.some(
+          (r) => r.report_id === reportId && r.is_incident === 1,
+        )
+          ? 1
+          : 0;
     }
   }
 
   return {
     tables,
-    getAllAsync: async (sql: string): Promise<Row[]> => (/FROM projects/i.test(sql) ? tables.projects : []),
+    getAllAsync: async (sql: string): Promise<Row[]> =>
+      /FROM projects/i.test(sql) ? tables.projects : [],
     getFirstAsync: async (sql: string, params: readonly unknown[] = []): Promise<Row | null> => {
       if (!/FROM daily_reports/i.test(sql)) return null;
       if (/WHERE id = \?/i.test(sql)) {
@@ -82,7 +111,11 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
         return tables.daily_reports.find((r) => r.id === id) ?? null;
       }
       const [projectId, reportDate] = params;
-      return tables.daily_reports.find((r) => r.project_id === projectId && r.report_date === reportDate) ?? null;
+      return (
+        tables.daily_reports.find(
+          (r) => r.project_id === projectId && r.report_date === reportDate,
+        ) ?? null
+      );
     },
     runAsync,
     withTransactionAsync: async (fn: () => Promise<void>): Promise<void> => fn(),
@@ -91,7 +124,16 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
 
 // ── In-memory MutationStore fake ──────────────────────────────────────────────
 function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: string[] } {
-  const map = new Map<string, { clientId: string; status: string; attempts: number; lastError: string | null; payload: unknown }>();
+  const map = new Map<
+    string,
+    {
+      clientId: string;
+      status: string;
+      attempts: number;
+      lastError: string | null;
+      payload: unknown;
+    }
+  >();
   const kinds: string[] = [];
   return {
     map,
@@ -99,12 +141,24 @@ function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: st
     async enqueue(m) {
       kinds.push('enqueue');
       if (!map.has(m.clientId)) {
-        map.set(m.clientId, { clientId: m.clientId, status: m.status, attempts: m.attempts, lastError: m.lastError, payload: m.payload });
+        map.set(m.clientId, {
+          clientId: m.clientId,
+          status: m.status,
+          attempts: m.attempts,
+          lastError: m.lastError,
+          payload: m.payload,
+        });
       }
     },
     async enqueueCoalescing(m) {
       kinds.push('coalesce');
-      map.set(m.clientId, { clientId: m.clientId, status: 'pending', attempts: 0, lastError: null, payload: m.payload });
+      map.set(m.clientId, {
+        clientId: m.clientId,
+        status: 'pending',
+        attempts: 0,
+        lastError: null,
+        payload: m.payload,
+      });
     },
     async pending() {
       return [...map.values()].filter((m) => m.status === 'pending') as never;
@@ -113,7 +167,13 @@ function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: st
       return [...map.values()] as never;
     },
     async replace(m) {
-      map.set(m.clientId, { clientId: m.clientId, status: m.status, attempts: m.attempts, lastError: m.lastError, payload: m.payload });
+      map.set(m.clientId, {
+        clientId: m.clientId,
+        status: m.status,
+        attempts: m.attempts,
+        lastError: m.lastError,
+        payload: m.payload,
+      });
     },
     async remove(id) {
       map.delete(id);
@@ -128,7 +188,11 @@ function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: st
 describe('sqliteRepo reads', () => {
   it('lists projects', async () => {
     const repo = createSqliteRepo(
-      fakeDb({ projects: [{ id: 'p1', name: 'Site A', address: null, timezone: null, lat: null, lng: null }] }) as never,
+      fakeDb({
+        projects: [
+          { id: 'p1', name: 'Site A', address: null, timezone: null, lat: null, lng: null },
+        ],
+      }) as never,
       fakeMutations(),
     );
     expect(await repo.listProjects()).toEqual([
@@ -155,7 +219,9 @@ describe('sqliteRepo createReport', () => {
     const stored = db.tables.daily_reports.find((r) => r.id === row.id);
     expect(stored?._dirty).toBe(1);
     // clientId of a create_report is the report id (doc 06 §A).
-    const m = mutations.map.get(row.id) as { payload: { kind: string; data: { reportId: string } } };
+    const m = mutations.map.get(row.id) as {
+      payload: { kind: string; data: { reportId: string } };
+    };
     expect(m.payload.kind).toBe('create_report');
     expect(m.payload.data.reportId).toBe(row.id);
   });
@@ -193,11 +259,22 @@ describe('sqliteRepo updateSection', () => {
     await repo.updateSection(
       'r1',
       'crew',
-      { rows: [{ id: 'c1', trade: 'Electrician', headcount: 3, hours: 8, is_carried_forward: false }] },
+      {
+        rows: [
+          { id: 'c1', trade: 'Electrician', headcount: 3, hours: 8, is_carried_forward: false },
+        ],
+      },
       false,
     );
     expect(db.tables.report_crew).toEqual([
-      { id: 'c1', report_id: 'r1', trade: 'Electrician', headcount: 3, hours: 8, is_carried_forward: 0 },
+      {
+        id: 'c1',
+        report_id: 'r1',
+        trade: 'Electrician',
+        headcount: 3,
+        hours: 8,
+        is_carried_forward: 0,
+      },
     ]);
     // A second full-replacement edit replaces the child rows, never appends.
     await repo.updateSection(
@@ -210,13 +287,34 @@ describe('sqliteRepo updateSection', () => {
   });
 
   it('(e) recomputes has_delay and has_incident from the exploded child rows', async () => {
-    const db = fakeDb({ daily_reports: [{ id: 'r1', project_id: 'p1', report_date: '2026-07-19', status: 'draft', has_delay: 0, has_incident: 0 }] });
+    const db = fakeDb({
+      daily_reports: [
+        {
+          id: 'r1',
+          project_id: 'p1',
+          report_date: '2026-07-19',
+          status: 'draft',
+          has_delay: 0,
+          has_incident: 0,
+        },
+      ],
+    });
     const repo = createSqliteRepo(db as never, fakeMutations());
 
-    await repo.updateSection('r1', 'delays', { rows: [{ id: 'd1', cause: 'Weather', is_ongoing: false }] }, false);
+    await repo.updateSection(
+      'r1',
+      'delays',
+      { rows: [{ id: 'd1', cause: 'Weather', is_ongoing: false }] },
+      false,
+    );
     expect(db.tables.daily_reports[0].has_delay).toBe(1);
 
-    await repo.updateSection('r1', 'safety', { rows: [{ id: 's1', obs_type: 'incident', is_incident: true }] }, false);
+    await repo.updateSection(
+      'r1',
+      'safety',
+      { rows: [{ id: 's1', obs_type: 'incident', is_incident: true }] },
+      false,
+    );
     expect(db.tables.daily_reports[0].has_incident).toBe(1);
 
     // Clearing the section flips the flag back off.
@@ -232,7 +330,10 @@ describe('sqliteRepo updateSection', () => {
     await repo.updateSection('r1', 'deliveries', { entries: ['second'] }, false);
 
     expect(mutations.map.size).toBe(1);
-    const m = mutations.map.get('r1:deliveries') as { status: string; payload: { data: { content: { entries: string[] } } } };
+    const m = mutations.map.get('r1:deliveries') as {
+      status: string;
+      payload: { data: { content: { entries: string[] } } };
+    };
     expect(m.status).toBe('pending');
     expect(m.payload.data.content.entries).toEqual(['second']);
     expect(mutations.kinds.every((k) => k === 'coalesce')).toBe(true);
