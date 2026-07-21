@@ -19,6 +19,11 @@ export { ToastProvider, useToast, type ToastApi, type UndoableToastOptions } fro
 // Section-input scaffolding + static pick lists (report-write path).
 export { SectionSheetScaffold } from './report/SectionSheetScaffold';
 export {
+  useSectionDraft,
+  SECTION_DRAFT_DEBOUNCE_MS,
+  type SectionDraft,
+} from './report/useSectionDraft';
+export {
   TRADES,
   DELIVERY_UNITS,
   DELAY_CAUSES,

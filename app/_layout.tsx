@@ -10,7 +10,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
 
 import { AuthProvider } from '../src/auth';
+import { ToastProvider } from '../src/components';
 import { RepositoryProvider } from '../src/data';
+import { ActiveProjectProvider } from '../src/project';
 import { FONT_MAP, ThemeProvider, useThemeContext } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -42,9 +44,19 @@ export default function RootLayout() {
     <ThemeProvider>
       <ThemeHydrationGate>
         <AuthProvider>
-          <RepositoryProvider>
-            <Stack screenOptions={{ headerShown: false }} />
-          </RepositoryProvider>
+          {/* ActiveProjectProvider needs the session (userId scopes its
+              persisted key, memberships validate the choice) so it sits INSIDE
+              AuthProvider — but it holds ids only, never data, so it stays
+              OUTSIDE RepositoryProvider and its native hydration gate.
+              ToastProvider is innermost of the providers so its pill can
+              overlay every screen the Stack renders. */}
+          <ActiveProjectProvider>
+            <RepositoryProvider>
+              <ToastProvider>
+                <Stack screenOptions={{ headerShown: false }} />
+              </ToastProvider>
+            </RepositoryProvider>
+          </ActiveProjectProvider>
         </AuthProvider>
       </ThemeHydrationGate>
     </ThemeProvider>
