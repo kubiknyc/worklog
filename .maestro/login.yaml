@@ -1,0 +1,48 @@
+# Auth smoke test — the one end-to-end path that is fully built as of M2.
+#
+# Covers: cold launch -> AuthSplash while the session restores -> login screen
+# -> real Supabase email/password sign-in -> layout guard redirects into tabs.
+#
+# PRECONDITIONS
+#   1. A DEV build. The demo-account rows are gated on `__DEV__` and on
+#      EXPO_PUBLIC_DEMO_LOGINS != 'off' (app/(auth)/login.tsx). A release
+#      build has no demo rows and this flow's fast path will not appear.
+#   2. The local Supabase stack running in ../jobsight-backend
+#      (`supabase start`), seeded with the demo accounts from seed.sql.
+#      Sign-in is a real network call — with no backend it fails.
+#
+# Run:  maestro test .maestro/login.yaml
+appId: com.jobsight.worklog
+---
+- launchApp:
+    clearState: true
+
+# Login screen. Asserting the wordmark and heading rather than a testID
+# because the app currently defines exactly one testID (Chip.tsx).
+- assertVisible: 'WorkLog'
+- assertVisible: 'Sign in'
+
+# Fields are addressed by accessibilityLabel, which login.tsx sets explicitly.
+- assertVisible: 'Email'
+- assertVisible: 'Password'
+- assertVisible: 'Log in'
+
+# Fast path: tap the seeded Superintendent demo row, which fills both fields
+# and submits in one action (onDemoPress).
+- tapOn: 'Superintendent'
+
+# The layout guard redirects on success; login.tsx never navigates manually.
+# Generous timeout: this is a real GoTrue round-trip, not a mock.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 20000
+
+# Landed in the tab stack. NOTE: 'Today — M2' is placeholder copy from the
+# 12-line stub at app/(tabs)/index.tsx. Replace this assertion with a real
+# report-screen element as soon as that screen is implemented.
+- assertVisible: 'Today — M2'
+
+# Tab bar is present and navigable.
+- assertVisible: 'History'
+- assertVisible: 'Photos'
+- assertVisible: 'Settings'
