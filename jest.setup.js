@@ -6,3 +6,9 @@
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
+
+// expo-crypto's randomUUID calls the native ExpoCrypto module, which jest-expo
+// doesn't provide; back it with Node's own CSPRNG UUID (same as PunchLog).
+jest.mock('expo-crypto', () => ({
+  randomUUID: () => require('node:crypto').randomUUID(),
+}));

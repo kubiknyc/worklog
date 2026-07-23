@@ -20,6 +20,23 @@ export function activeProjectKey(userId: string): string {
   return `${ACTIVE_PROJECT_KEY_PREFIX}${userId}`;
 }
 
+/**
+ * Strip contact PII from the account blob before it lands in plaintext
+ * AsyncStorage: `profile.email` / `profile.phone` never persist. Display
+ * email is backfilled from the SecureStore-held session on offline restore,
+ * so the cache needs neither. Structural generic so this module doesn't
+ * import AuthProvider's types (which would cycle).
+ */
+export function pruneAccountForCache<
+  P extends { readonly email?: unknown; readonly phone?: unknown },
+  A extends { readonly profile: P | null },
+>(account: A): Omit<A, 'profile'> & { readonly profile: Omit<P, 'email' | 'phone'> | null } {
+  const { profile } = account;
+  if (!profile) return { ...account, profile: null };
+  const { email: _email, phone: _phone, ...pruned } = profile;
+  return { ...account, profile: pruned };
+}
+
 const SWEPT_PREFIXES = [ACCOUNT_KEY_PREFIX, ACTIVE_PROJECT_KEY_PREFIX];
 
 /**

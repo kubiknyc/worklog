@@ -12,6 +12,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
+import { useAuth } from '../auth';
 import { useTheme } from '../theme';
 import { createPlatformRepository } from './platformRepo';
 import type { Repository } from './types';
@@ -44,6 +45,12 @@ interface Props {
 
 export function RepositoryProvider({ children, repository }: Props) {
   const override = repository ?? null;
+  // The native repo is scoped to the signed-in user: createPlatformRepository()
+  // runs reconcileDbOwnership(), which wipes a previous owner's cached rows
+  // before any read/write can touch them. Keying the (re)build on userId is
+  // what closes the in-process account-switch leak — a sign-out -> different-
+  // user sign-in must rebuild, or the new user inherits the old user's cache.
+  const { userId } = useAuth();
   const [resolved, setResolved] = useState<Repository | null>(() => {
     if (override) return override;
     // Web is online-only: ready on first render, no hydration gate.
@@ -52,8 +59,14 @@ export function RepositoryProvider({ children, repository }: Props) {
   });
 
   useEffect(() => {
-    if (resolved) return; // override or web already resolved in initial state
+    // Override (tests/explicit) and web (online-only, RLS-enforced, no local
+    // cache to reconcile) never rebuild on account change.
+    if (override || Platform.OS === 'web') return;
+
     let active = true;
+    // Gate children while the switch reconciles ownership, so the previous
+    // user's repository is never readable during the rebuild.
+    setResolved(null);
     createPlatformRepository()
       .then((repo) => {
         if (active) setResolved(repo);
@@ -73,7 +86,9 @@ export function RepositoryProvider({ children, repository }: Props) {
     return () => {
       active = false;
     };
-  }, [resolved]);
+    // userId in deps: re-run (rebuild + reconcile) whenever the account
+    // changes. A token refresh keeps the same userId and does not re-run.
+  }, [userId, override]);
 
   if (!resolved) return <HydrationGate />;
 

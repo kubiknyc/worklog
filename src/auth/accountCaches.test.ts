@@ -6,7 +6,12 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { accountKey, activeProjectKey, clearAccountCaches } from './accountCaches';
+import {
+  accountKey,
+  activeProjectKey,
+  clearAccountCaches,
+  pruneAccountForCache,
+} from './accountCaches';
 
 beforeEach(async () => {
   await AsyncStorage.clear();
@@ -41,4 +46,30 @@ test('is best-effort: a storage failure resolves without throwing', async () => 
     .mockRejectedValueOnce(new Error('storage unavailable'));
   await expect(clearAccountCaches()).resolves.toBeUndefined();
   spy.mockRestore();
+});
+
+describe('pruneAccountForCache', () => {
+  test('strips email and phone from the profile, keeps everything else', () => {
+    const pruned = pruneAccountForCache({
+      profile: { id: 'u1', full_name: 'User One', email: 'u1@example.com', phone: '555-0100' },
+      memberships: [{ project_id: 'p1', role: 'super' }],
+    });
+    expect(pruned.profile).toEqual({ id: 'u1', full_name: 'User One' });
+    expect(pruned.profile).not.toHaveProperty('email');
+    expect(pruned.profile).not.toHaveProperty('phone');
+    expect(pruned.memberships).toEqual([{ project_id: 'p1', role: 'super' }]);
+  });
+
+  test('passes a null profile through unchanged', () => {
+    const pruned = pruneAccountForCache({ profile: null, memberships: [] });
+    expect(pruned).toEqual({ profile: null, memberships: [] });
+  });
+
+  test('does not mutate the input account', () => {
+    const account = {
+      profile: { id: 'u1', email: 'u1@example.com', phone: null },
+    };
+    pruneAccountForCache(account);
+    expect(account.profile).toEqual({ id: 'u1', email: 'u1@example.com', phone: null });
+  });
 });

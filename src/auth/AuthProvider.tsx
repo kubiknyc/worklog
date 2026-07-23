@@ -27,7 +27,7 @@ import type { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { supabase } from '../supabase/client';
-import { accountKey, clearAccountCaches } from './accountCaches';
+import { accountKey, clearAccountCaches, pruneAccountForCache } from './accountCaches';
 import type { Tables, TablesUpdate } from '../supabase/types';
 import { mergeEffectiveMemberships, type CompanyMembership, type Membership } from './roles';
 
@@ -180,11 +180,19 @@ async function loadAccount(userId: string): Promise<AccountData> {
   };
 }
 
+/** The persisted variant of AccountData: contact PII pruned before the blob
+ *  lands in plaintext AsyncStorage (Phase-4 review deferral (a)). Blobs written
+ *  before the prune may still carry email/phone at runtime — restore overwrites
+ *  both fields, so no cache-key bump or migration is needed. */
+type CachedAccountData = Omit<AccountData, 'profile'> & {
+  readonly profile: Omit<Profile, 'email' | 'phone'> | null;
+};
+
 /** Last account load persisted on this device, or null. Used when offline. */
-async function cachedAccount(userId: string): Promise<AccountData | null> {
+async function cachedAccount(userId: string): Promise<CachedAccountData | null> {
   try {
     const raw = await AsyncStorage.getItem(accountKey(userId));
-    return raw ? (JSON.parse(raw) as AccountData) : null;
+    return raw ? (JSON.parse(raw) as CachedAccountData) : null;
   } catch {
     return null;
   }
@@ -220,7 +228,10 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       // on the generation token so a slow load resolving after sign-out can't
       // re-persist PII that signOut() just cleared.
       if (sessionGenRef.current === gen) {
-        void AsyncStorage.setItem(accountKey(session.user.id), JSON.stringify(account));
+        void AsyncStorage.setItem(
+          accountKey(session.user.id),
+          JSON.stringify(pruneAccountForCache(account)),
+        );
       }
     } catch {
       // The account fetch failed. Before falling back to cached data,
@@ -248,10 +259,16 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       // memberships array itself already carries the merged super entries, so
       // an offline admin keeps their powers without a cache-key bump.
       const cached = await cachedAccount(session.user.id);
+      // The cache is PII-pruned: email is backfilled from the session (held in
+      // SecureStore), phone has no offline source and reads as absent until
+      // the next live load.
+      const restoredProfile: Profile | null = cached?.profile
+        ? { ...cached.profile, email: session.user.email ?? '', phone: null }
+        : null;
       commit({
         status: 'authed',
         session,
-        profile: cached?.profile ?? null,
+        profile: restoredProfile,
         memberships: cached?.memberships ?? [],
         companyMemberships: cached?.companyMemberships ?? [],
         projectCompanies: cached?.projectCompanies ?? {},
@@ -298,17 +315,28 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
 
   const signOut = useCallback(async (): Promise<void> => {
     // On success onAuthStateChange emits SIGNED_OUT and drives the transition.
-    const { error } = await supabase.auth.signOut();
+    // Both failure shapes — a returned `error` AND a thrown rejection — must
+    // converge on the same local cleanup below: a thrown network error that
+    // skipped clearAccountCaches() would leave cached PII on the device.
+    let revokeFailed = false;
+    try {
+      const { error } = await supabase.auth.signOut();
+      revokeFailed = error !== null;
+      if (error) {
+        console.warn('Sign-out request failed; clearing local session state anyway.', error);
+      }
+    } catch (error: unknown) {
+      revokeFailed = true;
+      console.warn('Sign-out request failed; clearing local session state anyway.', error);
+    }
     // Local cleanup happens regardless of the server call's outcome: the user
     // asked to leave this device, so cached PII must go.
     await clearAccountCaches();
-    if (error) {
-      // The revoke request failed (e.g. offline) and supabase-js keeps the
-      // stored session, so SIGNED_OUT never fires. No toast surface is wired
-      // up yet (M0), so log for diagnostics and force the local signed-out
-      // transition so the UI still lands on the (auth) stack with caches
-      // cleared.
-      console.warn('Sign-out request failed; clearing local session state anyway.', error);
+    if (revokeFailed) {
+      // The revoke request didn't land (e.g. offline) and supabase-js keeps
+      // the stored session, so SIGNED_OUT never fires. No toast surface is
+      // wired up yet (M0) — force the local signed-out transition so the UI
+      // still lands on the (auth) stack with caches cleared.
       await applySession(null);
     }
   }, [applySession]);

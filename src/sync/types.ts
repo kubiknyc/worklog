@@ -40,7 +40,8 @@ export type PhotoSource = 'camera' | 'library';
  * Section content is authored by the section editor sheets; its per-section
  * shape is a data-layer concern, so the queue stores it opaquely.
  */
-export type Json = string | number | boolean | null | { readonly [key: string]: Json } | readonly Json[];
+export type Json =
+  string | number | boolean | null | { readonly [key: string]: Json } | readonly Json[];
 
 /**
  * The `content` shape when `UpdateSectionPayload.section === 'weather'`:
@@ -223,6 +224,16 @@ export type ErrorClass = 'retryable' | 'permanent' | 'evict' | 'offline';
 /** Persistence seam for the queue. Implemented by `store.native`; never in Jest. */
 export interface MutationStore {
   enqueue(m: Mutation): Promise<void>;
+  /**
+   * update_section coalescing (doc 06 §A): upsert the payload keyed by
+   * `clientId` (`${reportId}:${section}`), resetting `status='pending'`,
+   * `attempts=0`, `last_error=NULL`. A fresh user edit therefore supersedes a
+   * parked mutation's stale payload AND earns a fresh retry ceiling — one
+   * section is ever at most one queued mutation, always carrying the latest
+   * content. `createdAt`/`seq` are preserved so the section keeps its original
+   * drain position.
+   */
+  enqueueCoalescing(m: Mutation): Promise<void>;
   /** Oldest-first, `pending` only. */
   pending(): Promise<Mutation[]>;
   /** All mutations (for the sync-status UI), newest issue first. */

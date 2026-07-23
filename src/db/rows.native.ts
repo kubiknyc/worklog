@@ -35,8 +35,16 @@ export function run(db: Db, sql: string, params: BindValue[] = []) {
  */
 let txQueue: Promise<unknown> = Promise.resolve();
 
-/** Run `fn` inside a transaction (committed on resolve, rolled back on throw). */
-export function tx(db: Db, fn: () => Promise<void>): Promise<void> {
+/**
+ * Run `fn` inside a transaction (committed on resolve, rolled back on throw).
+ * The `db` parameter is narrowed to just `withTransactionAsync` (the only method
+ * this uses) so callers holding a smaller `Pick` — the repository's `Db` seam,
+ * and its widened test fake — can pass it without a cast.
+ */
+export function tx(
+  db: Pick<SQLiteDatabase, 'withTransactionAsync'>,
+  fn: () => Promise<void>,
+): Promise<void> {
   const turn = txQueue.then(() => db.withTransactionAsync(fn));
   txQueue = turn.catch(() => {}); // a rolled-back transaction must not wedge the queue
   return turn;
