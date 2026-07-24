@@ -87,10 +87,7 @@ export function createSqliteRepo(
 
   /** The unserialized get-or-create body; callers reach it only through the
    * per-(project, date) lock in the createReport method above. */
-  async function getOrCreateReport(
-    projectId: string,
-    reportDate: string,
-  ): Promise<DailyReportRow> {
+  async function getOrCreateReport(projectId: string, reportDate: string): Promise<DailyReportRow> {
     // A local hit short-circuits with no INSERT and no enqueue.
     const existing = await db.getFirstAsync<DailyReportRow>(
       `SELECT id, project_id, report_date, status FROM daily_reports
