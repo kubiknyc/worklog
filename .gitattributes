@@ -1,0 +1,19 @@
+# Normalize line endings across platforms.
+# Repo stores LF; working tree checks out LF everywhere, matching what
+# editors/formatters (Prettier) produce on this project. Prevents phantom
+# CRLF<->LF diffs that showed files as "modified" with no content change.
+* text=auto eol=lf
+
+# Binary assets — never apply line-ending normalization.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.pdf   binary
+*.keystore binary
