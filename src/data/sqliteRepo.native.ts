@@ -76,6 +76,65 @@ export function createSqliteRepo(
   mutations: MutationStore,
   nudge: () => void = noop,
 ): Repository {
+  // Serializes get-or-create per (project, date). The existence SELECT and the
+  // INSERT in createReport must be atomic against a concurrent createReport for
+  // the same day (a double-tap before the UI disables), or both pass the check
+  // and insert duplicate rows. The local schema has no UNIQUE(project_id,
+  // report_date) by design (the collision/reparent path needs loser+winner to
+  // coexist briefly — see schema.ts), so the guard lives here, in-process,
+  // which is exactly the race's scope: one JS runtime interleaving at awaits.
+  const createReportLocks = new Map<string, Promise<DailyReportRow>>();
+
+  /** The unserialized get-or-create body; callers reach it only through the
+   * per-(project, date) lock in the createReport method above. */
+  async function getOrCreateReport(
+    projectId: string,
+    reportDate: string,
+  ): Promise<DailyReportRow> {
+    // A local hit short-circuits with no INSERT and no enqueue.
+    const existing = await db.getFirstAsync<DailyReportRow>(
+      `SELECT id, project_id, report_date, status FROM daily_reports
+         WHERE project_id = ? AND report_date = ?`,
+      [projectId, reportDate],
+    );
+    if (existing) return existing;
+
+    const reportId = uuidv4(); // client uuid = final server id (and the mutation's clientId)
+    const row: DailyReportRow = {
+      id: reportId,
+      project_id: projectId,
+      report_date: reportDate,
+      status: 'draft',
+    };
+
+    // One transaction: the local row, its 1:1 weather seed (mirrors the RPC),
+    // and the queued create_report mutation commit atomically — a kill mid-way
+    // can never leave a row without its mutation (a lost write) or vice versa.
+    await tx(db, async () => {
+      await db.runAsync(
+        `INSERT INTO daily_reports (id, project_id, report_date, status, _dirty)
+           VALUES (?, ?, ?, 'draft', 1)`,
+        [reportId, projectId, reportDate],
+      );
+      await db.runAsync(
+        `INSERT OR IGNORE INTO report_weather (report_id, weather_source) VALUES (?, 'none')`,
+        [reportId],
+      );
+      await mutations.enqueue(
+        newMutation(
+          reportId,
+          {
+            kind: 'create_report',
+            data: { reportId, projectId, reportDate, carryForwardSourceReportId: null },
+          },
+          new Date().toISOString(),
+        ),
+      );
+    });
+    nudge();
+    return row;
+  }
+
   // ── Relational explode: delete-and-insert child rows, per worklog_apply_section ──
   async function explode(reportId: string, section: SectionKind, content: Json): Promise<void> {
     const rows = rowsOf(content);
@@ -246,49 +305,29 @@ export function createSqliteRepo(
 
     // ── Writes ──────────────────────────────────────────────────────────────
     async createReport(projectId: string, reportDate: string): Promise<DailyReportRow> {
-      // Get-or-create: never double-create for the same (project, date). A local
-      // hit short-circuits with no INSERT and no enqueue.
-      const existing = await db.getFirstAsync<DailyReportRow>(
-        `SELECT id, project_id, report_date, status FROM daily_reports
-         WHERE project_id = ? AND report_date = ?`,
-        [projectId, reportDate],
-      );
-      if (existing) return existing;
-
-      const reportId = uuidv4(); // client uuid = final server id (and the mutation's clientId)
-      const row: DailyReportRow = {
-        id: reportId,
-        project_id: projectId,
-        report_date: reportDate,
-        status: 'draft',
-      };
-
-      // One transaction: the local row, its 1:1 weather seed (mirrors the RPC),
-      // and the queued create_report mutation commit atomically — a kill mid-way
-      // can never leave a row without its mutation (a lost write) or vice versa.
-      await tx(db, async () => {
-        await db.runAsync(
-          `INSERT INTO daily_reports (id, project_id, report_date, status, _dirty)
-           VALUES (?, ?, ?, 'draft', 1)`,
-          [reportId, projectId, reportDate],
-        );
-        await db.runAsync(
-          `INSERT OR IGNORE INTO report_weather (report_id, weather_source) VALUES (?, 'none')`,
-          [reportId],
-        );
-        await mutations.enqueue(
-          newMutation(
-            reportId,
-            {
-              kind: 'create_report',
-              data: { reportId, projectId, reportDate, carryForwardSourceReportId: null },
-            },
-            new Date().toISOString(),
-          ),
-        );
-      });
-      nudge();
-      return row;
+      // Get-or-create, serialized per (project, date): a concurrent call for the
+      // same day waits for the in-flight one so its SELECT observes that INSERT,
+      // instead of both passing the check and inserting duplicate rows.
+      const key = `${projectId}\n${reportDate}`;
+      const prior = createReportLocks.get(key);
+      const run = (async (): Promise<DailyReportRow> => {
+        // A failed prior create must not block ours — swallow and attempt anew.
+        if (prior) {
+          try {
+            await prior;
+          } catch {
+            /* prior create failed; fall through and try our own */
+          }
+        }
+        return getOrCreateReport(projectId, reportDate);
+      })();
+      createReportLocks.set(key, run);
+      try {
+        return await run;
+      } finally {
+        // Clear only if still the tail, so a newer queued create isn't dropped.
+        if (createReportLocks.get(key) === run) createReportLocks.delete(key);
+      }
     },
 
     async updateSection(
