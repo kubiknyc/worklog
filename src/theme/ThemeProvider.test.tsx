@@ -63,9 +63,9 @@ it('a change made while hydration is in flight is not clobbered by the stale rea
   // Deferred getItem: capture the resolver so the hydration read completes
   // only after the user has already picked a theme.
   let resolveRead!: (value: string | null) => void;
-  jest.spyOn(AsyncStorage, 'getItem').mockImplementation(
-    () => new Promise<string | null>((resolve) => (resolveRead = resolve)),
-  );
+  jest
+    .spyOn(AsyncStorage, 'getItem')
+    .mockImplementation(() => new Promise<string | null>((resolve) => (resolveRead = resolve)));
 
   await renderProvider();
   expect(latest?.isHydrated).toBe(false);

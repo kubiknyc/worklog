@@ -50,7 +50,9 @@ export function mergeEffectiveMemberships(
   if (adminCompanies.size === 0) return [...pmRows];
 
   const adminProjects = new Set(
-    projects.filter((p) => p.company_id !== null && adminCompanies.has(p.company_id)).map((p) => p.id),
+    projects
+      .filter((p) => p.company_id !== null && adminCompanies.has(p.company_id))
+      .map((p) => p.id),
   );
   const merged: Membership[] = pmRows.map((m) =>
     adminProjects.has(m.project_id) && m.role !== 'super' ? { ...m, role: 'super' } : m,
@@ -81,9 +83,7 @@ export function isSuperOnAnyProject(memberships: readonly Membership[]): boolean
  * The `handle_new_user` trigger inserts a row with an empty `full_name`, so a
  * brand-new user lands on the complete-profile step until they fill it in.
  */
-export function isProfileComplete(
-  profile: Pick<Tables<'profiles'>, 'full_name'> | null,
-): boolean {
+export function isProfileComplete(profile: Pick<Tables<'profiles'>, 'full_name'> | null): boolean {
   return !!profile && profile.full_name.trim().length > 0;
 }
 

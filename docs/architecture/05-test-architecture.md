@@ -317,6 +317,44 @@ Applying the global 80% floor with per-layer targets adjusted for a sync-engine-
 
 ---
 
+### D.1 Interim floor and ratchet plan (added 2026-07-25, M2)
+
+The 80% global floor above is the **target**, not the current gate. Measured at
+`chore/build-workflow` with `collectCoverageFrom` widened from `src/sync/*.ts`
+to all of `src/` (excluding `*.native.*`, `types.ts`, `index.ts`, `fonts.ts`,
+`supabase/client.ts`), actual coverage was:
+
+| Metric | All of `src/` | Global pool (after per-file thresholds are subtracted) |
+|---|---|---|
+| Statements | 64.42% | 58.11% |
+| Branches | 54.40% | 43.19% |
+| Functions | 63.13% | 57.97% |
+| Lines | 66.00% | 60.48% |
+
+Jest subtracts files carrying their own path threshold from the global pool, so
+the right-hand column is what `global` actually gates. The floor is set a few
+points under it (`55/40/57/55`) so CI is green today and any *regression* fails.
+
+**Ratchet, not a resting place.** Raise the floor at each milestone gate:
+
+| Gate | Global floor | What gets it there |
+|---|---|---|
+| M3 (sync engine complete) | 65 / 55 / 68 / 65 | `push/pull.native.ts` mocked-context tests; `engineApi` shape tests |
+| M4 (lifecycle) | 72 / 62 / 74 / 72 | full `lifecycleGuards.test.ts`; `src/data` write-path coverage |
+| M7 (PDF) | **80 / 80 / 80 / 80** — the §D target | `renderReportHtml` suite; `carryForward` suite; component RTL smoke |
+
+The uncovered mass today is concentrated and known: `src/components/` (49.75%
+statements — most presentational components have no test at all),
+`src/data/` (27.21% — `supabaseRepo.ts`, `createProject.ts`, `inviteMember.ts`
+are 0%), and `src/lib/` (2.38% — `errors.ts` and `time.ts` are 0%). `src/lib`
+is the cheapest win and should go first; it is pure and small.
+
+Per §D's own rule: if the global floor fails while every per-module threshold
+passes, code was added outside the table above. Assign it a target — do not
+lower the floor.
+
+---
+
 ## Assumptions register (this document)
 
 - `push/pull.native.ts` accept an injected `SyncContext` (not a module-scope singleton) to enable the mocked-integration seam — verify against PunchLog in Phase 3.
