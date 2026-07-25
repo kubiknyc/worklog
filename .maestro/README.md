@@ -47,6 +47,20 @@ The convention, applied as screens are built rather than retrofitted:
 `PrimaryButton` and `TextField` both accept an optional `testID` and forward it
 — use it rather than asserting on their `label`.
 
+### The guard
+
+`src/maestroSelectors.test.ts` asserts that every `id:` a flow selects on exists
+as a `testID` (or `tabBarButtonTestID`) somewhere in `app/` or `src/`. It runs in
+`npm run verify`, so a rename fails in seconds rather than twenty minutes into a
+cloud build against a real device.
+
+It proves the selector exists in source. It cannot prove the element is on
+screen or that navigation reaches it — that is what the flow itself is for.
+
+testIDs built at runtime (`login-demo-${role}`) can't be found by a literal
+scan, so they are declared in that test's `DYNAMIC_TESTIDS` list along with the
+file that generates them. Add to it rather than loosening the assertion.
+
 ## Blocked: the offline reconciliation flow
 
 The highest-value flow — the one the sync engine exists for — **cannot be
