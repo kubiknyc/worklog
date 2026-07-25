@@ -17,6 +17,11 @@ type Props = {
   readonly disabled?: boolean;
   readonly busy?: boolean;
   readonly tone?: Tone;
+  /**
+   * Stable handle for Maestro flows. Prefer this over asserting on `label` —
+   * user-facing copy is plain language and expected to change (CLAUDE.md).
+   */
+  readonly testID?: string;
 };
 
 export function PrimaryButton({
@@ -25,6 +30,7 @@ export function PrimaryButton({
   disabled = false,
   busy = false,
   tone = 'primary',
+  testID,
 }: Props) {
   const { colors, fonts, radii, sizes, error } = useTheme();
 
@@ -35,6 +41,7 @@ export function PrimaryButton({
 
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: isBlocked, busy }}

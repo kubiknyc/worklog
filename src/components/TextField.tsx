@@ -31,6 +31,11 @@ type Props = {
   readonly keyboardType?: KeyboardTypeOptions;
   /** Right-side slot — reserved mount point for the M8 voice mic (AC-A3). */
   readonly accessory?: ReactNode;
+  /**
+   * Stable handle for Maestro flows. Prefer this over asserting on `label` —
+   * user-facing copy is plain language and expected to change (CLAUDE.md).
+   */
+  readonly testID?: string;
 };
 
 export function TextField({
@@ -42,6 +47,7 @@ export function TextField({
   autoCapitalize = 'sentences',
   keyboardType,
   accessory,
+  testID,
 }: Props) {
   const { colors, fonts, radii, sizes } = useTheme();
 
@@ -52,6 +58,7 @@ export function TextField({
       </Text>
       <View style={styles.inputRow}>
         <TextInput
+          testID={testID}
           accessibilityLabel={label}
           value={value}
           onChangeText={onChangeText}

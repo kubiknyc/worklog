@@ -130,6 +130,7 @@ export default function LoginScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>Email</Text>
             <TextInput
+              testID="login-email"
               accessibilityLabel="Email"
               value={email}
               onChangeText={setEmail}
@@ -146,6 +147,7 @@ export default function LoginScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>Password</Text>
             <TextInput
+              testID="login-password"
               accessibilityLabel="Password"
               value={password}
               onChangeText={setPassword}
@@ -158,10 +160,19 @@ export default function LoginScreen() {
             />
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+          {error ? (
+            <Text testID="login-error" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
+          {notice ? (
+            <Text testID="login-notice" style={styles.notice}>
+              {notice}
+            </Text>
+          ) : null}
 
           <Pressable
+            testID="login-submit"
             onPress={() => void submit(email, password)}
             disabled={submitting}
             style={({ pressed }) => [
@@ -178,6 +189,7 @@ export default function LoginScreen() {
           </Pressable>
 
           <Pressable
+            testID="login-forgot"
             accessibilityRole="button"
             onPress={() => void onForgotPress()}
             disabled={submitting || sendingReset}
@@ -203,6 +215,7 @@ export default function LoginScreen() {
               {DEMO_ACCOUNTS.map((acc) => (
                 <Pressable
                   key={acc.email}
+                  testID={`login-demo-${acc.role.toLowerCase()}`}
                   onPress={() => onDemoPress(acc)}
                   disabled={submitting}
                   style={({ pressed }) => [styles.demoRow, pressed && styles.pressed]}
