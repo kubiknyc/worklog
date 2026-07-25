@@ -23,6 +23,7 @@ type RaisedCameraButtonProps = {
 function RaisedCameraButton({ onPress }: RaisedCameraButtonProps) {
   return (
     <Pressable
+      testID="tab-camera"
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel="Capture photo"
@@ -56,6 +57,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Today',
+          tabBarButtonTestID: 'tab-today',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="calendar-today" color={color} size={size} />
           ),
@@ -65,6 +67,7 @@ export default function TabsLayout() {
         name="history"
         options={{
           title: 'History',
+          tabBarButtonTestID: 'tab-history',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="history" color={color} size={size} />
           ),
@@ -81,6 +84,7 @@ export default function TabsLayout() {
         name="photos"
         options={{
           title: 'Photos',
+          tabBarButtonTestID: 'tab-photos',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="image-multiple" color={color} size={size} />
           ),
@@ -90,6 +94,7 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: 'Settings',
+          tabBarButtonTestID: 'tab-settings',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="cog" color={color} size={size} />
           ),
