@@ -56,18 +56,23 @@ jobs:
   # in favour of cross-repo CI checkout.
   #
   # jobsight-backend is private and this repo is public, so GITHUB_TOKEN cannot
-  # read it. Requires a fine-grained PAT with Contents:read on
-  # kubiknyc/jobsight-backend, stored as the BACKEND_REPO_TOKEN secret:
-  #   gh secret set BACKEND_REPO_TOKEN --repo kubiknyc/worklog
+  # read it. Access is a READ-ONLY DEPLOY KEY rather than a PAT: a deploy key is
+  # scoped to exactly one repository and cannot write, where even a
+  # fine-grained PAT is an account-level credential. The private half lives in
+  # the BACKEND_SSH_KEY secret; the public half is registered on
+  # jobsight-backend as "worklog CI - schema parity (read-only)".
+  #
+  # To rotate: generate a new ed25519 keypair, replace the deploy key on
+  # jobsight-backend, then `gh secret set BACKEND_SSH_KEY --repo kubiknyc/worklog`.
   schema-parity:
     runs-on: ubuntu-latest
     env:
-      BACKEND_TOKEN: ${{ secrets.BACKEND_REPO_TOKEN }}
+      BACKEND_SSH_KEY: ${{ secrets.BACKEND_SSH_KEY }}
     steps:
-      - name: Require the backend token
+      - name: Require the backend deploy key
         run: |
-          if [ -z "$BACKEND_TOKEN" ]; then
-            echo "::error::BACKEND_REPO_TOKEN is not set. Create a fine-grained PAT with Contents:read on kubiknyc/jobsight-backend and run: gh secret set BACKEND_REPO_TOKEN --repo kubiknyc/worklog"
+          if [ -z "$BACKEND_SSH_KEY" ]; then
+            echo "::error::BACKEND_SSH_KEY is not set. Register a read-only deploy key on kubiknyc/jobsight-backend and store its private half: gh secret set BACKEND_SSH_KEY --repo kubiknyc/worklog"
             exit 1
           fi
 
@@ -80,7 +85,7 @@ jobs:
         with:
           repository: kubiknyc/jobsight-backend
           path: .backend
-          token: ${{ secrets.BACKEND_REPO_TOKEN }}
+          ssh-key: ${{ secrets.BACKEND_SSH_KEY }}
           persist-credentials: false
 
       - uses: actions/setup-node@v5
