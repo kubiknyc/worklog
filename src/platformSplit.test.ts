@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const NATIVE_ONLY_MODULES = ['expo-sqlite'];
+const NATIVE_ONLY_MODULES = ['expo-sqlite', '@sentry/react-native', 'expo-updates'];
 const SCAN_ROOTS = ['src', 'app'];
 const SOURCE_RE = /\.(ts|tsx)$/;
 const NATIVE_RE = /\.native\.(ts|tsx)$/;
@@ -33,7 +33,8 @@ describe('platform split', () => {
         const text = fs.readFileSync(file, 'utf8');
         for (const mod of NATIVE_ONLY_MODULES) {
           const importRe = new RegExp(`(from\\s+|require\\()['"]${mod}`, 'm');
-          if (importRe.test(text)) offenders.push(`${path.relative(process.cwd(), file)} imports ${mod}`);
+          if (importRe.test(text))
+            offenders.push(`${path.relative(process.cwd(), file)} imports ${mod}`);
         }
       }
     }

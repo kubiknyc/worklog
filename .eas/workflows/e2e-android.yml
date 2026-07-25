@@ -1,0 +1,26 @@
+# Android E2E on every PR. Builds an emulator-compatible APK from the
+# `e2e-test` profile (demo logins ON — .maestro/login.yaml depends on them)
+# and runs the Maestro flows against it.
+#
+# The `maestro` job type is alpha. Keep this OUT of required status checks
+# until it has proven stable, so an infra flake can't block a merge.
+name: e2e-android
+
+on:
+  pull_request:
+    branches: ['*']
+
+jobs:
+  build_android_for_e2e:
+    type: build
+    params:
+      platform: android
+      profile: e2e-test
+
+  maestro_test:
+    needs: [build_android_for_e2e]
+    type: maestro
+    params:
+      build_id: ${{ needs.build_android_for_e2e.outputs.build_id }}
+      flow_path:
+        - .maestro/login.yaml
