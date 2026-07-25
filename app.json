@@ -25,7 +25,21 @@
       "expo-secure-store",
       "expo-font",
       "expo-sqlite",
-      "expo-asset"
-    ]
+      "expo-asset",
+      "@sentry/react-native"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9ce4c9ea-7dba-48e9-ab2d-ce1519f64300"
+      }
+    },
+    "owner": "kubiknyc",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/9ce4c9ea-7dba-48e9-ab2d-ce1519f64300"
+    }
   }
 }
