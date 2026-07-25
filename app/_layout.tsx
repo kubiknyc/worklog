@@ -12,8 +12,13 @@ import { useEffect, type ReactNode } from 'react';
 import { AuthProvider } from '../src/auth';
 import { ToastProvider } from '../src/components';
 import { RepositoryProvider } from '../src/data';
+import { initObservability } from '../src/lib/observability';
 import { ActiveProjectProvider } from '../src/project';
 import { FONT_MAP, ThemeProvider, useThemeContext } from '../src/theme';
+
+// Before render, so a crash during provider setup is still reported. No-op
+// when EXPO_PUBLIC_SENTRY_DSN is unset (local dev, web export, jest).
+initObservability();
 
 SplashScreen.preventAutoHideAsync();
 
