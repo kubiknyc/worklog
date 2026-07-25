@@ -1,30 +1,28 @@
 # WorkLog M2 — Remaining Section Editor Sheets (design)
 
 > Phase 4 / milestone **M2** ("project bootstrap + report CRUD + 11 section sheets").
-> The data layer (Repository seam) and the report-detail slice already shipped on
-> branch **`m2-report-detail-sections`** (commits `b9556c0` + `157e37c`: report
-> screen, Today wiring, section summaries, and two archetype sheets — Crew,
+> The data layer (Repository seam) and the report-detail slice already shipped
+> (report screen, Today wiring, section summaries, and two archetype sheets — Crew,
 > General notes). This spec covers the **remaining editor sheets** and two design
 > changes agreed during brainstorming.
 
-## Prerequisites (base branch)
+## Prerequisites (base branch) — resolved
 
-Implementation **must build on `m2-report-detail-sections`** — every file in this
-spec's *Modified* / *Removed* list exists only there, not on `main`. This spec
-document was committed on `chore/build-workflow` (which carries unrelated CI /
-PR-template / gates work and does **not** contain the report-detail slice), so
-before execution the two lines must be unified onto one base (merge
-`m2-report-detail-sections` into the working branch, or rebase). A planner or
-executor pointed at `main` or `chore/build-workflow` as-is will find every
-*Modified* target absent. Resolving this branch topology is a prerequisite, not a
-task inside this increment.
+Implementation builds on the report-detail slice. As of commit `8e28a81` the
+report-detail code, the CI/PR-template/gates work, and this spec are all unified
+on branch **`m2-report-detail-sections`** (the earlier split between that branch
+and `chore/build-workflow` has been merged/rebased away). Execute directly on
+`m2-report-detail-sections`; every *Modified* / *Removed* target below exists
+there. (Historical note: this section previously flagged the branches as
+divergent — that is now moot.)
 
 ## Goal
 
 Complete the section-editing surface so a super can fill an entire daily report
-offline. Build the eight remaining editor sheets on two established archetypes,
-fold Crew + Work-performed into one trade-centric sheet, and make Weather an
-auto-populated display rather than a manual-entry sheet.
+offline. Fold Crew + Work-performed into one trade-centric sheet, build the seven
+other list sheets on two established archetypes, and add a Weather sheet that
+displays the auto-fetched snapshot **and** always offers a manual override —
+**nine sheets this increment** (General notes is already built).
 
 ## Two design changes (from brainstorming)
 
@@ -38,15 +36,21 @@ auto-populated display rather than a manual-entry sheet.
    drafts are correlated by the `trade` string as a **content-level convention**
    (the hook itself is keyed by `(reportId, section)`, not trade — there is no
    third hook argument). This retires the shipped `CrewSectionSheet`.
-2. **Weather is auto-populated, not typed.** Weather stops being an editor sheet.
-   The report renders its auto snapshot (condition + temp) read-only from the
-   `report_weather.auto_*` columns via the existing `getWeather` / `summarizeWeather`.
-   The actual fetch is the M9 Open-Meteo edge function; until then the row shows
-   "fills on next sync". A manual override (offline fallback, `WeatherOverrideContent`
-   → `override_*`) is a **deferred secondary action, not part of this increment** —
-   and therefore **no weather pick-list constant is added now** (the read-only row
-   renders the raw `auto_condition` string; a `WEATHER_CONDITIONS` constant lands
-   with the deferred override sheet, which is its only consumer).
+2. **Weather auto-populates, with a manual override always available.** The
+   report row and the Weather sheet lead with the auto-fetched snapshot (condition
+   + temp) read from `report_weather.auto_*` via the existing `getWeather` /
+   `summarizeWeather`. **But manual entry stays in scope this increment** — PRD
+   marks manual weather entry as **Must** and auto-fetch as **Should/M9**
+   (PRD.md:452), and PRD §7 requires weather input to "never block" with "manual
+   chips available" offline (PRD.md:236). So `WeatherSectionSheet` shows the auto
+   snapshot read-only **and** a manual override (condition chips + temp stepper)
+   that writes `WeatherOverrideContent` → `override_*`; the override is never
+   overwritten by a later auto-fetch. This honors the "auto-populate" intent
+   (auto is primary/pre-filled) while satisfying the PRD Must (a super can always
+   record weather offline). `WEATHER_CONDITIONS` is therefore added this increment
+   (its consumer, the override chips, now ships). Only the **M9 fetch itself**
+   (Open-Meteo edge function + project geocode) stays deferred — until it lands,
+   `auto_*` is null and the override is how weather gets recorded.
 
 ## Architecture
 
@@ -62,6 +66,7 @@ piece is `EntryCard`.
   Crew&Work, Equipment, Delays, Safety.
 - **Entry-list** (`{ entries: [...] }`, stored verbatim as JSON): Deliveries,
   Inspections, Visitors, RFIs.
+- **Special**: Weather (1:1 `report_weather` row; auto snapshot + override).
 - **Text**: General notes (already built).
 
 **New shared component `src/components/report/EntryCard.tsx`** — the bordered
@@ -78,30 +83,40 @@ state + ~400 ms debounced `updateSection`, flush on close/unmount). Deliberate
 empties use `markComplete(true)` ("No crew today" / "Nothing to report"). All row
 mutations are immutable (new array each edit).
 
-### Section rows + tri-state in the report list
+### Section rows + row groups in the report list
 
 `ReportDetailSections` today drives each row off a single boolean `isEnabled`
-(interactive+chevron vs dimmed+"Soon"). This increment replaces that binary with
-a per-row **display mode** and a **row-group** concept:
+(interactive+chevron vs dimmed+"Soon"). This increment replaces that with an
+explicit **row model** so crew + work_performed collapse into one row:
 
-- **Row model:** an ordered list of *rows*, where a row is either a single
-  `SectionKind` or a **group** of kinds with a group label/icon and a combined
-  summary. `ReportDetailSections` iterates rows (not raw `SECTION_META`). The
-  crew+work_performed group renders "Crew & work by trade" with a merged summary.
-- **Three display modes per row:**
-  - `interactive` — a built sheet: full-color summary + chevron, tappable.
-  - `readonly` — populated but non-tappable: full-color summary, **no chevron,
-    not dimmed, no "Soon" badge**. This is **Weather** (auto-fetched; nothing to
-    edit this increment).
-  - `pending` — sheet not built yet: dimmed + "Soon" badge (the current dimmed
-    behavior, retained for any not-yet-landed kind during the rollout).
+- **Concrete shape** (in `sectionMeta.ts`):
 
-`sectionMeta` gains the row-group model (an ordered `REPORT_ROWS` list keyed by a
-row id, each mapping to one or more `SectionKind`s + display mode). `summarize.ts`
-gains `summarizeCrewWork(crewPayload, workPayload, crewIsComplete)` composing the
-two sections into the group's one-line summary (trades + total headcount from
-crew, count of logged work items from work_performed). Existing per-kind summaries
-are unchanged.
+  ```ts
+  type DisplayMode = 'interactive' | 'pending'; // pending = sheet not built yet
+  interface ReportRow {
+    readonly id: string;              // stable row key, e.g. 'crew_work', 'weather'
+    readonly label: string;
+    readonly icon: keyof typeof Ionicons.glyphMap;
+    readonly kinds: readonly SectionKind[]; // 1 kind, or [crew, work_performed]
+    readonly mode: DisplayMode;
+  }
+  export const REPORT_ROWS: readonly ReportRow[]; // ordered, PRD §7 order
+  ```
+
+- `ReportDetailSections` iterates `REPORT_ROWS` (not raw `SECTION_META`). Its
+  `summaries` prop changes from `Record<SectionKind, SectionSummary>` to
+  **`Record<string /* row id */, SectionSummary>`**; `app/report/[id]/index.tsx`
+  builds it, using `summarizeCrewWork(...)` for the `crew_work` row and the
+  existing per-kind summaries elsewhere. `enabledKinds` is dropped in favor of
+  each row's `mode`.
+- **Weather is `interactive`** — its row shows the auto/override summary and opens
+  `WeatherSectionSheet`. (No third "read-only" mode is needed; every non-`pending`
+  row is tappable.)
+
+`summarize.ts` gains `summarizeCrewWork(crewPayload, workPayload, crewIsComplete)`
+composing the two sections into the group's one-line summary (trades + total
+headcount from crew, count of logged work items from work_performed). Existing
+per-kind summaries (incl. `summarizeWeather`) are unchanged.
 
 ### The combined CrewWork sheet
 
@@ -115,33 +130,36 @@ const work = useSectionDraft<WorkPerformedContent>(reportId, 'work_performed', i
 The UI is one list of trade cards. Adding a trade appends a `crew` row
 (`{trade, headcount:1, hours:8, is_carried_forward:false}`) and hides that trade
 from the add-`ChipRow` (preserving `crew.trade` uniqueness, as `CrewSectionSheet`
-already does — this is what makes trade-keyed correlation safe). Each card edits
-that crew row's steppers and, in the same card, an Area field + note that map to a
-`work_performed` row **matched by the same trade** (`{trade, area, note}`); a
-trade with no area/note simply has no work_performed row. Removing a trade removes
-both its `crew` row and any matching `work_performed` row — an accepted tradeoff
-(removing a crewed trade discards its work note; documented so it is intentional,
-not a surprise). `flush()` on close flushes both drafts. "No crew today" marks the
-crew section complete and clears both.
+already does — this is what makes trade-keyed correlation safe; the design assumes
+**at most one work_performed row per trade**, an invariant this sheet is the sole
+writer of). Each card edits that crew row's steppers and, in the same card, an
+Area field + note that map to a `work_performed` row **matched by the same trade**
+(`{trade, area, note}`); a trade with no area/note simply has no work_performed
+row. Removing a trade removes both its `crew` row and any matching
+`work_performed` row — an accepted tradeoff (removing a crewed trade discards its
+work note; documented so it is intentional). `flush()` on close flushes both
+drafts. "No crew today" marks the crew section complete and clears both.
 
 ### Report-screen host
 
 `app/report/[id]/index.tsx` updates:
-- Render the section **rows** (groups + display modes) instead of one-per-kind.
+- Render `REPORT_ROWS` (groups + modes) instead of one-per-kind; build the
+  row-id-keyed `summaries` map (using `summarizeCrewWork` for `crew_work`).
 - Refactor the per-kind `activeKind === …` conditional blocks into a small
-  registry map `renderSheet(rowKey, props)` to keep hosting flat as sheet count
-  grows (targeted cleanup of code we're already touching). `ENABLED_KINDS`
-  (currently `['crew','general_notes']`, `index.tsx:44`) is superseded by the row
-  model's display modes.
+  registry map `renderSheet(rowId, props)` to keep hosting flat as sheet count
+  grows (targeted cleanup of code we're already touching). The current
+  `ENABLED_KINDS = ['crew','general_notes']` (`app/report/[id]/index.tsx:41`) is
+  removed in favor of each row's `mode`.
 - Pass the loaded `crew` + `work_performed` payloads to `CrewWorkSheet`, and the
-  `WeatherRow` to the read-only weather row.
+  `WeatherRow` to `WeatherSectionSheet`.
 
 ## Per-sheet field spec
 
 Pick-lists come from `src/components/report/sectionConstants.ts` — all already
 exist (`TRADES`, `DELIVERY_UNITS`, `DELAY_CAUSES`, `VISITOR_ROLES`,
 `INSPECTION_AGENCIES`, `SAFETY_TYPES`, `INSPECTION_RESULTS`) **except**
-`EQUIPMENT_STATUS` (active/idle), added this increment. Shapes are in
+`EQUIPMENT_STATUS` (active/idle) and `WEATHER_CONDITIONS` (clear/cloudy/rain/
+snow/windy/fog…), both added this increment. Shapes are in
 `src/data/sectionContent.ts` (already defined).
 
 **Relational:**
@@ -154,14 +172,17 @@ exist (`TRADES`, `DELIVERY_UNITS`, `DELAY_CAUSES`, `VISITOR_ROLES`,
   built-in `Switch` (no themed Switch exists in `src/components`), themed via
   `trackColor`/`thumbColor` from the palette.
 - **Delays** — per row: cause chips (`DELAY_CAUSES`) · responsible-party
-  `TextField` · duration `Stepper` (0.5-day) **or** "Ongoing" toggle (nulls
-  duration, disables the stepper) · note multiline (voice).
+  `TextField` · duration `Stepper` (0.5-day) **or** "Ongoing" toggle · note
+  multiline (voice). Toggling "Ongoing" nulls `duration_hours` and **disables the
+  duration stepper** — this requires a new `disabled?: boolean` prop on
+  `Stepper.tsx` (see File list; today it only self-disables its ± buttons at
+  min/max, with no parent override).
 - **Safety** — "Nothing to report" affirmation **or** per row: type chips
   (`SAFETY_TYPES`) · description multiline (voice) · "Recordable incident"
   toggle (`is_incident`). Note: `SAFETY_TYPES` already includes a `recordable`
   observation type; that chip classifies the observation, while the `is_incident`
-  toggle drives history/incident filters — they are distinct fields (label the
-  toggle "Recordable incident" to reduce overlap confusion).
+  toggle drives history/incident filters — distinct fields (label the toggle
+  "Recordable incident").
 
 **Entry-list:**
 - **Deliveries** — supplier `TextField` · material `TextField` · quantity
@@ -172,6 +193,13 @@ exist (`TRADES`, `DELIVERY_UNITS`, `DELAY_CAUSES`, `VISITOR_ROLES`,
   `HH:MM` time `TextField` (numeric).
 - **RFIs** — copy "Questions and issues raised today."; title `TextField`
   (voice) · trade chips (`TRADES`) · "needs answer from" `TextField`.
+
+**Special:**
+- **Weather** (`WeatherSectionSheet`) — read-only auto snapshot row (condition +
+  temp from `auto_*`, or "will fill on next sync" when null) **and** a manual
+  override: condition chips (`WEATHER_CONDITIONS`) + temperature `Stepper` (°F),
+  writing `WeatherOverrideContent` via `updateSection('weather', …)`. Copy notes
+  the override wins and is never overwritten by the auto fetch.
 
 ### Deliberate PRD §7 simplifications (M2)
 
@@ -202,12 +230,15 @@ add row/entry, edit a control, remove, "None"/"Nothing" affirmation
 - **DeliveriesSheet** — entry-list archetype: add/edit (stepper + unit chips +
   text) / remove.
 - **SafetySheet** — relational + affirmation + incident toggle.
+- **WeatherSectionSheet** — special: setting a condition chip / temp writes
+  `updateSection('weather', …)` with `WeatherOverrideContent`.
 
 Pure additions get unit tests: `summarizeCrewWork` extends `summarize.test.ts`;
-the `sectionMeta` row-group model gets a new `src/report/sectionMeta.test.ts`.
-`EntryCard` is logic-free, but a small render test follows the `Chip.test.tsx`
-precedent for shared presentational components. Remaining sheets rely on the
-shared archetype + typecheck/lint.
+the `sectionMeta` row model gets a new `src/report/sectionMeta.test.ts`. The new
+`Stepper` `disabled` prop gets a case in the existing `Stepper.test.tsx` (no
+press when disabled). `EntryCard` is logic-free, but a small render test follows
+the `Chip.test.tsx` precedent. Remaining sheets rely on the shared archetype +
+typecheck/lint.
 
 ## File list
 
@@ -221,32 +252,33 @@ shared archetype + typecheck/lint.
 - `src/components/report/InspectionsSectionSheet.tsx`
 - `src/components/report/VisitorsSectionSheet.tsx`
 - `src/components/report/RfisSectionSheet.tsx`
-- `src/report/sectionMeta.test.ts` (row-group model)
+- `src/components/report/WeatherSectionSheet.tsx`
+- `src/report/sectionMeta.test.ts` (row model)
 - Sheet tests: `CrewWorkSheet.test.tsx`, `DeliveriesSectionSheet.test.tsx`,
-  `SafetySectionSheet.test.tsx`
+  `SafetySectionSheet.test.tsx`, `WeatherSectionSheet.test.tsx`
 
 **Modified:**
-- `src/report/sectionMeta.ts` — row-group model + per-row display mode.
+- `src/report/sectionMeta.ts` — `REPORT_ROWS` row model + display mode.
 - `src/report/summarize.ts` (+ `.test.ts`) — `summarizeCrewWork`.
-- `src/components/report/ReportDetailSections.tsx` — render rows/groups; tri-state
-  display mode (interactive / readonly / pending); weather read-only.
-- `src/components/report/sectionConstants.ts` — add `EQUIPMENT_STATUS`.
-- `app/report/[id]/index.tsx` — sheet registry, row model, pass crew+work/weather.
+- `src/components/report/ReportDetailSections.tsx` — render `REPORT_ROWS`;
+  `summaries` keyed by row id; drop `enabledKinds` for per-row `mode`.
+- `src/components/report/sectionConstants.ts` — add `EQUIPMENT_STATUS`, `WEATHER_CONDITIONS`.
+- `src/components/Stepper.tsx` (+ `Stepper.test.tsx`) — add optional `disabled`
+  prop (grays buttons + readout, ignores presses) for the Delays "Ongoing" case.
+- `app/report/[id]/index.tsx` — sheet registry, row model, pass crew+work + weather payloads.
 
-**Removed:** `src/components/report/CrewSectionSheet.tsx` (its Crew test folds into `CrewWorkSheet.test.tsx`).
+**Removed:** `src/components/report/CrewSectionSheet.tsx`. (No RNTL test exists for
+it today — `CrewWorkSheet.test.tsx` writes that coverage net-new.)
 
 ## Verification gates
 
 `npm run typecheck` · `eslint` · `prettier` · full `jest` · platform-split grep
 (`src/platformSplit.test.ts`) — all green before commit. No native imports in the
-web graph. Sheets stay presentational; policy logic (summaries, row-group model)
-stays pure.
+web graph. Sheets stay presentational; policy logic (summaries, row model) stays
+pure.
 
 ## Out of scope (this increment)
 
-- M9 weather fetch (Open-Meteo edge function + project geocode) — weather is
-  display-only until then.
-- Manual weather override sheet + its `WEATHER_CONDITIONS` constant (deferred
-  secondary action).
+- **M9 weather fetch** (Open-Meteo edge function + project geocode) — `auto_*`
+  stays null until then; the manual override is how weather is recorded meanwhile.
 - Recents store; voice (M8); photo shortcuts (M5); carry-forward (M6).
-- A read-only weather detail route (the weather row stays non-interactive).
