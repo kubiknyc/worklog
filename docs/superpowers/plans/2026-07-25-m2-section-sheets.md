@@ -16,6 +16,8 @@
 - `crew` and `work_performed` stay separate `SectionKind`s / server tables; the combined sheet just edits both, correlated by the `trade` string (content convention — `useSectionDraft` is keyed by `(reportId, section)`, no trade argument).
 - All row/entry mutations are **immutable** (new array each edit). No `any` — use `unknown` + narrowing. No `console.log`.
 - Autosave only: every sheet writes through `useSectionDraft` (~400ms debounce, `flush()` on close, `markComplete(true)` for deliberate-empty). No Save button.
+- **testIDs are mandatory** (CLAUDE.md "rule that bites"; convention in `.maestro/README.md`): every sheet passes `testID="sheet-<section>"` to `SectionSheetScaffold` (the scaffold derives `<testID>-none` for the affirmation row), the sheet's own footer `PrimaryButton` gets `testID="sheet-<section>-done"`, dashed add-buttons get `testID="sheet-<section>-add"`, and the report row list keeps `` testID={`report-section-${row.id}`} ``.
+- **Jest mock convention**: `jest.mock` factories may only reference out-of-scope variables prefixed with `mock` (babel-plugin-jest-hoist; repo precedent `src/components/report/useSectionDraft.test.tsx:15`). Every sheet test uses `const mockUpdateSection = jest.fn()` — never a bare `updateSection` const.
 - Deferred (do NOT build): recents chips, voice mic (M8, `accessory` slot stays empty), photo shortcuts (M5), carry-forward (M6), the M9 weather fetch.
 - Verification gate on every task: `npm run typecheck` green, `npx eslint <changed files>` clean, `npx prettier --write <changed files>`, relevant `jest` green. Full gate before the final task: `npm run typecheck` · `npx jest` · `npx jest src/platformSplit.test.ts`.
 - Commits: conventional format (`feat:`/`test:`/`refactor:`), no AI attribution.
@@ -34,21 +36,20 @@
 - Produces: `Stepper` accepts optional `disabled?: boolean`. When true, both buttons are non-interactive, the readout is muted, and neither press nor the accessibility increment/decrement actions call `onChange`.
 - Consumed by: Task 11 (Delays "Ongoing").
 
-- [ ] **Step 1: Write the failing test** — add to `src/components/Stepper.test.tsx`:
+- [ ] **Step 1: Write the failing test** — add **inside the existing `describe('Stepper', …)` block** of `src/components/Stepper.test.tsx`. The file already imports `render`/`fireEvent`/`screen`, defines the `wrapper` (ThemeProvider) and the `LABEL` const — do NOT re-import anything; rendering without the `wrapper` throws `useThemeContext must be used within a ThemeProvider`.
 
 ```tsx
-import { fireEvent, render } from '@testing-library/react-native';
-import { Stepper } from './Stepper';
+  test('disabled stepper ignores button presses', () => {
+    const onChange = jest.fn();
+    render(<Stepper value={3} onChange={onChange} disabled accessibilityLabel={LABEL} />, {
+      wrapper,
+    });
 
-test('disabled stepper ignores button presses', () => {
-  const onChange = jest.fn();
-  const { getByLabelText } = render(
-    <Stepper value={3} onChange={onChange} disabled accessibilityLabel="Duration" />,
-  );
-  fireEvent.press(getByLabelText('Increase Duration'));
-  fireEvent.press(getByLabelText('Decrease Duration'));
-  expect(onChange).not.toHaveBeenCalled();
-});
+    fireEvent.press(screen.getByLabelText(`Increase ${LABEL}`));
+    fireEvent.press(screen.getByLabelText(`Decrease ${LABEL}`));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
 ```
 
 - [ ] **Step 2: Run it, verify it fails**
@@ -94,11 +95,13 @@ git commit -m "feat: add disabled prop to Stepper for the Delays Ongoing case"
 
 ```tsx
 import { fireEvent, render } from '@testing-library/react-native';
+import { type ReactElement } from 'react';
 import { Text } from 'react-native';
+
 import { ThemeProvider } from '../../theme';
 import { EntryCard } from './EntryCard';
 
-const wrap = (ui: React.ReactElement) => render(<ThemeProvider>{ui}</ThemeProvider>);
+const wrap = (ui: ReactElement) => render(<ThemeProvider>{ui}</ThemeProvider>);
 
 test('renders title and fires onRemove', () => {
   const onRemove = jest.fn();
@@ -261,11 +264,9 @@ git commit -m "feat: add EQUIPMENT_STATUS and WEATHER_CONDITIONS pick-lists"
 - Produces: `summarizeCrewWork(crew: Json, work: Json, crewIsComplete: boolean): SectionSummary`.
 - Consumed by: Task 15 (report screen builds the `crew_work` row summary).
 
-- [ ] **Step 1: Write the failing test** — add to `src/report/summarize.test.ts`:
+- [ ] **Step 1: Write the failing test** — add to `src/report/summarize.test.ts`. The file already imports from `./summarize` — **merge `summarizeCrewWork` into that existing import statement** (a second `from './summarize'` trips `import/no-duplicates`):
 
 ```ts
-import { summarizeCrewWork } from './summarize';
-
 describe('summarizeCrewWork', () => {
   const crew = {
     rows: [
@@ -424,41 +425,79 @@ git commit -m "feat: add REPORT_ROWS row model (crew+work grouped)"
 
 ```tsx
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+
+import type { CrewContent, WorkPerformedContent } from '../../data/sectionContent';
+import { ThemeProvider } from '../../theme';
+
+// `mock`-prefixed so Jest allows referencing it inside the factory
+// (babel-plugin-jest-hoist; repo precedent: useSectionDraft.test.tsx).
+const mockUpdateSection = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../data', () => ({
+  useRepository: () => ({ updateSection: mockUpdateSection }),
+}));
+
+// eslint-disable-next-line import/first
 import { CrewWorkSheet } from './CrewWorkSheet';
 
-const updateSection = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../data', () => ({ useRepository: () => ({ updateSection }) }));
+const crewRow = { id: 'c1', trade: 'Electrical', headcount: 4, hours: 8, is_carried_forward: false };
 
-function renderSheet() {
-  const { ThemeProvider } = jest.requireActual('../../theme');
+function renderSheet(
+  initialCrew: CrewContent = { rows: [] },
+  initialWork: WorkPerformedContent = { rows: [] },
+) {
   return render(
     <ThemeProvider>
       <CrewWorkSheet
         visible
         reportId="r1"
-        initialCrew={{ rows: [] }}
-        initialWork={{ rows: [] }}
+        initialCrew={initialCrew}
+        initialWork={initialWork}
         onClose={jest.fn()}
       />
     </ThemeProvider>,
   );
 }
 
-beforeEach(() => updateSection.mockClear());
+beforeEach(() => mockUpdateSection.mockClear());
 
 test('adding a trade writes the crew section', async () => {
   const { getByLabelText } = renderSheet();
   fireEvent.press(getByLabelText('Electrical'));
   await waitFor(() =>
-    expect(updateSection).toHaveBeenCalledWith('r1', 'crew', expect.anything(), false),
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'crew', expect.anything(), false),
   );
+});
+
+test('editing the work note writes the work_performed section', async () => {
+  const { getByPlaceholderText } = renderSheet({ rows: [crewRow] });
+  fireEvent.changeText(getByPlaceholderText("Describe today's work"), 'pulled feeders');
+  await waitFor(() =>
+    expect(mockUpdateSection).toHaveBeenCalledWith(
+      'r1',
+      'work_performed',
+      expect.anything(),
+      false,
+    ),
+  );
+});
+
+test('removing a trade drops both crew and work rows', async () => {
+  const { getByLabelText } = renderSheet(
+    { rows: [crewRow] },
+    { rows: [{ id: 'w1', trade: 'Electrical', area: 'L3', note: 'pulled feeders' }] },
+  );
+  fireEvent.press(getByLabelText('Remove Electrical'));
+  await waitFor(() => {
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'crew', { rows: [] }, false);
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'work_performed', { rows: [] }, false);
+  });
 });
 
 test('No crew today marks crew complete', async () => {
   const { getByLabelText } = renderSheet();
   fireEvent.press(getByLabelText('No crew today'));
   await waitFor(() =>
-    expect(updateSection).toHaveBeenCalledWith('r1', 'crew', expect.anything(), true),
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'crew', expect.anything(), true),
   );
 });
 ```
@@ -566,9 +605,12 @@ export function CrewWorkSheet({ visible, reportId, initialCrew, initialWork, onC
   }, [crew, work, onClose]);
 
   const noCrew = useCallback(() => {
+    // Spec: "No crew today" clears both sections and marks crew complete.
+    work.setDraft({ rows: [] });
+    work.flush();
     crew.markComplete(true);
     onClose();
-  }, [crew, onClose]);
+  }, [crew, work, onClose]);
 
   const used = new Set(crew.draft.rows.map((r) => r.trade));
   const available = TRADES.filter((t) => !used.has(t)).map((t) => ({ value: t, label: t }));
@@ -578,10 +620,11 @@ export function CrewWorkSheet({ visible, reportId, initialCrew, initialWork, onC
     <SectionSheetScaffold
       visible={visible}
       title="Crew & work by trade"
+      testID="sheet-crew-work"
       onClose={close}
       onNoneToday={crew.draft.rows.length === 0 ? noCrew : undefined}
       noneLabel="No crew today"
-      footer={<PrimaryButton label="Done" onPress={close} />}
+      footer={<PrimaryButton testID="sheet-crew-work-done" label="Done" onPress={close} />}
     >
       {crew.draft.rows.map((row) => (
         <EntryCard
@@ -683,13 +726,19 @@ git commit -m "feat: add combined CrewWorkSheet (crew + work_performed)"
 
 ```tsx
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+
+import { ThemeProvider } from '../../theme';
+
+// `mock`-prefixed so Jest allows referencing it inside the factory.
+const mockUpdateSection = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../data', () => ({
+  useRepository: () => ({ updateSection: mockUpdateSection }),
+}));
+
+// eslint-disable-next-line import/first
 import { WeatherSectionSheet } from './WeatherSectionSheet';
 
-const updateSection = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../data', () => ({ useRepository: () => ({ updateSection }) }));
-
 test('choosing a condition writes the weather override', async () => {
-  const { ThemeProvider } = jest.requireActual('../../theme');
   const { getByLabelText } = render(
     <ThemeProvider>
       <WeatherSectionSheet visible reportId="r1" initialWeather={null} onClose={jest.fn()} />
@@ -697,7 +746,7 @@ test('choosing a condition writes the weather override', async () => {
   );
   fireEvent.press(getByLabelText('Rain'));
   await waitFor(() =>
-    expect(updateSection).toHaveBeenCalledWith(
+    expect(mockUpdateSection).toHaveBeenCalledWith(
       'r1',
       'weather',
       expect.objectContaining({ condition: 'rain' }),
@@ -763,7 +812,7 @@ export function WeatherSectionSheet({ visible, reportId, initialWeather, onClose
       ? [autoCondition, typeof autoTemp === 'number' ? `${Math.round(autoTemp)}°F` : null]
           .filter(Boolean)
           .join(' · ')
-      : 'Will fill on next sync';
+      : 'Will fill when online'; // matches summarizeWeather's row copy (summarize.ts)
 
   const close = useCallback(() => {
     flush();
@@ -774,8 +823,9 @@ export function WeatherSectionSheet({ visible, reportId, initialWeather, onClose
     <SectionSheetScaffold
       visible={visible}
       title="Weather"
+      testID="sheet-weather"
       onClose={close}
-      footer={<PrimaryButton label="Done" onPress={close} />}
+      footer={<PrimaryButton testID="sheet-weather-done" label="Done" onPress={close} />}
     >
       <View style={[styles.auto, { borderColor: colors.border, backgroundColor: colors.surface2 }]}>
         <Text style={[styles.autoLabel, { color: colors.muted, fontFamily: fonts.ui.medium }]}>
@@ -852,13 +902,19 @@ git commit -m "feat: add WeatherSectionSheet (auto snapshot + manual override)"
 
 ```tsx
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+
+import { ThemeProvider } from '../../theme';
+
+// `mock`-prefixed so Jest allows referencing it inside the factory.
+const mockUpdateSection = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../data', () => ({
+  useRepository: () => ({ updateSection: mockUpdateSection }),
+}));
+
+// eslint-disable-next-line import/first
 import { DeliveriesSectionSheet } from './DeliveriesSectionSheet';
 
-const updateSection = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../data', () => ({ useRepository: () => ({ updateSection }) }));
-
 test('Add delivery writes an entry', async () => {
-  const { ThemeProvider } = jest.requireActual('../../theme');
   const { getByLabelText } = render(
     <ThemeProvider>
       <DeliveriesSectionSheet visible reportId="r1" initial={{ entries: [] }} onClose={jest.fn()} />
@@ -866,7 +922,7 @@ test('Add delivery writes an entry', async () => {
   );
   fireEvent.press(getByLabelText('Add delivery'));
   await waitFor(() =>
-    expect(updateSection).toHaveBeenCalledWith('r1', 'deliveries', expect.anything(), false),
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'deliveries', expect.anything(), false),
   );
 });
 ```
@@ -937,8 +993,9 @@ export function DeliveriesSectionSheet({ visible, reportId, initial, onClose }: 
     <SectionSheetScaffold
       visible={visible}
       title="Deliveries"
+      testID="sheet-deliveries"
       onClose={close}
-      footer={<PrimaryButton label="Done" onPress={close} />}
+      footer={<PrimaryButton testID="sheet-deliveries-done" label="Done" onPress={close} />}
     >
       {draft.entries.map((entry, i) => (
         <EntryCard key={entry.id} title={`Delivery ${i + 1}`} onRemove={() => remove(entry.id)}>
@@ -971,6 +1028,7 @@ export function DeliveriesSectionSheet({ visible, reportId, initial, onClose }: 
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Add delivery"
+        testID="sheet-deliveries-add"
         onPress={add}
         style={({ pressed }) => [
           styles.addBtn,
@@ -1031,13 +1089,19 @@ git commit -m "feat: add DeliveriesSectionSheet (entry-list archetype)"
 
 ```tsx
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+
+import { ThemeProvider } from '../../theme';
+
+// `mock`-prefixed so Jest allows referencing it inside the factory.
+const mockUpdateSection = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../data', () => ({
+  useRepository: () => ({ updateSection: mockUpdateSection }),
+}));
+
+// eslint-disable-next-line import/first
 import { SafetySectionSheet } from './SafetySectionSheet';
 
-const updateSection = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../data', () => ({ useRepository: () => ({ updateSection }) }));
-
 test('Nothing to report marks the section complete', async () => {
-  const { ThemeProvider } = jest.requireActual('../../theme');
   const { getByLabelText } = render(
     <ThemeProvider>
       <SafetySectionSheet visible reportId="r1" initial={{ rows: [] }} onClose={jest.fn()} />
@@ -1045,7 +1109,7 @@ test('Nothing to report marks the section complete', async () => {
   );
   fireEvent.press(getByLabelText('Nothing to report'));
   await waitFor(() =>
-    expect(updateSection).toHaveBeenCalledWith('r1', 'safety', expect.anything(), true),
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'safety', expect.anything(), true),
   );
 });
 ```
@@ -1056,7 +1120,7 @@ test('Nothing to report marks the section complete', async () => {
   - Type: `ChipRow` single over `SAFETY_TYPES` — `value={row.obs_type || null}`, `onChange={(v) => update(row.id, { obs_type: v ?? '' })}`.
   - Description: `TextField multiline` — `value={row.description ?? ''}`, `onChangeText={(v) => update(row.id, { description: v || null })}`.
   - Incident: RN `Switch` (`import { Switch } from 'react-native'`) — `value={row.is_incident}`, `onValueChange={(is_incident) => update(row.id, { is_incident })}`, `trackColor={{ true: colors.accent, false: colors.surface2 }}`, `thumbColor={colors.surface}`, `accessibilityLabel="Recordable incident"`; with an adjacent caption `Text` "Recordable incident".
-  Wire the scaffold: `onNoneToday={draft.rows.length === 0 ? () => { markComplete(true); onClose(); } : undefined}`, `noneLabel="Nothing to report"`.
+  Wire the scaffold: `onNoneToday={draft.rows.length === 0 ? () => { markComplete(true); onClose(); } : undefined}`, `noneLabel="Nothing to report"`, `testID="sheet-safety"` (the scaffold derives `sheet-safety-none`), footer `PrimaryButton` `testID="sheet-safety-done"`, add-button `testID="sheet-safety-add"`.
 
 - [ ] **Step 4: Run tests + typecheck** — PASS + clean.
 
@@ -1074,22 +1138,25 @@ git commit -m "feat: add SafetySectionSheet (relational + affirmation)"
 
 **Files:**
 - Create: `src/components/report/EquipmentSectionSheet.tsx`
+- Test: `src/components/report/EquipmentSectionSheet.test.tsx`
 
 **Interfaces:**
 - Produces: `EquipmentSectionSheet({ visible, reportId, initial: EquipmentContent, onClose })`. Consumed by Task 15.
 
-Follow the **entry-list archetype structure from Task 8** (same `useSectionDraft` + `setRows` + `update`/`remove`/`close` + dashed add-button), with content type `EquipmentContent`, section `'equipment'`, list key `rows` of `EquipmentRowContent` `{id, name, status, on_site}`, `EntryCard` titled by `row.name`.
+Follow the **list-sheet structure from Task 8** (same `useSectionDraft` + `setRows` + `update`/`remove`/`close` + dashed add-button — note this section is *relational*: list key `rows`), with content type `EquipmentContent`, section `'equipment'`, list key `rows` of `EquipmentRowContent` `{id, name, status, on_site}`, `EntryCard` titled by `row.name`.
 
 - [ ] **Step 1: Implement** with these specifics:
-  - **Add-by-name** (replaces the picker): a local `const [pendingName, setPendingName] = useState('')`; a `TextField` bound to it + an "Add equipment" `Pressable` (accessibilityLabel "Add equipment"); on press, if `pendingName.trim()`, `setRows([...draft.rows, {id: uuidv4(), name: pendingName.trim(), status: 'active', on_site: true}])` then `setPendingName('')`.
+  - **Add-by-name** (replaces the picker): a local `const [pendingName, setPendingName] = useState('')`; a `TextField` bound to it (`label="Equipment name"` — the prop is required — and `placeholder="Equipment name"`) + an "Add equipment" `Pressable` (accessibilityLabel "Add equipment"); on press, if `pendingName.trim()`, `setRows([...draft.rows, {id: uuidv4(), name: pendingName.trim(), status: 'active', on_site: true}])` then `setPendingName('')`.
   - Per card: on-site RN `Switch` (`value={row.on_site}`, `onValueChange={(on_site) => update(row.id, { on_site })}`, themed as in Task 9, `accessibilityLabel={`${row.name} on site`}`) + status `ChipRow` single over `EQUIPMENT_STATUS` (`value={row.status}`, `onChange={(status) => update(row.id, { status: status ?? 'active' })}`).
   - No "None today" affirmation.
-- [ ] **Step 2: Typecheck + lint** — `npm run typecheck && npx eslint src/components/report/EquipmentSectionSheet.tsx` → clean.
-- [ ] **Step 3: Commit**
+  - testIDs: scaffold `testID="sheet-equipment"`, footer `PrimaryButton` `testID="sheet-equipment-done"`, add-button `testID="sheet-equipment-add"`.
+- [ ] **Step 2: Smoke test** — `src/components/report/EquipmentSectionSheet.test.tsx`, mirroring Task 8's test file (same `mockUpdateSection` prefix pattern + `ThemeProvider` wrap): `fireEvent.changeText(getByPlaceholderText('Equipment name'), 'Excavator')`, `fireEvent.press(getByLabelText('Add equipment'))`, then `waitFor` `expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'equipment', expect.anything(), false)`.
+- [ ] **Step 3: Test + typecheck + lint** — `npx jest src/components/report/EquipmentSectionSheet.test.tsx && npm run typecheck && npx eslint src/components/report/EquipmentSectionSheet.tsx` → PASS + clean.
+- [ ] **Step 4: Commit**
 
 ```bash
-npx prettier --write "src/components/report/EquipmentSectionSheet.tsx"
-git add "src/components/report/EquipmentSectionSheet.tsx"
+npx prettier --write "src/components/report/EquipmentSectionSheet.tsx" "src/components/report/EquipmentSectionSheet.test.tsx"
+git add "src/components/report/EquipmentSectionSheet.tsx" "src/components/report/EquipmentSectionSheet.test.tsx"
 git commit -m "feat: add EquipmentSectionSheet"
 ```
 
@@ -1099,11 +1166,12 @@ git commit -m "feat: add EquipmentSectionSheet"
 
 **Files:**
 - Create: `src/components/report/DelaysSectionSheet.tsx`
+- Test: `src/components/report/DelaysSectionSheet.test.tsx`
 
 **Interfaces:**
 - Produces: `DelaysSectionSheet({ visible, reportId, initial: DelaysContent, onClose })`. Consumed by Task 15.
 
-Follow the **entry-list archetype structure from Task 8** with content type `DelaysContent`, section `'delays'`, list key `rows` of `DelayRowContent` `{id, cause, responsible_party, duration_hours, is_ongoing, note}`, `EntryCard` titled `Delay ${i + 1}`, add-button "Add delay" (new row `{id: uuidv4(), cause: '', responsible_party: null, duration_hours: 0.5, is_ongoing: false, note: null}`).
+Follow the **list-sheet structure from Task 8** (relational — list key `rows`) with content type `DelaysContent`, section `'delays'`, list key `rows` of `DelayRowContent` `{id, cause, responsible_party, duration_hours, is_ongoing, note}`, `EntryCard` titled `Delay ${i + 1}`, add-button "Add delay" (new row `{id: uuidv4(), cause: '', responsible_party: null, duration_hours: 0.5, is_ongoing: false, note: null}`). testIDs: scaffold `testID="sheet-delays"`, footer `testID="sheet-delays-done"`, add-button `testID="sheet-delays-add"`.
 
 - [ ] **Step 1: Implement** per-card fields:
   - Cause: `ChipRow` single over `DELAY_CAUSES` (`value={row.cause || null}`, `onChange={(v) => update(row.id, { cause: v ?? '' })}`).
@@ -1111,12 +1179,13 @@ Follow the **entry-list archetype structure from Task 8** with content type `Del
   - Duration `Stepper` (`value={row.duration_hours ?? 0}`, `step={0.5}`, `min={0}`, `unitLabel="days"`, `disabled={row.is_ongoing}`, `onChange={(duration_hours) => update(row.id, { duration_hours })}`, `accessibilityLabel={`Delay ${i + 1} duration`}`).
   - Ongoing: RN `Switch` (`accessibilityLabel="Ongoing"`, themed as Task 9) — `onValueChange={(is_ongoing) => update(row.id, { is_ongoing, duration_hours: is_ongoing ? null : (row.duration_hours ?? 0.5) })}` (toggling on nulls the duration; the stepper's `disabled` from Task 1 grays it).
   - Note: `TextField multiline` (`value={row.note ?? ''}`, `onChangeText={(v) => update(row.id, { note: v || null })}`).
-- [ ] **Step 2: Typecheck + lint** → clean.
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Smoke test** — `src/components/report/DelaysSectionSheet.test.tsx`, mirroring Task 8's test file (same `mockUpdateSection` prefix pattern + `ThemeProvider` wrap): press `Add delay`, then `waitFor` `expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'delays', expect.anything(), false)`.
+- [ ] **Step 3: Test + typecheck + lint** — `npx jest src/components/report/DelaysSectionSheet.test.tsx && npm run typecheck && npx eslint src/components/report/DelaysSectionSheet.tsx` → PASS + clean.
+- [ ] **Step 4: Commit**
 
 ```bash
-npx prettier --write "src/components/report/DelaysSectionSheet.tsx"
-git add "src/components/report/DelaysSectionSheet.tsx"
+npx prettier --write "src/components/report/DelaysSectionSheet.tsx" "src/components/report/DelaysSectionSheet.test.tsx"
+git add "src/components/report/DelaysSectionSheet.tsx" "src/components/report/DelaysSectionSheet.test.tsx"
 git commit -m "feat: add DelaysSectionSheet (ongoing disables duration)"
 ```
 
@@ -1126,23 +1195,25 @@ git commit -m "feat: add DelaysSectionSheet (ongoing disables duration)"
 
 **Files:**
 - Create: `src/components/report/InspectionsSectionSheet.tsx`
+- Test: `src/components/report/InspectionsSectionSheet.test.tsx`
 
 **Interfaces:**
 - Produces: `InspectionsSectionSheet({ visible, reportId, initial: InspectionsContent, onClose })`. Consumed by Task 15.
 
-Follow the **entry-list archetype from Task 8** with content type `InspectionsContent`, section `'inspections'`, list key `entries` of `InspectionEntry` `{id, agency, inspector, result, note}`, `EntryCard` titled `Inspection ${i + 1}`, add-button "Add inspection" (new entry `{id: uuidv4(), agency: '', inspector: null, result: 'passed', note: null}`).
+Follow the **entry-list archetype from Task 8** with content type `InspectionsContent`, section `'inspections'`, list key `entries` of `InspectionEntry` `{id, agency, inspector, result, note}`, `EntryCard` titled `Inspection ${i + 1}`, add-button "Add inspection" (new entry `{id: uuidv4(), agency: '', inspector: null, result: 'passed', note: null}`). testIDs: scaffold `testID="sheet-inspections"`, footer `testID="sheet-inspections-done"`, add-button `testID="sheet-inspections-add"`.
 
 - [ ] **Step 1: Implement** per-entry fields:
   - Agency: `ChipRow` single over `INSPECTION_AGENCIES` (`value={entry.agency || null}`, `onChange={(v) => update(entry.id, { agency: v ?? '' })}`).
   - Inspector: `TextField` (`value={entry.inspector ?? ''}`, `onChangeText={(v) => update(entry.id, { inspector: v || null })}`).
   - Result: `ChipRow` single over `INSPECTION_RESULTS` (`value={entry.result}`, `onChange={(v) => update(entry.id, { result: (v ?? 'passed') as InspectionEntry['result'] })}`).
   - Note: `TextField multiline` (`value={entry.note ?? ''}`, `onChangeText={(v) => update(entry.id, { note: v || null })}`).
-- [ ] **Step 2: Typecheck + lint** → clean.
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Smoke test** — `src/components/report/InspectionsSectionSheet.test.tsx`, mirroring Task 8's test file: press `Add inspection`, then `waitFor` `expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'inspections', expect.anything(), false)`.
+- [ ] **Step 3: Test + typecheck + lint** — `npx jest src/components/report/InspectionsSectionSheet.test.tsx && npm run typecheck && npx eslint src/components/report/InspectionsSectionSheet.tsx` → PASS + clean.
+- [ ] **Step 4: Commit**
 
 ```bash
-npx prettier --write "src/components/report/InspectionsSectionSheet.tsx"
-git add "src/components/report/InspectionsSectionSheet.tsx"
+npx prettier --write "src/components/report/InspectionsSectionSheet.tsx" "src/components/report/InspectionsSectionSheet.test.tsx"
+git add "src/components/report/InspectionsSectionSheet.tsx" "src/components/report/InspectionsSectionSheet.test.tsx"
 git commit -m "feat: add InspectionsSectionSheet"
 ```
 
@@ -1152,22 +1223,24 @@ git commit -m "feat: add InspectionsSectionSheet"
 
 **Files:**
 - Create: `src/components/report/VisitorsSectionSheet.tsx`
+- Test: `src/components/report/VisitorsSectionSheet.test.tsx`
 
 **Interfaces:**
 - Produces: `VisitorsSectionSheet({ visible, reportId, initial: VisitorsContent, onClose })`. Consumed by Task 15.
 
-Follow the **entry-list archetype from Task 8** with content type `VisitorsContent`, section `'visitors'`, list key `entries` of `VisitorEntry` `{id, name, role, time}`, `EntryCard` titled `Visitor ${i + 1}`, add-button "Add visitor" (new entry `{id: uuidv4(), name: '', role: '', time: null}`).
+Follow the **entry-list archetype from Task 8** with content type `VisitorsContent`, section `'visitors'`, list key `entries` of `VisitorEntry` `{id, name, role, time}`, `EntryCard` titled `Visitor ${i + 1}`, add-button "Add visitor" (new entry `{id: uuidv4(), name: '', role: '', time: null}`). testIDs: scaffold `testID="sheet-visitors"`, footer `testID="sheet-visitors-done"`, add-button `testID="sheet-visitors-add"`.
 
 - [ ] **Step 1: Implement** per-entry fields:
   - Name: `TextField` (`value={entry.name}`, `onChangeText={(name) => update(entry.id, { name })}`).
   - Role: `ChipRow` single over `VISITOR_ROLES` (`value={entry.role || null}`, `onChange={(v) => update(entry.id, { role: v ?? '' })}`).
   - Time: `TextField` (`value={entry.time ?? ''}`, `onChangeText={(v) => update(entry.id, { time: v || null })}`, `placeholder="HH:MM"`, `keyboardType="numbers-and-punctuation"`).
-- [ ] **Step 2: Typecheck + lint** → clean.
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Smoke test** — `src/components/report/VisitorsSectionSheet.test.tsx`, mirroring Task 8's test file: press `Add visitor`, then `waitFor` `expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'visitors', expect.anything(), false)`.
+- [ ] **Step 3: Test + typecheck + lint** — `npx jest src/components/report/VisitorsSectionSheet.test.tsx && npm run typecheck && npx eslint src/components/report/VisitorsSectionSheet.tsx` → PASS + clean.
+- [ ] **Step 4: Commit**
 
 ```bash
-npx prettier --write "src/components/report/VisitorsSectionSheet.tsx"
-git add "src/components/report/VisitorsSectionSheet.tsx"
+npx prettier --write "src/components/report/VisitorsSectionSheet.tsx" "src/components/report/VisitorsSectionSheet.test.tsx"
+git add "src/components/report/VisitorsSectionSheet.tsx" "src/components/report/VisitorsSectionSheet.test.tsx"
 git commit -m "feat: add VisitorsSectionSheet"
 ```
 
@@ -1177,22 +1250,24 @@ git commit -m "feat: add VisitorsSectionSheet"
 
 **Files:**
 - Create: `src/components/report/RfisSectionSheet.tsx`
+- Test: `src/components/report/RfisSectionSheet.test.tsx`
 
 **Interfaces:**
 - Produces: `RfisSectionSheet({ visible, reportId, initial: RfisContent, onClose })`. Consumed by Task 15.
 
-Follow the **entry-list archetype from Task 8** with content type `RfisContent`, section `'rfis'`, list key `entries` of `RfiEntry` `{id, title, trade, needs_answer_from}`, `EntryCard` titled `Item ${i + 1}`, add-button "Add item" (new entry `{id: uuidv4(), title: '', trade: null, needs_answer_from: null}`). Render a muted caption `Text` "Questions and issues raised today." as the first child of the scaffold body.
+Follow the **entry-list archetype from Task 8** with content type `RfisContent`, section `'rfis'`, list key `entries` of `RfiEntry` `{id, title, trade, needs_answer_from}`, `EntryCard` titled `Item ${i + 1}`, add-button "Add item" (new entry `{id: uuidv4(), title: '', trade: null, needs_answer_from: null}`). Render a muted caption `Text` "Questions and issues raised today." as the first child of the scaffold body. testIDs: scaffold `testID="sheet-rfis"`, footer `testID="sheet-rfis-done"`, add-button `testID="sheet-rfis-add"`.
 
 - [ ] **Step 1: Implement** per-entry fields:
   - Title: `TextField` (`value={entry.title}`, `onChangeText={(title) => update(entry.id, { title })}`).
   - Trade: `ChipRow` single over `TRADES.map((t) => ({ value: t, label: t }))` (`value={entry.trade}`, `onChange={(trade) => update(entry.id, { trade })}`).
   - Needs answer from: `TextField` (`value={entry.needs_answer_from ?? ''}`, `onChangeText={(v) => update(entry.id, { needs_answer_from: v || null })}`).
-- [ ] **Step 2: Typecheck + lint** → clean.
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Smoke test** — `src/components/report/RfisSectionSheet.test.tsx`, mirroring Task 8's test file: press `Add item`, then `waitFor` `expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'rfis', expect.anything(), false)`.
+- [ ] **Step 3: Test + typecheck + lint** — `npx jest src/components/report/RfisSectionSheet.test.tsx && npm run typecheck && npx eslint src/components/report/RfisSectionSheet.tsx` → PASS + clean.
+- [ ] **Step 4: Commit**
 
 ```bash
-npx prettier --write "src/components/report/RfisSectionSheet.tsx"
-git add "src/components/report/RfisSectionSheet.tsx"
+npx prettier --write "src/components/report/RfisSectionSheet.tsx" "src/components/report/RfisSectionSheet.test.tsx"
+git add "src/components/report/RfisSectionSheet.tsx" "src/components/report/RfisSectionSheet.test.tsx"
 git commit -m "feat: add RfisSectionSheet"
 ```
 
@@ -1205,6 +1280,7 @@ git commit -m "feat: add RfisSectionSheet"
 - Modify: `app/report/[id]/index.tsx`
 - Remove: `src/components/report/CrewSectionSheet.tsx`
 - Modify: `src/components/index.ts` (if it re-exports `CrewSectionSheet` — drop it; the screen imports sheets by path)
+- Modify: `.maestro/README.md` (selector-inventory examples that name the retired IDs)
 
 **Interfaces:**
 - Consumes: `REPORT_ROWS`/`ReportRow` (Task 5), `summarizeCrewWork` (Task 4), all sheets (Tasks 6–14).
@@ -1214,11 +1290,11 @@ This task is atomic (component prop change + host rewrite + deletion must land t
 
 - [ ] **Step 1: Rewrite `ReportDetailSections.tsx`** to iterate `REPORT_ROWS`:
   - New `Props`: `{ rows: readonly ReportRow[]; summaries: Record<string, SectionSummary>; onOpen: (rowId: string) => void }`.
-  - For each row: `const summary = summaries[row.id]`; `const isInteractive = row.mode === 'interactive'`. Render the same `SheetRow` markup as today (leading `row.icon`, label `row.label`, summary line tinted by `summary.state` via the existing color logic), but: interactive → chevron trailing + `onPress={() => onOpen(row.id)}`; `pending` → wrap in the dimmed style + "Soon" trailing + no-op `onPress`.
+  - For each row: `const summary = summaries[row.id]`; `const isInteractive = row.mode === 'interactive'`. Render the same `SheetRow` markup as today (leading `row.icon`, label `row.label`, summary line tinted by `summary.state` via the existing color logic), but: interactive → chevron trailing + `onPress={() => onOpen(row.id)}`; `pending` → wrap in the dimmed style + "Soon" trailing + no-op `onPress`. Keep the row `` testID={`report-section-${row.id}`} `` (note: the crew row's selector changes from `report-section-crew` to `report-section-crew_work`).
   - Replace the `enabledKinds`/`SECTION_META` imports with `REPORT_ROWS`/`ReportRow` from `../../report/sectionMeta` (keep the `SectionSummary` import from `../../report/summarize`).
 
 - [ ] **Step 2: Rewrite the sheet-hosting + summaries in `app/report/[id]/index.tsx`:**
-  - Build `summaries: Record<string, SectionSummary>` by iterating `REPORT_ROWS`: for `row.id === 'weather'` use `summarizeWeather(data?.weather ?? null)`; for `row.id === 'crew_work'` use `summarizeCrewWork(sectionByKind.get('crew')?.payload ?? null, sectionByKind.get('work_performed')?.payload ?? null, sectionByKind.get('crew')?.is_complete ?? false)`; else `summarizeSection(row.kinds[0] as Exclude<SectionKind,'weather'>, r?.payload ?? null, r?.is_complete ?? false)` where `r = sectionByKind.get(row.kinds[0])`.
+  - Build `summaries: Record<string, SectionSummary>` by iterating `REPORT_ROWS`: for `row.id === 'weather'` use `summarizeWeather(data?.weather ?? null)`; for `row.id === 'crew_work'` use `summarizeCrewWork(sectionByKind.get('crew')?.payload ?? null, sectionByKind.get('work_performed')?.payload ?? null, sectionByKind.get('crew')?.is_complete ?? false)`; else `summarizeSection(kind, r?.payload ?? null, r?.is_complete ?? false)` where `const kind = row.kinds[0] as Exclude<SectionKind, 'weather'>` and `r = sectionByKind.get(kind)` — note the cast must happen **before** the `.get()` too, because `sectionByKind` is keyed by `Exclude<SectionKind,'weather'>` and a bare `SectionKind` won't typecheck under strict.
   - Replace `activeKind: SectionKind | null` state with `activeRowId: string | null`; `closeSheet` sets it to `null` and calls `reload()`.
   - Replace the two `activeKind === …` blocks with a per-`activeRowId` render (a `switch`/lookup) mounting the matching sheet with `key={`${activeRowId}:${reportId}`}`, `visible`, `onClose={closeSheet}`, and initials via the existing `contentFor<T>(kind)` helper:
     - `crew_work` → `<CrewWorkSheet initialCrew={contentFor<CrewContent>('crew')} initialWork={contentFor<WorkPerformedContent>('work_performed')} …/>`
@@ -1233,12 +1309,14 @@ git rm "src/components/report/CrewSectionSheet.tsx"
 ```
 Remove any `CrewSectionSheet` re-export from `src/components/index.ts`.
 
-- [ ] **Step 4: Full verification**
+- [ ] **Step 4: Update the selector inventory** — in `.maestro/README.md`: replace the retired example IDs (`report-section-crew` → `report-section-crew_work`; `sheet-crew`/`-done`/`-none` → `sheet-crew-work`/`-done`/`-none`), extend the section-sheet convention row to document the new `-add` suffix (dashed add-button on list sheets), and list the nine new sheet prefixes (`sheet-crew-work`, `sheet-weather`, `sheet-deliveries`, `sheet-equipment`, `sheet-inspections`, `sheet-safety`, `sheet-delays`, `sheet-visitors`, `sheet-rfis`) so the documented inventory matches the shipped testIDs. (No `.maestro/*.yaml` flow selects the retired IDs today, so `src/maestroSelectors.test.ts` stays green either way — this keeps the doc truthful.)
 
-Run: `npm run typecheck && npx eslint "app/report/[id]/index.tsx" "src/components/report/ReportDetailSections.tsx" && npx jest && npx jest src/platformSplit.test.ts`
-Expected: typecheck clean, lint clean, all jest suites pass, platform-split grep returns nothing.
+- [ ] **Step 5: Full verification — the repo gate**
 
-- [ ] **Step 5: Prettier + commit**
+Run: `npm run verify`
+Expected: typecheck clean, format:check clean, lint clean, all jest suites pass **with the coverage thresholds enforced** (this is what CI runs; `npx jest` alone skips the coverage gate). `src/platformSplit.test.ts` runs as part of the suite. If a coverage threshold fails, add the missing sheet tests — do not lower thresholds.
+
+- [ ] **Step 6: Prettier + commit**
 
 ```bash
 npx prettier --write "app/report/[id]/index.tsx" "src/components/report/ReportDetailSections.tsx" "src/components/index.ts"
@@ -1251,6 +1329,7 @@ git commit -m "feat: wire all M2 section sheets into the report screen via REPOR
 ## Definition of Done
 
 - All 10 report rows render with live summaries; every row opens its editor sheet (Weather included); crew + work_performed edit in one sheet and write both sections.
-- `npm run typecheck` green under strict; `npx jest` green (incl. new CrewWork/Deliveries/Safety/Weather interaction tests, `summarizeCrewWork`, `sectionMeta`, `Stepper.disabled`, `EntryCard`); `npx jest src/platformSplit.test.ts` green.
+- `npm run verify` green (typecheck strict, format:check, lint, full jest **with coverage thresholds** — incl. new CrewWork/Deliveries/Safety/Weather interaction tests, the five smoke tests for Equipment/Delays/Inspections/Visitors/RFIs, `summarizeCrewWork`, `sectionMeta`, `Stepper.disabled`, `EntryCard`, and `src/platformSplit.test.ts`).
+- Every sheet carries its `sheet-<section>` testID (+`-done`, and `-none` where an affirmation exists, `-add` on list sheets); the row list keeps `report-section-<row.id>`; `.maestro/README.md` examples updated.
 - No `CrewSectionSheet` remains; no `console.log`; no `any`.
 - Deferred items (recents, voice, photos, carry-forward, M9 fetch) are absent by design.
