@@ -41,7 +41,8 @@
       "!src/supabase/client.ts",
       "!src/lib/observability.web.ts",
       "!src/lib/observabilityTypes.ts",
-      "!src/platformSplit.test.ts"
+      "!src/platformSplit.test.ts",
+      "!src/maestroSelectors.test.ts"
     ],
     "coverageThreshold": {
       "global": {
