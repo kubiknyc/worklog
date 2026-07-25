@@ -76,7 +76,7 @@ export function summarizeSection(
   switch (kind) {
     case 'crew': {
       const rows = listAt(payload, 'rows');
-      const heads = rows.reduce((sum, row) => sum + numberOf(row, 'headcount'), 0);
+      const heads = rows.reduce<number>((sum, row) => sum + numberOf(row, 'headcount'), 0);
       return fromCount(
         rows.length,
         isComplete,
