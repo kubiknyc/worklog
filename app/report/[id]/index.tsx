@@ -98,9 +98,14 @@ export default function ReportDetailScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
+    <SafeAreaView
+      testID="screen-report"
+      style={[styles.root, { backgroundColor: colors.bg }]}
+      edges={['top', 'bottom']}
+    >
       <View style={[styles.header, { paddingHorizontal: sizes.screenPad }]}>
         <Pressable
+          testID="report-back"
           accessibilityRole="button"
           accessibilityLabel="Back"
           onPress={() => router.back()}

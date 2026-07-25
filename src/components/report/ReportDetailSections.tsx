@@ -56,6 +56,7 @@ export function ReportDetailSections({ summaries, enabledKinds, onOpen }: Props)
         return (
           <View key={meta.kind} style={!isEnabled && styles.dimmed}>
             <SheetRow
+              testID={`report-section-${meta.kind}`}
               onPress={() => isEnabled && onOpen(meta.kind)}
               accessibilityLabel={`${meta.label}. ${summary.text}`}
               icon={meta.icon}

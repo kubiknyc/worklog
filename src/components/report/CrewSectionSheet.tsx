@@ -93,12 +93,13 @@ export function CrewSectionSheet({ visible, reportId, initial, onClose }: Props)
 
   return (
     <SectionSheetScaffold
+      testID="sheet-crew"
       visible={visible}
       title="Crew by trade"
       onClose={close}
       onNoneToday={draft.rows.length === 0 ? noCrew : undefined}
       noneLabel="No crew today"
-      footer={<PrimaryButton label="Done" onPress={close} />}
+      footer={<PrimaryButton testID="sheet-crew-done" label="Done" onPress={close} />}
     >
       {draft.rows.map((row) => (
         <View

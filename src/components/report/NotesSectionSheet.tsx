@@ -39,12 +39,14 @@ export function NotesSectionSheet({ visible, reportId, initial, onClose }: Props
 
   return (
     <SectionSheetScaffold
+      testID="sheet-notes"
       visible={visible}
       title="General notes"
       onClose={close}
-      footer={<PrimaryButton label="Done" onPress={close} />}
+      footer={<PrimaryButton testID="sheet-notes-done" label="Done" onPress={close} />}
     >
       <TextField
+        testID="sheet-notes-input"
         label="Notes"
         value={draft.text}
         onChangeText={(text) => setDraft({ text })}
