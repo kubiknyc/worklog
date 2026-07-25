@@ -17,6 +17,12 @@ type Props = {
   readonly leading?: ReactNode;
   readonly trailing?: ReactNode;
   readonly children?: ReactNode;
+  /**
+   * Stable handle for Maestro flows. Prefer this over asserting on
+   * `accessibilityLabel` — user-facing copy is plain language and expected to
+   * change (CLAUDE.md).
+   */
+  readonly testID?: string;
 };
 
 export function SheetRow({
@@ -27,10 +33,12 @@ export function SheetRow({
   leading,
   trailing,
   children,
+  testID,
 }: Props) {
   const { colors, fonts, radii } = useTheme();
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}

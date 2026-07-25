@@ -34,6 +34,13 @@ type Props = {
   readonly noneLabel?: string;
   readonly footer?: ReactNode;
   readonly children: ReactNode;
+  /**
+   * Selector prefix for Maestro flows, e.g. `sheet-crew`. The affirmation row
+   * becomes `<testID>-none` and the default footer `<testID>-done`, so every
+   * section sheet exposes the same two handles without each one restating them.
+   * A sheet supplying its own `footer` owns that button's testID.
+   */
+  readonly testID?: string;
 };
 
 export function SectionSheetScaffold({
@@ -44,6 +51,7 @@ export function SectionSheetScaffold({
   noneLabel = 'None today',
   footer,
   children,
+  testID,
 }: Props) {
   const { colors, fonts, radii } = useTheme();
   const { height } = useWindowDimensions();
@@ -61,6 +69,7 @@ export function SectionSheetScaffold({
 
       {onNoneToday ? (
         <Pressable
+          testID={testID ? `${testID}-none` : undefined}
           accessibilityRole="button"
           accessibilityLabel={noneLabel}
           onPress={onNoneToday}
@@ -77,7 +86,13 @@ export function SectionSheetScaffold({
         </Pressable>
       ) : null}
 
-      {footer ?? <PrimaryButton label="Done" onPress={onClose} />}
+      {footer ?? (
+        <PrimaryButton
+          testID={testID ? `${testID}-done` : undefined}
+          label="Done"
+          onPress={onClose}
+        />
+      )}
     </BottomSheet>
   );
 }

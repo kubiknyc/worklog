@@ -41,11 +41,18 @@ The convention, applied as screens are built rather than retrofitted:
 | Screen root | `screen-<route>` | `screen-today`, `screen-history`, `screen-photos`, `screen-settings`, `screen-camera` |
 | Tab bar button | `tab-<route>` | `tab-today`, `tab-history`, `tab-camera`, `tab-photos`, `tab-settings` |
 | Form control | `<screen>-<field>` | `login-email`, `login-password`, `login-submit`, `login-forgot` |
-| Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent` |
+| Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent`, `report-section-crew` |
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
+| Section sheet | `sheet-<section>` + `-done` / `-none` | `sheet-crew`, `sheet-crew-done`, `sheet-crew-none` |
 
-`PrimaryButton` and `TextField` both accept an optional `testID` and forward it
-— use it rather than asserting on their `label`.
+`PrimaryButton`, `TextField` and `SheetRow` all accept an optional `testID` and
+forward it — use it rather than asserting on their `label` or
+`accessibilityLabel`.
+
+`SectionSheetScaffold` takes a `testID` prefix and derives `<prefix>-none` for
+the affirmation row and `<prefix>-done` for the default footer, so every
+section sheet exposes the same two handles without restating them. A sheet that
+supplies its own `footer` owns that button's testID.
 
 ### The guard
 
