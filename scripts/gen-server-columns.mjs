@@ -3,24 +3,59 @@
  * jobsight-backend clone's migrations. Run after any backend schema change:
  *   npm run gen:server-columns
  * Tables tracked = the WorkLog app's DOMAIN_COLUMNS tables.
+ *
+ * Migration source resolution:
+ *   1. $BACKEND_MIGRATIONS_DIR if set (CI checks the backend out to a path
+ *      inside the workspace; actions/checkout refuses to write above it)
+ *   2. ../../jobsight-backend/supabase/migrations (the local clone layout
+ *      documented in CLAUDE.md)
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = path.resolve(HERE, '../../jobsight-backend/supabase/migrations');
+const MIGRATIONS_DIR = process.env.BACKEND_MIGRATIONS_DIR
+  ? path.resolve(process.env.BACKEND_MIGRATIONS_DIR)
+  : path.resolve(HERE, '../../jobsight-backend/supabase/migrations');
 const OUT = path.resolve(HERE, '../src/db/serverColumns.generated.json');
 
+if (!fs.existsSync(MIGRATIONS_DIR)) {
+  console.error(
+    `gen-server-columns: no migrations at ${MIGRATIONS_DIR}\n` +
+      'Clone jobsight-backend as a sibling of this repo, or set ' +
+      'BACKEND_MIGRATIONS_DIR to its supabase/migrations directory.',
+  );
+  process.exit(1);
+}
+
 const TABLES = [
-  'profiles', 'projects', 'project_members', 'report_member_prefs', 'daily_reports',
-  'report_sections', 'report_crew', 'report_equipment', 'report_work_performed',
-  'report_delays', 'report_safety_observations', 'report_weather', 'report_photos',
-  'report_amendments', 'report_amendment_changes',
+  'profiles',
+  'projects',
+  'project_members',
+  'report_member_prefs',
+  'daily_reports',
+  'report_sections',
+  'report_crew',
+  'report_equipment',
+  'report_work_performed',
+  'report_delays',
+  'report_safety_observations',
+  'report_weather',
+  'report_photos',
+  'report_amendments',
+  'report_amendment_changes',
 ];
 
 const CONSTRAINT_WORDS = new Set([
-  'primary', 'unique', 'constraint', 'foreign', 'check', 'exclude', 'like', 'references',
+  'primary',
+  'unique',
+  'constraint',
+  'foreign',
+  'check',
+  'exclude',
+  'like',
+  'references',
 ]);
 
 /** Body of the first top-level (...) after `from`, tracking paren depth. */
@@ -30,7 +65,10 @@ function parenBody(sql, from) {
   let depth = 0;
   for (let i = open; i < sql.length; i += 1) {
     if (sql[i] === '(') depth += 1;
-    if (sql[i] === ')') { depth -= 1; if (depth === 0) return sql.slice(open + 1, i); }
+    if (sql[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return sql.slice(open + 1, i);
+    }
   }
   return null;
 }
@@ -38,18 +76,27 @@ function parenBody(sql, from) {
 /** Split a CREATE TABLE body on top-level commas only. */
 function splitTopLevel(body) {
   const parts = [];
-  let depth = 0; let cur = '';
+  let depth = 0;
+  let cur = '';
   for (const ch of body) {
     if (ch === '(') depth += 1;
     if (ch === ')') depth -= 1;
-    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else { cur += ch; }
+    if (ch === ',' && depth === 0) {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
   }
   parts.push(cur);
   return parts;
 }
 
 const columns = Object.fromEntries(TABLES.map((t) => [t, new Set()]));
-const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+const files = fs
+  .readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith('.sql'))
+  .sort();
 
 for (const file of files) {
   // Strip `--` line comments first: these migrations lean heavily on inline
@@ -76,7 +123,10 @@ for (const file of files) {
     // and a regex anchored on `alter table <t> add column` only ever matches
     // the first clause, silently dropping every column added after the
     // first comma.
-    const alterStartRe = new RegExp(`alter table (if exists )?(only )?(public\\.)?${table}\\b`, 'gi');
+    const alterStartRe = new RegExp(
+      `alter table (if exists )?(only )?(public\\.)?${table}\\b`,
+      'gi',
+    );
     for (const m of [...sql.matchAll(alterStartRe)]) {
       const terminator = sql.indexOf(';', m.index);
       const stmt = sql.slice(m.index, terminator < 0 ? sql.length : terminator);
@@ -92,7 +142,8 @@ for (const file of files) {
 
 const out = Object.fromEntries(TABLES.map((t) => [t, [...columns[t]].sort()]));
 for (const [t, cols] of Object.entries(out)) {
-  if (cols.length === 0) throw new Error(`No columns found for ${t} — parser or migrations problem`);
+  if (cols.length === 0)
+    throw new Error(`No columns found for ${t} — parser or migrations problem`);
 }
 fs.writeFileSync(OUT, `${JSON.stringify(out, null, 2)}\n`);
 process.stdout.write(`Wrote ${OUT}\n`);

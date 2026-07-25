@@ -10,6 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Everything that runs off the repo alone: types, format, lint, unit tests,
+  # and the structural guards (platform split, schema parity vs the snapshot).
   verify:
     runs-on: ubuntu-latest
     steps:
@@ -26,11 +28,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Format
+        run: npm run format:check
+
       - name: Lint
         run: npm run lint
 
-      # Also enforces the 100% coverage threshold on src/sync/mutationQueue.ts
-      # and runs the schema-parity and platform-split guards.
+      # Also enforces the coverage thresholds and runs the schema-parity and
+      # platform-split guards.
       - name: Test
         run: npm test
 
@@ -42,3 +47,103 @@ jobs:
           path: coverage/
           if-no-files-found: ignore
           retention-days: 7
+
+  # `verify` checks parity against the CHECKED-IN snapshot, which only moves
+  # when a human runs `npm run gen:server-columns`. This job regenerates it
+  # from the live jobsight-backend migrations and fails if it drifted — the
+  # difference between "the snapshot is self-consistent" and "the snapshot is
+  # true". Resolves the open question in docs/architecture/05-test-architecture.md §B.4
+  # in favour of cross-repo CI checkout.
+  #
+  # jobsight-backend is private and this repo is public, so GITHUB_TOKEN cannot
+  # read it. Requires a fine-grained PAT with Contents:read on
+  # kubiknyc/jobsight-backend, stored as the BACKEND_REPO_TOKEN secret:
+  #   gh secret set BACKEND_REPO_TOKEN --repo kubiknyc/worklog
+  schema-parity:
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_TOKEN: ${{ secrets.BACKEND_REPO_TOKEN }}
+    steps:
+      - name: Require the backend token
+        run: |
+          if [ -z "$BACKEND_TOKEN" ]; then
+            echo "::error::BACKEND_REPO_TOKEN is not set. Create a fine-grained PAT with Contents:read on kubiknyc/jobsight-backend and run: gh secret set BACKEND_REPO_TOKEN --repo kubiknyc/worklog"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+
+      # Checked out INSIDE the workspace; actions/checkout refuses paths above
+      # it, so gen-server-columns.mjs reads BACKEND_MIGRATIONS_DIR instead of
+      # its default ../../jobsight-backend layout.
+      - uses: actions/checkout@v5
+        with:
+          repository: kubiknyc/jobsight-backend
+          path: .backend
+          token: ${{ secrets.BACKEND_REPO_TOKEN }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Regenerate the server column snapshot from live migrations
+        run: npm run gen:server-columns
+        env:
+          BACKEND_MIGRATIONS_DIR: ${{ github.workspace }}/.backend/supabase/migrations
+
+      - name: Fail if the checked-in snapshot is stale
+        run: |
+          if ! git diff --exit-code src/db/serverColumns.generated.json; then
+            echo "::error::serverColumns.generated.json is stale. Run 'npm run gen:server-columns' against the current jobsight-backend and commit the result."
+            exit 1
+          fi
+
+      - name: Parity test against the freshly generated snapshot
+        run: npx jest src/db/schemaParity.test.ts
+
+  # src/platformSplit.test.ts greps for native-only imports. This runs the
+  # export that grep is a proxy for — the actual thing that breaks.
+  web-export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # src/supabase/client.ts throws when these are absent; the export only
+      # needs them to be present, not valid.
+      - name: Export web bundle
+        run: npx expo export --platform web --output-dir .web-export
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+
+  # SDK 54 dependency drift. Non-blocking: expo-doctor flags advisory issues
+  # (peer ranges, unmaintained transitives) that shouldn't stop a merge.
+  deps:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check dependency versions against the SDK
+        run: npx expo install --check
+
+      - name: expo-doctor
+        run: npx expo-doctor
