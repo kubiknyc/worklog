@@ -1,6 +1,7 @@
 node_modules/
 .expo/
 dist/
+.web-export/
 expo-env.d.ts
 .env
 .env.local

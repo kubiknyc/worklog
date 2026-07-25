@@ -1,0 +1,24 @@
+# Build output and caches
+node_modules/
+coverage/
+dist/
+.expo/
+.web-export/
+
+# Generated — never hand-format. Formatting these makes the next regeneration
+# produce a whole-file diff that hides the real schema change.
+# (gitignore syntax — no trailing comments on pattern lines)
+# src/db/serverColumns.generated.json  <- npm run gen:server-columns
+# src/supabase/types.ts                <- supabase gen types typescript
+src/db/serverColumns.generated.json
+src/supabase/types.ts
+expo-env.d.ts
+package-lock.json
+
+# Agent artefacts (briefs, reports, review diffs) — not source
+.superpowers/
+
+# Prose. Formatting these would churn the architecture docs for no gain;
+# the pain this gate exists to stop was TS/JSON reflow noise, not markdown.
+docs/
+*.md

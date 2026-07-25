@@ -62,7 +62,10 @@ const SecureStoreAdapter = {
     await clearChunks(key); // drop any larger prior value's leftover slices
     const count = Math.max(1, Math.ceil(value.length / CHUNK_SIZE));
     for (let i = 0; i < count; i += 1) {
-      await SecureStore.setItemAsync(chunkKey(key, i), value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
+      await SecureStore.setItemAsync(
+        chunkKey(key, i),
+        value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE),
+      );
     }
     await SecureStore.setItemAsync(key, String(count));
   },
