@@ -77,3 +77,19 @@ export const INSPECTION_RESULTS: readonly ChipOption[] = [
   { value: 'failed', label: 'Failed' },
   { value: 'partial', label: 'Partial' },
 ] as const;
+
+/** Equipment on-site status (PRD §7 Equipment: idle/active). */
+export const EQUIPMENT_STATUS: readonly ChipOption[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'idle', label: 'Idle' },
+] as const;
+
+/** Weather condition chips for the manual override (PRD §7 Weather). */
+export const WEATHER_CONDITIONS: readonly ChipOption[] = [
+  { value: 'clear', label: 'Clear' },
+  { value: 'cloudy', label: 'Cloudy' },
+  { value: 'rain', label: 'Rain' },
+  { value: 'snow', label: 'Snow' },
+  { value: 'windy', label: 'Windy' },
+  { value: 'fog', label: 'Fog' },
+] as const;

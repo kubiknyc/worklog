@@ -32,4 +32,6 @@ export {
   INSPECTION_AGENCIES,
   SAFETY_TYPES,
   INSPECTION_RESULTS,
+  EQUIPMENT_STATUS,
+  WEATHER_CONDITIONS,
 } from './report/sectionConstants';
