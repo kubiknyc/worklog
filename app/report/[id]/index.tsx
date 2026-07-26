@@ -1,12 +1,13 @@
 /**
  * Report detail (M2) — the daily report's section list. Loads the report, its
- * section rows, and the 1:1 weather row, renders each of the 11 sections
- * (PRD §7 order) with a one-line summary, and opens the matching editor sheet
- * on tap. Section edits autosave locally (useSectionDraft); on sheet close the
- * screen silently reloads so summaries reflect the new content.
+ * section rows, and the 1:1 weather row, renders each of the 10 report rows
+ * (PRD §7 order, crew + work_performed grouped) with a one-line summary, and
+ * opens the matching editor sheet on tap. Section edits autosave locally
+ * (useSectionDraft); on sheet close the screen silently reloads so summaries
+ * reflect the new content.
  *
- * Only the sections whose editor sheets exist are interactive today
- * (`ENABLED_KINDS`); the rest render read-only as their sheets land across M2.
+ * All report rows are interactive now (`REPORT_ROWS`); a row whose sheet is
+ * not yet built would render dimmed with "Soon" via `ReportDetailSections`.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -20,25 +21,42 @@ import {
   PrimaryButton,
   ReportStatusChip,
 } from '../../../src/components';
-import { CrewSectionSheet } from '../../../src/components/report/CrewSectionSheet';
+import { CrewWorkSheet } from '../../../src/components/report/CrewWorkSheet';
+import { DelaysSectionSheet } from '../../../src/components/report/DelaysSectionSheet';
+import { DeliveriesSectionSheet } from '../../../src/components/report/DeliveriesSectionSheet';
+import { EquipmentSectionSheet } from '../../../src/components/report/EquipmentSectionSheet';
+import { InspectionsSectionSheet } from '../../../src/components/report/InspectionsSectionSheet';
 import { NotesSectionSheet } from '../../../src/components/report/NotesSectionSheet';
 import { ReportDetailSections } from '../../../src/components/report/ReportDetailSections';
+import { RfisSectionSheet } from '../../../src/components/report/RfisSectionSheet';
+import { SafetySectionSheet } from '../../../src/components/report/SafetySectionSheet';
+import { VisitorsSectionSheet } from '../../../src/components/report/VisitorsSectionSheet';
+import { WeatherSectionSheet } from '../../../src/components/report/WeatherSectionSheet';
 import { useRepository } from '../../../src/data';
-import type { CrewContent, GeneralNotesContent } from '../../../src/data/sectionContent';
+import type {
+  CrewContent,
+  DelaysContent,
+  DeliveriesContent,
+  EquipmentContent,
+  GeneralNotesContent,
+  InspectionsContent,
+  RfisContent,
+  SafetyContent,
+  VisitorsContent,
+  WorkPerformedContent,
+} from '../../../src/data/sectionContent';
 import { emptyContentFor } from '../../../src/data/sectionContent';
 import type { Json, ReportSectionRow } from '../../../src/data/types';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
-import { SECTION_META } from '../../../src/report/sectionMeta';
+import { REPORT_ROWS } from '../../../src/report/sectionMeta';
 import {
+  summarizeCrewWork,
   summarizeSection,
   summarizeWeather,
   type SectionSummary,
 } from '../../../src/report/summarize';
 import type { SectionKind } from '../../../src/sync/types';
 import { useTheme } from '../../../src/theme';
-
-/** Sections whose editor sheet is built. The rest render dimmed ("Soon"). */
-const ENABLED_KINDS: readonly SectionKind[] = ['crew', 'general_notes'];
 
 /** "2026-07-24" → "Thursday, Jul 24" (parsed at local noon to dodge TZ skew). */
 function formatReportDate(reportDate: string): string {
@@ -52,7 +70,7 @@ export default function ReportDetailScreen() {
   const reportId = id ?? '';
   const { colors, fonts, spacing, sizes } = useTheme();
   const repo = useRepository();
-  const [activeKind, setActiveKind] = useState<SectionKind | null>(null);
+  const [activeRowId, setActiveRowId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [report, sections, weather] = await Promise.all([
@@ -72,20 +90,35 @@ export default function ReportDetailScreen() {
   }, [data?.sections]);
 
   const summaries = useMemo(() => {
-    const out = {} as Record<SectionKind, SectionSummary>;
-    for (const meta of SECTION_META) {
-      if (meta.kind === 'weather') {
-        out.weather = summarizeWeather(data?.weather ?? null);
+    const out: Record<string, SectionSummary> = {};
+    for (const row of REPORT_ROWS) {
+      if (row.id === 'weather') {
+        out[row.id] = summarizeWeather(data?.weather ?? null);
         continue;
       }
-      const row = sectionByKind.get(meta.kind);
-      out[meta.kind] = summarizeSection(meta.kind, row?.payload ?? null, row?.is_complete ?? false);
+      if (row.id === 'crew_work') {
+        const crewRow = sectionByKind.get('crew');
+        const workRow = sectionByKind.get('work_performed');
+        out[row.id] = summarizeCrewWork(
+          crewRow?.payload ?? null,
+          workRow?.payload ?? null,
+          crewRow?.is_complete ?? false,
+        );
+        continue;
+      }
+      const kind = row.kinds[0] as Exclude<SectionKind, 'weather'>;
+      const sectionRow = sectionByKind.get(kind);
+      out[row.id] = summarizeSection(
+        kind,
+        sectionRow?.payload ?? null,
+        sectionRow?.is_complete ?? false,
+      );
     }
     return out;
   }, [data?.weather, sectionByKind]);
 
   const closeSheet = useCallback(() => {
-    setActiveKind(null);
+    setActiveRowId(null);
     reload();
   }, [reload]);
 
@@ -96,6 +129,116 @@ export default function ReportDetailScreen() {
     },
     [sectionByKind],
   );
+
+  const renderActiveSheet = () => {
+    if (!data?.report || !activeRowId) return null;
+    const key = `${activeRowId}:${reportId}`;
+    switch (activeRowId) {
+      case 'crew_work':
+        return (
+          <CrewWorkSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initialCrew={contentFor<CrewContent>('crew')}
+            initialWork={contentFor<WorkPerformedContent>('work_performed')}
+            onClose={closeSheet}
+          />
+        );
+      case 'weather':
+        return (
+          <WeatherSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initialWeather={data?.weather ?? null}
+            onClose={closeSheet}
+          />
+        );
+      case 'deliveries':
+        return (
+          <DeliveriesSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<DeliveriesContent>('deliveries')}
+            onClose={closeSheet}
+          />
+        );
+      case 'equipment':
+        return (
+          <EquipmentSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<EquipmentContent>('equipment')}
+            onClose={closeSheet}
+          />
+        );
+      case 'inspections':
+        return (
+          <InspectionsSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<InspectionsContent>('inspections')}
+            onClose={closeSheet}
+          />
+        );
+      case 'safety':
+        return (
+          <SafetySectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<SafetyContent>('safety')}
+            onClose={closeSheet}
+          />
+        );
+      case 'delays':
+        return (
+          <DelaysSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<DelaysContent>('delays')}
+            onClose={closeSheet}
+          />
+        );
+      case 'visitors':
+        return (
+          <VisitorsSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<VisitorsContent>('visitors')}
+            onClose={closeSheet}
+          />
+        );
+      case 'rfis':
+        return (
+          <RfisSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<RfisContent>('rfis')}
+            onClose={closeSheet}
+          />
+        );
+      case 'general_notes':
+        return (
+          <NotesSectionSheet
+            key={key}
+            visible
+            reportId={reportId}
+            initial={contentFor<GeneralNotesContent>('general_notes')}
+            onClose={closeSheet}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <SafeAreaView
@@ -155,33 +298,11 @@ export default function ReportDetailScreen() {
             <ReportStatusChip status={data.report.status} />
           </View>
 
-          <ReportDetailSections
-            summaries={summaries}
-            enabledKinds={ENABLED_KINDS}
-            onOpen={setActiveKind}
-          />
+          <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />
         </ScrollView>
       )}
 
-      {data?.report && activeKind === 'general_notes' ? (
-        <NotesSectionSheet
-          key={`notes:${reportId}`}
-          visible
-          reportId={reportId}
-          initial={contentFor<GeneralNotesContent>('general_notes')}
-          onClose={closeSheet}
-        />
-      ) : null}
-
-      {data?.report && activeKind === 'crew' ? (
-        <CrewSectionSheet
-          key={`crew:${reportId}`}
-          visible
-          reportId={reportId}
-          initial={contentFor<CrewContent>('crew')}
-          onClose={closeSheet}
-        />
-      ) : null}
+      {renderActiveSheet()}
     </SafeAreaView>
   );
 }

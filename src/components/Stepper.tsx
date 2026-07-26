@@ -25,6 +25,7 @@ type Props = {
   readonly unitLabel?: string;
   readonly accessibilityLabel: string;
   readonly formatValue?: (value: number) => string;
+  readonly disabled?: boolean;
 };
 
 /** Round to one decimal so 0.5-step math never drifts (8 → 8.5, not 8.4999999). */
@@ -41,17 +42,20 @@ export function Stepper({
   unitLabel,
   accessibilityLabel,
   formatValue,
+  disabled = false,
 }: Props) {
   const { colors, fonts, radii } = useTheme();
 
-  const atMin = value <= min;
-  const atMax = value >= max;
+  const atMin = disabled || value <= min;
+  const atMax = disabled || value >= max;
 
   const decrement = () => {
+    if (disabled) return;
     if (atMin) return;
     onChange(Math.max(min, roundTo1(value - step)));
   };
   const increment = () => {
+    if (disabled) return;
     if (atMax) return;
     onChange(Math.min(max, roundTo1(value + step)));
   };
@@ -72,6 +76,7 @@ export function Stepper({
       accessibilityRole="adjustable"
       accessibilityLabel={accessibilityLabel}
       accessibilityValue={{ text: valueText }}
+      accessibilityState={{ disabled }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === 'increment') increment();
@@ -91,7 +96,12 @@ export function Stepper({
       </Pressable>
 
       <View style={styles.readout} importantForAccessibility="no-hide-descendants">
-        <Text style={[styles.value, { color: colors.text, fontFamily: fonts.mono.medium }]}>
+        <Text
+          style={[
+            styles.value,
+            { color: disabled ? colors.faint : colors.text, fontFamily: fonts.mono.medium },
+          ]}
+        >
           {displayValue}
         </Text>
         {unitLabel ? (

@@ -17,6 +17,7 @@ export { TextField } from './TextField';
 export { ToastProvider, useToast, type ToastApi, type UndoableToastOptions } from './ToastProvider';
 
 // Section-input scaffolding + static pick lists (report-write path).
+export { EntryCard } from './report/EntryCard';
 export { SectionSheetScaffold } from './report/SectionSheetScaffold';
 export {
   useSectionDraft,
@@ -31,4 +32,6 @@ export {
   INSPECTION_AGENCIES,
   SAFETY_TYPES,
   INSPECTION_RESULTS,
+  EQUIPMENT_STATUS,
+  WEATHER_CONDITIONS,
 } from './report/sectionConstants';

@@ -1,40 +1,37 @@
 /**
- * ReportDetailSections — the report-detail body: one tappable row per section
- * in PRD §7 display order, each showing its label, a one-line summary, and a
- * state affordance (accent chevron when filled, a check when a deliberate
- * "None today", muted chevron when untouched). Presentational only — it takes
- * precomputed {@link SectionSummary}s and reports taps up via `onOpen`.
+ * ReportDetailSections — the report-detail body: one tappable row per report
+ * row in PRD §7 display order (crew + work_performed grouped into one row),
+ * each showing its label, a one-line summary, and a state affordance (accent
+ * chevron when filled, a check when a deliberate "None today", muted chevron
+ * when untouched). Presentational only — it takes precomputed
+ * {@link SectionSummary}s and reports taps up via `onOpen`.
  *
- * `enabledKinds` gates which rows are interactive: a section whose editor sheet
- * has not been built yet renders its summary but sits dimmed and non-pressable,
- * so the list is always complete (all 11 sections visible) while the sheets
- * land incrementally across M2.
+ * `row.mode === 'pending'` gates which rows are interactive: a row whose
+ * editor sheet has not been built yet renders its summary but sits dimmed and
+ * non-pressable, so the list is always complete while sheets land incrementally.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { SECTION_META } from '../../report/sectionMeta';
+import type { ReportRow } from '../../report/sectionMeta';
 import type { SectionSummary } from '../../report/summarize';
-import type { SectionKind } from '../../sync/types';
 import { useTheme } from '../../theme';
 import { SheetRow } from '../SheetRow';
 
 type Props = {
-  readonly summaries: Readonly<Record<SectionKind, SectionSummary>>;
-  /** Sections whose editor sheet exists; others render read-only/dimmed. */
-  readonly enabledKinds: readonly SectionKind[];
-  readonly onOpen: (kind: SectionKind) => void;
+  readonly rows: readonly ReportRow[];
+  readonly summaries: Record<string, SectionSummary>;
+  readonly onOpen: (rowId: string) => void;
 };
 
-export function ReportDetailSections({ summaries, enabledKinds, onOpen }: Props) {
+export function ReportDetailSections({ rows, summaries, onOpen }: Props) {
   const { colors, fonts, spacing, reportStatus } = useTheme();
-  const enabled = new Set(enabledKinds);
 
   return (
     <View style={{ gap: spacing.sm }}>
-      {SECTION_META.map((meta) => {
-        const summary = summaries[meta.kind];
-        const isEnabled = enabled.has(meta.kind);
+      {rows.map((row) => {
+        const summary = summaries[row.id];
+        const isInteractive = row.mode === 'interactive';
         // Filled → primary text; deliberate none → locked-green; empty → faint.
         const summaryColor =
           summary.state === 'filled'
@@ -43,7 +40,7 @@ export function ReportDetailSections({ summaries, enabledKinds, onOpen }: Props)
               ? reportStatus.locked
               : colors.faint;
 
-        const trailing = !isEnabled ? (
+        const trailing = !isInteractive ? (
           <Text style={[styles.soon, { color: colors.faint, fontFamily: fonts.ui.semibold }]}>
             Soon
           </Text>
@@ -54,19 +51,19 @@ export function ReportDetailSections({ summaries, enabledKinds, onOpen }: Props)
         );
 
         return (
-          <View key={meta.kind} style={!isEnabled && styles.dimmed}>
+          <View key={row.id} style={!isInteractive && styles.dimmed}>
             <SheetRow
-              testID={`report-section-${meta.kind}`}
-              onPress={() => isEnabled && onOpen(meta.kind)}
-              accessibilityLabel={`${meta.label}. ${summary.text}`}
-              icon={meta.icon}
+              testID={`report-section-${row.id}`}
+              onPress={() => isInteractive && onOpen(row.id)}
+              accessibilityLabel={`${row.label}. ${summary.text}`}
+              icon={row.icon}
               trailing={trailing}
             >
               <Text
                 numberOfLines={1}
                 style={[styles.label, { color: colors.text, fontFamily: fonts.ui.semibold }]}
               >
-                {meta.label}
+                {row.label}
               </Text>
               <Text
                 numberOfLines={1}

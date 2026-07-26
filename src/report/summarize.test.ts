@@ -1,5 +1,5 @@
 import type { WeatherRow } from '../data/types';
-import { summarizeSection, summarizeWeather } from './summarize';
+import { summarizeSection, summarizeWeather, summarizeCrewWork } from './summarize';
 
 describe('summarizeSection — tri-state', () => {
   test('untouched section reads "Tap to add" / empty', () => {
@@ -153,5 +153,33 @@ describe('summarizeWeather', () => {
   test('condition alone counts as filled', () => {
     const row: WeatherRow = { ...base, auto_condition: 'Windy' };
     expect(summarizeWeather(row)).toEqual({ text: 'Windy', state: 'filled' });
+  });
+});
+
+describe('summarizeCrewWork', () => {
+  const crew = {
+    rows: [
+      { id: '1', trade: 'Electrical', headcount: 4, hours: 8, is_carried_forward: false },
+      { id: '2', trade: 'Plumbing', headcount: 2, hours: 8, is_carried_forward: false },
+    ],
+  };
+  test('composes trades, headcount, and logged work', () => {
+    const work = { rows: [{ id: 'w1', trade: 'Electrical', area: 'L3', note: 'pulled feeders' }] };
+    expect(summarizeCrewWork(crew, work, false)).toEqual({
+      text: '2 trades · 6 on site · 1 logged',
+      state: 'filled',
+    });
+  });
+  test('omits logged when no work rows', () => {
+    expect(summarizeCrewWork(crew, { rows: [] }, false).text).toBe('2 trades · 6 on site');
+  });
+  test('empty + complete reads None today', () => {
+    expect(summarizeCrewWork({ rows: [] }, { rows: [] }, true)).toEqual({
+      text: 'None today',
+      state: 'none',
+    });
+  });
+  test('empty + not complete reads Tap to add', () => {
+    expect(summarizeCrewWork({ rows: [] }, { rows: [] }, false).state).toBe('empty');
   });
 });

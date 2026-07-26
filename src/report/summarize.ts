@@ -155,3 +155,14 @@ export function summarizeWeather(weather: WeatherRow | null): SectionSummary {
   if (parts.length > 0) return { text: parts.join(' · '), state: 'filled' };
   return { text: 'Will fill when online', state: 'empty' };
 }
+
+/** Combined summary for the crew + work_performed report row. */
+export function summarizeCrewWork(crew: Json, work: Json, crewIsComplete: boolean): SectionSummary {
+  const crewRows = listAt(crew, 'rows');
+  const heads = crewRows.reduce<number>((sum, row) => sum + numberOf(row, 'headcount'), 0);
+  const logged = listAt(work, 'rows').length;
+  return fromCount(crewRows.length, crewIsComplete, () => {
+    const base = `${plural(crewRows.length, 'trade')} · ${heads} on site`;
+    return logged > 0 ? `${base} · ${logged} logged` : base;
+  });
+}

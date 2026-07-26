@@ -96,4 +96,16 @@ describe('Stepper', () => {
     fireEvent(control, 'accessibilityAction', { nativeEvent: { actionName: 'decrement' } });
     expect(onChange).toHaveBeenLastCalledWith(3);
   });
+
+  test('disabled stepper ignores button presses', () => {
+    const onChange = jest.fn();
+    render(<Stepper value={3} onChange={onChange} disabled accessibilityLabel={LABEL} />, {
+      wrapper,
+    });
+
+    fireEvent.press(screen.getByLabelText(`Increase ${LABEL}`));
+    fireEvent.press(screen.getByLabelText(`Decrease ${LABEL}`));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
