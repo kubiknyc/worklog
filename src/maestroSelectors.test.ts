@@ -25,6 +25,17 @@ import * as path from 'path';
 const DYNAMIC_TESTIDS: readonly { readonly prefix: string; readonly source: string }[] = [
   // `login-demo-${acc.role.toLowerCase()}` — one row per DEMO_ACCOUNTS entry.
   { prefix: 'login-demo-', source: path.join('app', '(auth)', 'login.tsx') },
+  // `report-section-${row.id}` — one row per REPORT_ROWS entry.
+  {
+    prefix: 'report-section-',
+    source: path.join('src', 'components', 'report', 'ReportDetailSections.tsx'),
+  },
+  // SectionSheetScaffold derives `${testID}-none` for the affirmation row;
+  // `sheet-safety` is the literal prefix passed by SafetySectionSheet.
+  {
+    prefix: 'sheet-safety',
+    source: path.join('src', 'components', 'report', 'SafetySectionSheet.tsx'),
+  },
 ];
 
 const SCAN_ROOTS = ['src', 'app'];

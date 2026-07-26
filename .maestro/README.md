@@ -88,10 +88,10 @@ Nothing exercises them together against a real SQLite database and a real
 Supabase instance. Until this flow exists, 100% coverage on `mutationQueue.ts`
 proves the *policy* is correct and proves nothing about the *engine*.
 
-It is blocked on UI, not on tooling. Write it once these exist:
+It is blocked on UI, not on tooling. Two of the three prerequisites shipped
+with M2 (report creation from Today, section sheets writing through the
+mutation queue — `report-sections.yaml` drives both). One remains:
 
-- a screen that creates a daily report,
-- a section sheet that commits an edit through the mutation queue,
 - a sync indicator (queued / syncing / synced) with a **`testID` and a
   machine-readable state** — asserting "the queue drained" against a spinner's
   copy reintroduces exactly the brittleness this file is about.

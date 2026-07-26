@@ -1,0 +1,186 @@
+# Report section sheets — drives every M2 editor sheet end-to-end.
+#
+# Covers: login -> Today -> create/open today's report -> open each section
+# sheet, exercise the interactions that are reachable by testID (add an entry
+# on list sheets, affirm "nothing to report" on Safety), close via Done ->
+# back to Today.
+#
+# Selectors are testIDs only (see .maestro/README.md). Interactions that would
+# need copy or a11y-label taps (chip picks, steppers, switches, text entry)
+# are covered by Jest component tests, not here — this flow proves navigation
+# reaches every sheet and the testID surface is real on-device.
+#
+# Idempotent by design: re-runs may find today's report already created (the
+# backend persists across clearState), so the Today tap is conditional, and
+# no step asserts entry counts.
+#
+# PRECONDITIONS: same as login.yaml (e2e-test build with demo logins, local
+# Supabase stack from ../jobsight-backend seeded with demo accounts).
+#
+# Run:  maestro test .maestro/report-sections.yaml
+appId: com.jobsight.worklog
+---
+- launchApp:
+    clearState: true
+
+# --- Sign in via the seeded demo row (same fast path as login.yaml). ---
+- assertVisible:
+    id: 'login-submit'
+- tapOn:
+    id: 'login-demo-superintendent'
+- extendedWaitUntil:
+    visible:
+      id: 'screen-today'
+    timeout: 20000
+
+# --- Enter today's report: create it, or open the existing one. ---
+- runFlow:
+    when:
+      visible:
+        id: 'today-start-report'
+    commands:
+      - tapOn:
+          id: 'today-start-report'
+- runFlow:
+    when:
+      visible:
+        id: 'today-open-report'
+    commands:
+      - tapOn:
+          id: 'today-open-report'
+- extendedWaitUntil:
+    visible:
+      id: 'screen-report'
+    timeout: 10000
+
+# --- Weather: auto snapshot + manual override sheet opens and closes. ---
+- tapOn:
+    id: 'report-section-weather'
+- assertVisible:
+    id: 'sheet-weather'
+- tapOn:
+    id: 'sheet-weather-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Crew & work: combined sheet opens; empty state shows the affirmation. ---
+- tapOn:
+    id: 'report-section-crew_work'
+- assertVisible:
+    id: 'sheet-crew-work'
+- tapOn:
+    id: 'sheet-crew-work-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Deliveries: add an entry (writes through the autosave path), close. ---
+- tapOn:
+    id: 'report-section-deliveries'
+- assertVisible:
+    id: 'sheet-deliveries'
+- tapOn:
+    id: 'sheet-deliveries-add'
+- tapOn:
+    id: 'sheet-deliveries-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Equipment: add is gated on a typed name, so open/close only. ---
+- tapOn:
+    id: 'report-section-equipment'
+- assertVisible:
+    id: 'sheet-equipment'
+- tapOn:
+    id: 'sheet-equipment-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Inspections: add an entry, close. ---
+- tapOn:
+    id: 'report-section-inspections'
+- assertVisible:
+    id: 'sheet-inspections'
+- tapOn:
+    id: 'sheet-inspections-add'
+- tapOn:
+    id: 'sheet-inspections-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Safety: affirm "nothing to report" via the derived -none row. ---
+# The affirmation writes is_complete=true and closes the sheet itself.
+- scrollUntilVisible:
+    element:
+      id: 'report-section-safety'
+- tapOn:
+    id: 'report-section-safety'
+- assertVisible:
+    id: 'sheet-safety'
+- tapOn:
+    id: 'sheet-safety-none'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Delays: add an entry, close. ---
+- scrollUntilVisible:
+    element:
+      id: 'report-section-delays'
+- tapOn:
+    id: 'report-section-delays'
+- assertVisible:
+    id: 'sheet-delays'
+- tapOn:
+    id: 'sheet-delays-add'
+- tapOn:
+    id: 'sheet-delays-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Visitors: add an entry, close. ---
+- scrollUntilVisible:
+    element:
+      id: 'report-section-visitors'
+- tapOn:
+    id: 'report-section-visitors'
+- assertVisible:
+    id: 'sheet-visitors'
+- tapOn:
+    id: 'sheet-visitors-add'
+- tapOn:
+    id: 'sheet-visitors-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- RFIs: add an entry, close. ---
+- scrollUntilVisible:
+    element:
+      id: 'report-section-rfis'
+- tapOn:
+    id: 'report-section-rfis'
+- assertVisible:
+    id: 'sheet-rfis'
+- tapOn:
+    id: 'sheet-rfis-add'
+- tapOn:
+    id: 'sheet-rfis-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- General notes: pre-existing Notes sheet still opens and closes. ---
+- scrollUntilVisible:
+    element:
+      id: 'report-section-general_notes'
+- tapOn:
+    id: 'report-section-general_notes'
+- assertVisible:
+    id: 'sheet-notes'
+- tapOn:
+    id: 'sheet-notes-done'
+- assertVisible:
+    id: 'screen-report'
+
+# --- Back out to Today. ---
+- tapOn:
+    id: 'report-back'
+- assertVisible:
+    id: 'screen-today'
