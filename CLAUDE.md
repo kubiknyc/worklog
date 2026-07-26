@@ -1,7 +1,28 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # WorkLog
 
 Offline-first Expo app for daily construction reports. Local SQLite is the read
 path; every write goes through the sync queue in `src/sync/`.
+
+## Layout
+
+- `app/` — expo-router routes only (`(auth)`, `(tabs)`, `report/[id]`). Jest
+  ignores `app/` entirely; anything worth testing belongs in `src/`.
+- `src/data/` — the repository seam. `RepositoryProvider` injects a `Repository`
+  (`src/data/types.ts`): native resolves to the SQLite repo via
+  `platformRepo.native.ts`, web to the online-only `supabaseRepo.ts`, through
+  Metro/tsconfig `moduleSuffixes` resolution. The provider is keyed on `userId`
+  so an account switch rebuilds the repo and wipes the prior user's cache.
+- `src/sync/` — pure sync policy (queue, conflict, cursors, paginate);
+  persistence lives only in `store.native.ts`.
+- `src/db/` — SQLite schema plus the server-column parity snapshot.
+- `src/theme/` — `ThemeProvider` + `tokens.ts`; component tests must render
+  inside the `ThemeProvider` wrapper.
+- `src/components/` — shared UI (`PrimaryButton`, `TextField`, `SheetRow`, …);
+  all accept and forward `testID`.
 
 ## Sibling repo dependency
 
@@ -32,6 +53,14 @@ is the gate; run it before claiming a change is done. CI runs the same thing.
 `npm run check:parity` — regenerates the server column snapshot from
 `../jobsight-backend` and fails if it drifted from what is committed.
 
+Single test file: `npx jest src/sync/conflict.test.ts` (jest-expo preset;
+add `-t "name"` for one case). `npm test` always runs with coverage, so a
+partial run can fail thresholds that a full run passes — expected.
+
+E2E: `maestro test .maestro/` against a booted emulator with an `e2e-test`
+profile build (`eas build --profile e2e-test --platform android`, enables
+demo logins). See `.maestro/README.md`.
+
 ## Rules that bite
 
 **After any backend schema change, run `npm run gen:server-columns`.** The
@@ -45,7 +74,10 @@ and fails on drift, so a stale snapshot is caught rather than trusted.
 visible copy — copy here is plain language and expected to change, so a text
 assertion breaks for reasons unrelated to the behaviour. Naming convention and
 the current inventory live in `.maestro/README.md`. Add them as screens are
-built; retrofitting costs far more.
+built; retrofitting costs far more. `src/maestroSelectors.test.ts` (runs in
+`verify`) asserts every `id:` a flow uses exists as a `testID` in source;
+runtime-built testIDs go in its `DYNAMIC_TESTIDS` list, never by loosening the
+assertion.
 
 **Never OTA a SQLite schema or mutation-payload shape change.** A device that
 has been offline for days holds queued mutations written in the *old* shape; an
@@ -62,7 +94,9 @@ the web graph breaks `expo export --platform web`. Add the module to
 
 **`src/sync/mutationQueue.ts` is pinned at 100% branch/function/line coverage**
 in `package.json`. This is deliberate — it is the quality spine of the sync
-engine. Add tests to meet it; do not lower the threshold.
+engine. Add tests to meet it; do not lower the threshold. `conflict.ts`,
+`cursors.ts`, `paginate.ts`, and `db/schema.ts` carry their own ~90–95% pins in
+the same `coverageThreshold` block.
 
 **Report tables are SELECT-only to clients.** All lifecycle writes go through
 `SECURITY DEFINER` RPCs on the server. Never add a direct client `INSERT`/
