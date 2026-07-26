@@ -69,3 +69,87 @@ const META_BY_KIND: Readonly<Record<SectionKind, SectionMeta>> = Object.fromEntr
 export function sectionMetaFor(kind: SectionKind): SectionMeta {
   return META_BY_KIND[kind];
 }
+
+export type DisplayMode = 'interactive' | 'pending';
+
+export interface ReportRow {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: keyof typeof Ionicons.glyphMap;
+  readonly kinds: readonly SectionKind[];
+  readonly mode: DisplayMode;
+}
+
+/** Report-detail rows in PRD §7 display order; crew+work_performed grouped. */
+export const REPORT_ROWS: readonly ReportRow[] = [
+  {
+    id: 'weather',
+    label: 'Weather',
+    icon: 'partly-sunny-outline',
+    kinds: ['weather'],
+    mode: 'interactive',
+  },
+  {
+    id: 'crew_work',
+    label: 'Crew & work by trade',
+    icon: 'people-outline',
+    kinds: ['crew', 'work_performed'],
+    mode: 'interactive',
+  },
+  {
+    id: 'deliveries',
+    label: 'Deliveries',
+    icon: 'cube-outline',
+    kinds: ['deliveries'],
+    mode: 'interactive',
+  },
+  {
+    id: 'equipment',
+    label: 'Equipment',
+    icon: 'build-outline',
+    kinds: ['equipment'],
+    mode: 'interactive',
+  },
+  {
+    id: 'inspections',
+    label: 'Inspections',
+    icon: 'clipboard-outline',
+    kinds: ['inspections'],
+    mode: 'interactive',
+  },
+  {
+    id: 'safety',
+    label: 'Safety',
+    icon: 'shield-checkmark-outline',
+    kinds: ['safety'],
+    mode: 'interactive',
+  },
+  {
+    id: 'delays',
+    label: 'Delays & impacts',
+    icon: 'time-outline',
+    kinds: ['delays'],
+    mode: 'interactive',
+  },
+  {
+    id: 'visitors',
+    label: 'Visitors',
+    icon: 'walk-outline',
+    kinds: ['visitors'],
+    mode: 'interactive',
+  },
+  {
+    id: 'rfis',
+    label: 'RFIs / issues',
+    icon: 'help-circle-outline',
+    kinds: ['rfis'],
+    mode: 'interactive',
+  },
+  {
+    id: 'general_notes',
+    label: 'General notes',
+    icon: 'document-text-outline',
+    kinds: ['general_notes'],
+    mode: 'interactive',
+  },
+] as const;
