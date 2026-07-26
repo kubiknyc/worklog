@@ -14,7 +14,8 @@ path; every write goes through the sync queue in `src/sync/`.
 - `src/data/` — the repository seam. `RepositoryProvider` injects a `Repository`
   (`src/data/types.ts`): native resolves to the SQLite repo via
   `platformRepo.native.ts`, web to the online-only `supabaseRepo.ts`, through
-  Metro/tsconfig `moduleSuffixes` resolution. The provider is keyed on `userId`
+  Metro's built-in platform-extension resolution (plus `moduleSuffixes` in
+  tsconfig for TypeScript). The provider is keyed on `userId`
   so an account switch rebuilds the repo and wipes the prior user's cache.
 - `src/sync/` — pure sync policy (queue, conflict, cursors, paginate);
   persistence lives only in `store.native.ts`.
