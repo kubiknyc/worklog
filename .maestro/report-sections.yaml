@@ -33,6 +33,13 @@ appId: com.jobsight.worklog
       id: 'screen-today'
     timeout: 20000
 
+# Queue is provably empty here (clearState wiped SQLite; login and the
+# reference-mirror seed enqueue nothing) → the pill reads synced. Near-vacuous
+# alone (idle state derives to synced even if the counter never installed) —
+# its signal is as the before-half of the synced→queued pair below.
+- assertVisible:
+    id: 'sync-status-synced'
+
 # --- Enter today's report: create it, or open the existing one. ---
 - runFlow:
     when:
@@ -84,6 +91,14 @@ appId: com.jobsight.worklog
     id: 'sheet-deliveries-done'
 - assertVisible:
     id: 'screen-report'
+# The deliveries add wrote through the autosave path (closing the sheet
+# flushes the draft debounce), and nothing drains the queue in M2 — the pill
+# must now read queued. Anchored AFTER the sheet closes (an open RN Modal can
+# occlude the pill from the hierarchy) and to a SECTION write, which enqueues
+# on both the start-report and open-report entry branches (create_report does
+# not enqueue on the open branch).
+- assertVisible:
+    id: 'sync-status-queued'
 
 # --- Equipment: add is gated on a typed name, so open/close only. ---
 - tapOn:
@@ -184,3 +199,8 @@ appId: com.jobsight.worklog
     id: 'report-back'
 - assertVisible:
     id: 'screen-today'
+# Cross-screen: Today's pill reads the same hub — still queued. This is the
+# assertion that proves the counter actually installed (the opening synced
+# assert cannot) and that the subscription spans screens.
+- assertVisible:
+    id: 'sync-status-queued'

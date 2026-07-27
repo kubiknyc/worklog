@@ -36,6 +36,11 @@ const DYNAMIC_TESTIDS: readonly { readonly prefix: string; readonly source: stri
     prefix: 'sheet-safety',
     source: path.join('src', 'components', 'report', 'SafetySectionSheet.tsx'),
   },
+  // `sync-status-${state}` — the sync pill's machine-readable state node.
+  {
+    prefix: 'sync-status-',
+    source: path.join('src', 'components', 'SyncStatusBanner.tsx'),
+  },
 ];
 
 const SCAN_ROOTS = ['src', 'app'];

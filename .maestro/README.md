@@ -43,6 +43,7 @@ The convention, applied as screens are built rather than retrofitted:
 | Form control | `<screen>-<field>` | `login-email`, `login-password`, `login-submit`, `login-forgot` |
 | Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent`, `report-section-crew_work` |
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
+| Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-synced`, `sync-status-queued` — deliberate exception to `<screen>-<state>`: the pill is the same surface on every screen |
 | Section sheet | `sheet-<section>` + `-done` / `-none` / `-add` | `sheet-crew-work`, `sheet-crew-work-done`, `sheet-crew-work-none`, `sheet-deliveries-add` |
 
 `PrimaryButton`, `TextField` and `SheetRow` all accept an optional `testID` and
@@ -88,14 +89,13 @@ Nothing exercises them together against a real SQLite database and a real
 Supabase instance. Until this flow exists, 100% coverage on `mutationQueue.ts`
 proves the *policy* is correct and proves nothing about the *engine*.
 
-It is blocked on UI, not on tooling. Two of the three prerequisites shipped
-with M2 (report creation from Today, section sheets writing through the
-mutation queue — `report-sections.yaml` drives both). One remains:
-
-- a sync indicator (queued / syncing / synced) with a **`testID` and a
-  machine-readable state** — asserting "the queue drained" against a spinner's
-  copy reintroduces exactly the brittleness this file is about.
+It is now blocked only on the sync ENGINE (M3), not on UI. All three UI
+prerequisites shipped with M2: report creation from Today, section sheets
+writing through the mutation queue, and the sync indicator
+(`SyncStatusBanner` — machine-readable `sync-status-<state>` testIDs;
+`report-sections.yaml` asserts the synced→queued transition). The engine that
+drains the queue is what the reconciliation assertions still wait for.
 
 Maestro toggles connectivity with `- setAirplaneMode: enabled` / `disabled`,
-which is the offline half of the flow. The assertions on reconciliation are the
-part that needs the UI above.
+which is the offline half of the flow. `sync-status-synced` after
+`setAirplaneMode: disabled` is the "queue drained" assertion once M3 lands.

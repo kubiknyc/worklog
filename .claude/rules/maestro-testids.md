@@ -19,6 +19,7 @@ to the behaviour under test.
 | Form control | `<screen>-<field>` | `login-submit` |
 | Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent` |
 | Status surface | `<screen>-<state>` | `login-error` |
+| Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-queued` (screen-agnostic by design) |
 | Section sheet | `sheet-<section>` + `-done` / `-none` | `sheet-crew-done` |
 
 `SectionSheetScaffold` derives `<prefix>-none` and `<prefix>-done` from its

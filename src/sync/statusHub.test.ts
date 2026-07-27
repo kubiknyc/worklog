@@ -167,6 +167,38 @@ describe('createSyncStatusHub', () => {
     expect(hub.getState().countError).toBe(false);
   });
 
+  test('setCounter(null) mid-flight: the coalesced re-run finds no counter and stops cleanly', async () => {
+    const hub = createSyncStatusHub();
+    const stale = deferred<QueueCounts>();
+    hub.setCounter(() => stale.promise);
+    const staleRefresh = hub.refresh();
+    void hub.refresh(); // dirty — forces a re-run after the in-flight one
+
+    hub.setCounter(null); // sign-out/fallback while the count is in flight
+    stale.resolve(counts(50));
+    await staleRefresh;
+
+    // Stale result discarded (epoch), re-run no-ops on the null counter.
+    expect(hub.getState().pending).toBe(0);
+    expect(hub.getState().countError).toBe(false);
+  });
+
+  test('a stale counter FAILURE is discarded silently — no warn, no countError', async () => {
+    const hub = createSyncStatusHub();
+    const stale = deferred<QueueCounts>();
+    hub.setCounter(() => stale.promise);
+    const staleRefresh = hub.refresh();
+
+    hub.setCounter(async () => counts(3)); // new epoch owns the state now
+    stale.reject(new Error('previous DB gone'));
+    await staleRefresh;
+    await hub.refresh();
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(hub.getState().countError).toBe(false);
+    expect(hub.getState().pending).toBe(3);
+  });
+
   test('counter failure: warns once, sets countError, keeps last-known counts', async () => {
     const hub = createSyncStatusHub();
     let fail = false;
