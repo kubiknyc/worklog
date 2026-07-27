@@ -16,6 +16,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  ConnectedSyncStatusBanner,
   DetailSkeleton,
   EmptyState,
   PrimaryButton,
@@ -261,6 +262,13 @@ export default function ReportDetailScreen() {
           Daily report
         </Text>
         <View style={styles.headerSpacer} />
+      </View>
+
+      {/* Fixed chrome (sibling of the header, outside the ScrollView and
+          every loading/error branch): Maestro asserts sync-status-<state>
+          here without scrolling, in any screen state. */}
+      <View style={{ paddingHorizontal: sizes.screenPad, paddingBottom: 4 }}>
+        <ConnectedSyncStatusBanner />
       </View>
 
       {loading && !data ? (

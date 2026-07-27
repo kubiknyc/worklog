@@ -13,6 +13,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  ConnectedSyncStatusBanner,
   DetailSkeleton,
   EmptyState,
   PrimaryButton,
@@ -23,6 +24,7 @@ import { useRepository } from '../../src/data';
 import { computeReportDate } from '../../src/data/reportDate';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useActiveProject } from '../../src/project';
+import { syncStatusHub } from '../../src/sync/statusHub';
 import { useTheme } from '../../src/theme';
 
 /** "2026-07-24" → "Thursday, July 24". */
@@ -49,10 +51,12 @@ export default function TodayScreen() {
 
   const { data, loading, error, reload } = useAsyncData(load, [activeProjectId]);
 
-  // Returning from the report screen (status/edits may have changed) refreshes.
+  // Returning from the report screen (status/edits may have changed) refreshes
+  // the report row and recounts the sync queue for the status pill.
   useFocusEffect(
     useCallback(() => {
       reload();
+      void syncStatusHub.refresh();
     }, [reload]),
   );
 
@@ -79,6 +83,11 @@ export default function TodayScreen() {
       style={[styles.root, { backgroundColor: colors.bg }]}
       edges={['top']}
     >
+      {/* Fixed chrome (outside the ScrollView, present in every branch): the
+          Maestro flow asserts sync-status-<state> here without scrolling. */}
+      <View style={{ paddingHorizontal: sizes.screenPad, paddingTop: spacing.sm }}>
+        <ConnectedSyncStatusBanner />
+      </View>
       <ScrollView
         contentContainerStyle={{ padding: sizes.screenPad, gap: spacing.lg }}
         showsVerticalScrollIndicator={false}
