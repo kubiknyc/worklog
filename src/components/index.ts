@@ -10,6 +10,13 @@ export { PrimaryButton } from './PrimaryButton';
 export { RecentsRow } from './RecentsRow';
 export { ReportStatusChip, REPORT_STATUS_LABELS } from './ReportStatusChip';
 export { SheetRow } from './SheetRow';
+export {
+  ConnectedSyncStatusBanner,
+  SyncStatusBanner,
+  bannerLabelOf,
+  bannerStateOf,
+  type SyncBannerState,
+} from './SyncStatusBanner';
 export { ListSkeleton, CardSkeleton, DetailSkeleton } from './Skeleton';
 export { Stagger } from './Stagger';
 export { Stepper } from './Stepper';
