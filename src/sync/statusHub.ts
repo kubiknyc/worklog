@@ -50,7 +50,15 @@ export function createSyncStatusHub(): SyncStatusHub {
 
   function publish(next: HubSyncState): void {
     state = next;
-    for (const fn of listeners) fn();
+    for (const fn of listeners) {
+      try {
+        fn();
+      } catch (error: unknown) {
+        // A subscriber must never break the hub or refresh()'s never-rejects
+        // contract; surface it and keep notifying the rest.
+        console.warn('[sync] status subscriber threw during notify', error);
+      }
+    }
   }
 
   /**
@@ -64,11 +72,14 @@ export function createSyncStatusHub(): SyncStatusHub {
     const c = counter;
     if (!c) return;
     const startedEpoch = epoch;
+    // `next` is computed inside the try, published OUTSIDE it: a throwing
+    // subscriber must not be misattributed as a count failure.
+    let next: HubSyncState;
     try {
       const counts = await c();
       if (epoch !== startedEpoch) return; // stale — a newer setCounter owns the state now
       warned = false; // successful count re-arms the one-shot warning
-      publish({ ...state, pending: counts.pending, parked: counts.parked, countError: false });
+      next = { ...state, pending: counts.pending, parked: counts.parked, countError: false };
     } catch (error: unknown) {
       if (epoch !== startedEpoch) return;
       if (!warned) {
@@ -77,8 +88,9 @@ export function createSyncStatusHub(): SyncStatusHub {
       }
       // Keep last-known counts; flag the failure so the pill never falsely
       // claims "All saved" over unsent work (AC-O6).
-      publish({ ...state, countError: true });
+      next = { ...state, countError: true };
     }
+    publish(next);
   }
 
   function refresh(): Promise<void> {

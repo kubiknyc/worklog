@@ -4,7 +4,7 @@
  * never red (PRD §9). Not tappable in M2; the tap-through retry surface is M3.
  *
  * Machine-readable state for Maestro: the outer node carries the static
- * `sync-status` testID, the inner state node carries `sync-status-<state>` —
+ * `sync-status` testID, the label Text carries `sync-status-<state>` —
  * E2E flows assert on the id, never the copy.
  *
  * In M2 only `synced` and `queued` are reachable (no engine sets `syncing`,
@@ -74,8 +74,16 @@ export function SyncStatusBanner({ syncState }: Props) {
       accessibilityLiveRegion="polite"
       style={[styles.pill, { backgroundColor: `${color}14` }]}
     >
-      <View testID={`sync-status-${state}`} style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={[styles.label, { color, fontFamily: fonts.ui.semibold }]}>{label}</Text>
+      <View style={[styles.dot, { backgroundColor: color }]} />
+      {/* The machine-readable state id rides the label Text, not the decorative
+          dot: Android prunes text-less leaf Views inside an `accessible`
+          parent from the accessibility tree Maestro reads. */}
+      <Text
+        testID={`sync-status-${state}`}
+        style={[styles.label, { color, fontFamily: fonts.ui.semibold }]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }

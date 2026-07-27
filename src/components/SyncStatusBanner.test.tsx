@@ -68,7 +68,7 @@ describe('bannerLabelOf copy', () => {
 });
 
 describe('SyncStatusBanner rendering', () => {
-  const cases: ReadonlyArray<readonly [HubSyncState, string]> = [
+  const cases: readonly (readonly [HubSyncState, string])[] = [
     [state(), 'All saved to the cloud'],
     [state({ pending: 3 }), '3 changes waiting to send'],
     [state({ syncing: true }), 'Sending…'],
