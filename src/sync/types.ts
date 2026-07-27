@@ -249,3 +249,16 @@ export interface CursorStore {
   get(scope: string): Promise<string | null>;
   set(scope: string, value: string): Promise<void>;
 }
+
+/** Queue totals by status, for the sync status pill (statusHub). */
+export interface QueueCounts {
+  readonly pending: number;
+  readonly parked: number;
+}
+
+/**
+ * Async producer of `QueueCounts`. Lives here (not in statusHub) so
+ * `store.native.ts` can implement it without a type dependency on the
+ * UI-facing hub — persistence stays hub-independent.
+ */
+export type QueueCounter = () => Promise<QueueCounts>;

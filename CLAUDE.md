@@ -18,7 +18,9 @@ path; every write goes through the sync queue in `src/sync/`.
   tsconfig for TypeScript). The provider is keyed on `userId`
   so an account switch rebuilds the repo and wipes the prior user's cache.
 - `src/sync/` — pure sync policy (queue, conflict, cursors, paginate);
-  persistence lives only in `store.native.ts`.
+  persistence lives only in `store.native.ts`. `statusHub.ts` is the one
+  sanctioned stateful exception (mutable module-level subscription state for
+  the sync pill) — still zero IO; its counts producer is injected.
 - `src/db/` — SQLite schema plus the server-column parity snapshot.
 - `src/theme/` — `ThemeProvider` + `tokens.ts`; component tests must render
   inside the `ThemeProvider` wrapper.

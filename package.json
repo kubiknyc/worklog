@@ -63,6 +63,12 @@
         "lines": 95,
         "statements": 95
       },
+      "src/sync/statusHub.ts": {
+        "branches": 95,
+        "functions": 100,
+        "lines": 95,
+        "statements": 95
+      },
       "src/sync/cursors.ts": {
         "branches": 95,
         "functions": 100,
