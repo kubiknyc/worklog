@@ -13,6 +13,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '../auth';
+import { syncStatusHub } from '../sync/statusHub';
 import { useTheme } from '../theme';
 import { createPlatformRepository } from './platformRepo';
 import type { Repository } from './types';
@@ -68,8 +69,13 @@ export function RepositoryProvider({ children, repository }: Props) {
     // user's repository is never readable during the rebuild.
     setResolved(null);
     createPlatformRepository()
-      .then((repo) => {
-        if (active) setResolved(repo);
+      .then(({ repo, counter }) => {
+        if (!active) return; // superseded build: never install its counter late
+        // Install the queue counter for the sync pill BEFORE children can
+        // render — setCounter resets to idle and kicks the initial recount,
+        // so a cold launch with queued rows shows the right count.
+        syncStatusHub.setCounter(counter);
+        setResolved(repo);
       })
       .catch((error: unknown) => {
         // Device DB open failed — fall back to online so the app still
@@ -81,10 +87,16 @@ export function RepositoryProvider({ children, repository }: Props) {
           error,
         );
         fellBackToOnlineOnly = true;
-        if (active) setResolved(supabaseRepository);
+        if (active) {
+          // Never leave a counter over a queue nothing will write to or drain.
+          syncStatusHub.setCounter(null);
+          setResolved(supabaseRepository);
+        }
       });
     return () => {
       active = false;
+      // Sign-out/unmount: drop the counter bound to the torn-down user's DB.
+      syncStatusHub.setCounter(null);
     };
     // userId in deps: re-run (rebuild + reconcile) whenever the account
     // changes. A token refresh keeps the same userId and does not re-run.

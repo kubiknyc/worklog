@@ -4,8 +4,9 @@
  * `src/db` or any `.native` module, so SQLite never reaches the web build.
  */
 import { supabaseRepository } from './supabaseRepo';
-import type { Repository } from './types';
+import type { PlatformRepoBundle } from './types';
 
-export async function createPlatformRepository(): Promise<Repository> {
-  return supabaseRepository;
+export async function createPlatformRepository(): Promise<PlatformRepoBundle> {
+  // No queue on web (writes are synchronous RPCs) — no counter to install.
+  return { repo: supabaseRepository, counter: null };
 }

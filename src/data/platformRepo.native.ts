@@ -5,17 +5,18 @@
  * show on first run. Native-only; the explicit `.native` imports here are safe
  * because this file is never in the web bundle's graph.
  *
- * The sync ENGINE (drain/pull) is M3 — until it lands, `nudge` is a no-op and
- * queued mutations wait in `sync_mutations` for the first engine tick.
- * `seedReferenceMirror` is a temporary bridge: M3's Tier-1 reference pull
- * (cursored, incremental) replaces it wholesale.
+ * The sync ENGINE (drain/pull) is M3 — until it lands, `nudge` only recounts
+ * the queue for the sync status pill; queued mutations wait in `sync_mutations`
+ * for the first engine tick. `seedReferenceMirror` is a temporary bridge: M3's
+ * Tier-1 reference pull (cursored, incremental) replaces it wholesale.
  */
 import { openDb } from '../db/open.native';
 import { first, run, tx, type Db } from '../db/rows.native';
-import { createMutationStore } from '../sync/store.native';
+import { syncStatusHub } from '../sync/statusHub';
+import { createMutationCounter, createMutationStore } from '../sync/store.native';
 import { supabase } from '../supabase/client';
 import { createSqliteRepo } from './sqliteRepo.native';
-import type { Repository } from './types';
+import type { PlatformRepoBundle } from './types';
 
 /** sync_meta key recording which user's data the local cache holds (bare uuid). */
 export const OWNER_META_KEY = 'owner_user_id';
@@ -164,7 +165,7 @@ export async function seedReferenceMirror(db: Db): Promise<void> {
   }
 }
 
-export async function createPlatformRepository(): Promise<Repository> {
+export async function createPlatformRepository(): Promise<PlatformRepoBundle> {
   const db = await openDb();
   // Guard against a different account inheriting the previous user's cache
   // before any read or write can touch it.
@@ -172,6 +173,11 @@ export async function createPlatformRepository(): Promise<Repository> {
   const mutations = createMutationStore(db);
   // Best-effort refresh of the reference mirror (swallowed on failure).
   await seedReferenceMirror(db);
-  // nudge stays a no-op until M3 injects engine.run() to drain the queue.
-  return createSqliteRepo(db, mutations);
+  // The nudge recounts the queue for the sync pill after every enqueued write;
+  // M3 replaces it with engine.run() to also drain the queue. The counter is
+  // returned, NOT installed here — installation happens in RepositoryProvider
+  // under its `active` guard, so a stale (superseded) build can't install late.
+  const counter = createMutationCounter(db);
+  const repo = createSqliteRepo(db, mutations, () => void syncStatusHub.refresh());
+  return { repo, counter };
 }

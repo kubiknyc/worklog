@@ -13,7 +13,7 @@ import { createPlatformRepository } from './platformRepo';
 import { RepositoryProvider } from './RepositoryProvider';
 
 jest.mock('./platformRepo', () => ({
-  createPlatformRepository: jest.fn(() => Promise.resolve({})),
+  createPlatformRepository: jest.fn(() => Promise.resolve({ repo: {}, counter: null })),
 }));
 
 const mockCreate = createPlatformRepository as jest.MockedFunction<typeof createPlatformRepository>;
