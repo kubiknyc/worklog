@@ -23,9 +23,33 @@ appId: com.jobsight.worklog
 - launchApp:
     clearState: true
 
+# Dev-client builds (expo run:android) land on the expo-dev-client launcher
+# after clearState wipes its remembered server; tap the detected Metro row to
+# load the bundle. Third-party UI — no testIDs exist, so this one step keys on
+# the URL text. Release e2e builds never show the launcher and skip this.
+- runFlow:
+    when:
+      visible: '.*:8081.*'
+    commands:
+      - tapOn: '.*:8081.*'
+      # The first-run developer-menu sheet overlays the app once the bundle
+      # renders (clearState resets it, so it always appears here). Wait it
+      # out — bundle load can take tens of seconds — then dismiss.
+      - extendedWaitUntil:
+          visible: 'Continue'
+          timeout: 120000
+      # 'Continue' advances into the full developer menu; Android back
+      # closes it and reveals the app.
+      - tapOn: 'Continue'
+      - back
+
 # --- Sign in via the seeded demo row (same fast path as login.yaml). ---
-- assertVisible:
-    id: 'login-submit'
+# extendedWaitUntil (not assertVisible): the first bundle request after a
+# fresh install compiles for tens of seconds on a dev build.
+- extendedWaitUntil:
+    visible:
+      id: 'login-submit'
+    timeout: 90000
 - tapOn:
     id: 'login-demo-superintendent'
 - extendedWaitUntil:
@@ -64,7 +88,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-weather'
 - assertVisible:
-    id: 'sheet-weather'
+    id: 'sheet-weather-done'
 - tapOn:
     id: 'sheet-weather-done'
 - assertVisible:
@@ -74,7 +98,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-crew_work'
 - assertVisible:
-    id: 'sheet-crew-work'
+    id: 'sheet-crew-work-done'
 - tapOn:
     id: 'sheet-crew-work-done'
 - assertVisible:
@@ -84,7 +108,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-deliveries'
 - assertVisible:
-    id: 'sheet-deliveries'
+    id: 'sheet-deliveries-done'
 - tapOn:
     id: 'sheet-deliveries-add'
 - tapOn:
@@ -104,7 +128,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-equipment'
 - assertVisible:
-    id: 'sheet-equipment'
+    id: 'sheet-equipment-done'
 - tapOn:
     id: 'sheet-equipment-done'
 - assertVisible:
@@ -114,7 +138,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-inspections'
 - assertVisible:
-    id: 'sheet-inspections'
+    id: 'sheet-inspections-done'
 - tapOn:
     id: 'sheet-inspections-add'
 - tapOn:
@@ -130,7 +154,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-safety'
 - assertVisible:
-    id: 'sheet-safety'
+    id: 'sheet-safety-done'
 - tapOn:
     id: 'sheet-safety-none'
 - assertVisible:
@@ -143,7 +167,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-delays'
 - assertVisible:
-    id: 'sheet-delays'
+    id: 'sheet-delays-done'
 - tapOn:
     id: 'sheet-delays-add'
 - tapOn:
@@ -158,7 +182,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-visitors'
 - assertVisible:
-    id: 'sheet-visitors'
+    id: 'sheet-visitors-done'
 - tapOn:
     id: 'sheet-visitors-add'
 - tapOn:
@@ -173,7 +197,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-rfis'
 - assertVisible:
-    id: 'sheet-rfis'
+    id: 'sheet-rfis-done'
 - tapOn:
     id: 'sheet-rfis-add'
 - tapOn:
@@ -188,7 +212,7 @@ appId: com.jobsight.worklog
 - tapOn:
     id: 'report-section-general_notes'
 - assertVisible:
-    id: 'sheet-notes'
+    id: 'sheet-notes-done'
 - tapOn:
     id: 'sheet-notes-done'
 - assertVisible:
