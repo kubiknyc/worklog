@@ -5,6 +5,9 @@ dist/
 .expo/
 .web-export/
 
+# Nested agent worktrees — each is its own checkout, formatted in place
+.claude/
+
 # Generated — never hand-format. Formatting these makes the next regeneration
 # produce a whole-file diff that hides the real schema change.
 # (gitignore syntax — no trailing comments on pattern lines)
