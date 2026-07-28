@@ -8,3 +8,7 @@ expo-env.d.ts
 .env*.local
 *.tsbuildinfo
 coverage/
+
+# Generated native projects (CNG / prebuild)
+android/
+ios/
