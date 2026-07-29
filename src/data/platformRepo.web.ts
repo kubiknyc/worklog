@@ -7,6 +7,6 @@ import { supabaseRepository } from './supabaseRepo';
 import type { PlatformRepoBundle } from './types';
 
 export async function createPlatformRepository(): Promise<PlatformRepoBundle> {
-  // No queue on web (writes are synchronous RPCs) — no counter to install.
-  return { repo: supabaseRepository, counter: null };
+  // No queue on web (writes are synchronous RPCs) — no engine to attach.
+  return { repo: supabaseRepository, engine: null };
 }

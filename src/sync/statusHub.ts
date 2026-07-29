@@ -10,7 +10,7 @@
  * exported so tests get isolated instances; the app uses the singleton.
  */
 import { IDLE_SYNC_STATE } from './engineApi';
-import type { SyncState } from './engineApi';
+import type { SyncEngineApi, SyncState } from './engineApi';
 import type { QueueCounter } from './types';
 
 /**
@@ -33,8 +33,18 @@ export interface SyncStatusHub {
    * sign-out/fallback is visible immediately), then refreshes if non-null.
    */
   setCounter(counter: QueueCounter | null): void;
-  /** Recount and publish. Serialized + coalesced; never rejects. */
+  /** Recount and publish. Serialized + coalesced; never rejects. No-ops while an engine is attached. */
   refresh(): Promise<void>;
+  /**
+   * M3: swap the producer to the sync engine. Bumps the epoch (discarding any
+   * in-flight `setCounter` count and superseding a later-resolving stale
+   * result), publishes `{...engine.getState(), countError: false}`
+   * immediately, then mirrors every subsequent engine publish verbatim
+   * (`countError` is always false — the engine has no COUNT query to fail).
+   * Returns a detach function: unsubscribes from the engine and resets
+   * published state to idle.
+   */
+  attachEngine(engine: Pick<SyncEngineApi, 'getState' | 'subscribe'>): () => void;
 }
 
 const IDLE_HUB_STATE: HubSyncState = { ...IDLE_SYNC_STATE, countError: false };
@@ -46,6 +56,7 @@ export function createSyncStatusHub(): SyncStatusHub {
   let cycle: Promise<void> | null = null;
   let dirty = false;
   let warned = false;
+  let attached = false;
   const listeners = new Set<() => void>();
 
   function publish(next: HubSyncState): void {
@@ -94,6 +105,7 @@ export function createSyncStatusHub(): SyncStatusHub {
   }
 
   function refresh(): Promise<void> {
+    if (attached) return Promise.resolve(); // the engine drives publishes, not a pull-based recount
     if (!counter) return Promise.resolve(); // no producer (web, fallback) — nothing to touch
     if (cycle) {
       // Coalesce: the running cycle re-runs once more before finishing, and
@@ -130,6 +142,23 @@ export function createSyncStatusHub(): SyncStatusHub {
       if (next) void refresh();
     },
     refresh,
+    attachEngine(engine) {
+      epoch += 1; // discard any in-flight/stale counter run — the engine owns state now
+      counter = null;
+      attached = true;
+      publish({ ...engine.getState(), countError: false });
+      const unsubscribe = engine.subscribe((next) => {
+        publish({ ...next, countError: false });
+      });
+      let detached = false;
+      return () => {
+        if (detached) return;
+        detached = true;
+        unsubscribe();
+        attached = false;
+        publish(IDLE_HUB_STATE);
+      };
+    },
   };
 }
 

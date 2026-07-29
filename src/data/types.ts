@@ -9,7 +9,8 @@
  * data → sync — sync/types.ts owns SectionKind because it is fundamentally a
  * mutation-payload discriminator).
  */
-import type { Json, QueueCounter, SectionKind } from '../sync/types';
+import type { SyncEngineApi } from '../sync/engineApi';
+import type { Json, SectionKind } from '../sync/types';
 
 export type { Json, SectionKind };
 
@@ -74,13 +75,15 @@ export interface MemberRow {
 }
 
 /**
- * What a platform repository factory returns. `counter` feeds the sync status
- * hub; the provider (not the factory) installs it, under its lifecycle guard,
- * so a stale build can never install late. Web has no queue — counter is null.
+ * What a platform repository factory returns. `engine` feeds the sync status
+ * hub (via `attachEngine`) and the `SyncActionsContext`; the provider (not the
+ * factory) attaches/starts it, under its lifecycle guard, so a stale build can
+ * never install late. Web is online-only — no queue, no engine, `engine` is
+ * null.
  */
 export interface PlatformRepoBundle {
   readonly repo: Repository;
-  readonly counter: QueueCounter | null;
+  readonly engine: SyncEngineApi | null;
 }
 
 export interface Repository {

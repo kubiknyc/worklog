@@ -18,7 +18,6 @@ import type {
   MutationPayload,
   MutationStatus,
   MutationStore,
-  QueueCounter,
 } from './types';
 
 interface MutationRow {
@@ -195,32 +194,6 @@ export function createMutationStore(db: Db): MutationStore {
         [clientId],
       );
     },
-  };
-}
-
-/**
- * Cheap aggregate for the sync status pill — one GROUP BY, never loads
- * payload TEXT. Any status value outside 'pending' | 'parked' folds into
- * `pending`: visible-by-default beats silently dropped.
- *
- * Divergence from `pending()`, accepted deliberately: COUNT(*) includes
- * corrupt-payload rows that `pending()` would delete on read. In M2 nothing
- * calls `pending()`, so a corrupt row keeps the pill at N>0 — over-reporting
- * unsent work is the safe direction; M3's first drain reconciles it.
- */
-export function createMutationCounter(db: Db): QueueCounter {
-  return async () => {
-    const rows = await all<{ status: string; n: number }>(
-      db,
-      `SELECT status, COUNT(*) AS n FROM sync_mutations GROUP BY status`,
-    );
-    let pending = 0;
-    let parked = 0;
-    for (const r of rows) {
-      if (r.status === 'parked') parked += r.n;
-      else pending += r.n;
-    }
-    return { pending, parked };
   };
 }
 

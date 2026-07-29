@@ -7,7 +7,6 @@
 import {
   clearDirty,
   createCursorStore,
-  createMutationCounter,
   createMutationStore,
   deleteLocalReport,
 } from './store.native';
@@ -132,13 +131,6 @@ function fakeDb() {
       return { changes: 0 };
     },
     async getAllAsync<T>(sql: string): Promise<T[]> {
-      // Aggregate branch MUST return before the raw-rows fallthrough below,
-      // or the counter test would assert against MutationRow objects.
-      if (/GROUP BY status/i.test(sql)) {
-        const byStatus = new Map<string, number>();
-        for (const r of rows) byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + 1);
-        return [...byStatus.entries()].map(([status, n]) => ({ status, n })) as unknown as T[];
-      }
       let out = [...rows];
       if (/status = 'pending'/i.test(sql)) out = out.filter((r) => r.status === 'pending');
       out.sort((a, b) => (/seq DESC/i.test(sql) ? b.seq - a.seq : a.seq - b.seq));
@@ -324,38 +316,6 @@ describe('store.native cursor store', () => {
     await cursors.set('reports:p1', '2026-07-19');
     await cursors.set('reports:p1', '2026-07-20'); // upsert
     expect(await cursors.get('reports:p1')).toBe('2026-07-20');
-  });
-});
-
-describe('store.native mutation counter', () => {
-  it('returns 0/0 for an empty queue', async () => {
-    const db = fakeDb();
-    const counter = createMutationCounter(db as never);
-    expect(await counter()).toEqual({ pending: 0, parked: 0 });
-  });
-
-  it('counts pending and parked rows by status', async () => {
-    const db = fakeDb();
-    const store = createMutationStore(db as never);
-    await store.enqueue(updateSection('r1', 'crew', 'a'));
-    await store.enqueue(updateSection('r1', 'safety', 'b'));
-    await store.enqueue(updateSection('r2', 'crew', 'c'));
-    await store.replace({ ...updateSection('r2', 'crew', 'c'), status: 'parked', attempts: 5 });
-
-    const counter = createMutationCounter(db as never);
-
-    expect(await counter()).toEqual({ pending: 2, parked: 1 });
-  });
-
-  it('folds an unknown status into pending (visible-by-default)', async () => {
-    const db = fakeDb();
-    const store = createMutationStore(db as never);
-    await store.enqueue(updateSection('r1', 'crew', 'a'));
-    db.rows[0]!.status = 'someday-new-status';
-
-    const counter = createMutationCounter(db as never);
-
-    expect(await counter()).toEqual({ pending: 1, parked: 0 });
   });
 });
 

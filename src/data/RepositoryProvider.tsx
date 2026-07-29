@@ -9,15 +9,45 @@
  * `moduleSuffixes` (tsconfig) / Metro platform resolution, mirroring
  * PunchLog's split idiom.
  */
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '../auth';
 import { syncStatusHub } from '../sync/statusHub';
+import type { SyncEngineApi } from '../sync/engineApi';
 import { useTheme } from '../theme';
 import { createPlatformRepository } from './platformRepo';
 import type { Repository } from './types';
 import { supabaseRepository } from './supabaseRepo';
+
+/**
+ * Sync actions exposed to screens (e.g. the parked-mutations unwedging UI).
+ * No-ops on web / before the engine attaches — `discardSync`'s `0` return
+ * mirrors `SyncEngineApi.discardParked`'s "no-op, not a real discard" signal.
+ */
+export interface SyncActions {
+  retrySync(): Promise<void>;
+  discardSync(clientId: string): Promise<number>;
+}
+
+const noopSyncActions: SyncActions = {
+  retrySync: () => Promise.resolve(),
+  discardSync: () => Promise.resolve(0),
+};
+
+const SyncActionsContext = createContext<SyncActions>(noopSyncActions);
+
+export function useSyncActions(): SyncActions {
+  return useContext(SyncActionsContext);
+}
 
 const missingProvider = new Proxy({} as Repository, {
   get() {
@@ -59,6 +89,13 @@ export function RepositoryProvider({ children, repository }: Props) {
     return null;
   });
 
+  // The current engine (null on web, before hydration, or after a fallback)
+  // and its statusHub detach fn. Read by the stable `syncActions` delegators
+  // below — a ref (not state) so the action functions never need to change
+  // identity as the repo/engine is rebuilt across account switches.
+  const engineRef = useRef<SyncEngineApi | null>(null);
+  const detachRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     // Override (tests/explicit) and web (online-only, RLS-enforced, no local
     // cache to reconcile) never rebuild on account change.
@@ -69,12 +106,16 @@ export function RepositoryProvider({ children, repository }: Props) {
     // user's repository is never readable during the rebuild.
     setResolved(null);
     createPlatformRepository()
-      .then(({ repo, counter }) => {
-        if (!active) return; // superseded build: never install its counter late
-        // Install the queue counter for the sync pill BEFORE children can
-        // render — setCounter resets to idle and kicks the initial recount,
-        // so a cold launch with queued rows shows the right count.
-        syncStatusHub.setCounter(counter);
+      .then(({ repo, engine }) => {
+        if (!active) return; // superseded build: never attach/start its engine late
+        engineRef.current = engine;
+        if (engine) {
+          // Attach BEFORE children can render — attachEngine publishes the
+          // engine's current state immediately, so a cold launch with queued
+          // rows shows the right pending/parked counts from first paint.
+          detachRef.current = syncStatusHub.attachEngine(engine);
+          engine.start();
+        }
         setResolved(repo);
       })
       .catch((error: unknown) => {
@@ -88,6 +129,7 @@ export function RepositoryProvider({ children, repository }: Props) {
         );
         fellBackToOnlineOnly = true;
         if (active) {
+          engineRef.current = null;
           // Never leave a counter over a queue nothing will write to or drain.
           syncStatusHub.setCounter(null);
           setResolved(supabaseRepository);
@@ -95,16 +137,34 @@ export function RepositoryProvider({ children, repository }: Props) {
       });
     return () => {
       active = false;
-      // Sign-out/unmount: drop the counter bound to the torn-down user's DB.
+      // Sign-out/unmount: detach + stop the torn-down user's engine BEFORE
+      // the setCounter(null) fallback reset, so the engine never publishes
+      // through the hub again after this component has moved on.
+      detachRef.current?.();
+      detachRef.current = null;
+      engineRef.current?.stop();
+      engineRef.current = null;
       syncStatusHub.setCounter(null);
     };
     // userId in deps: re-run (rebuild + reconcile) whenever the account
     // changes. A token refresh keeps the same userId and does not re-run.
   }, [userId, override]);
 
+  const syncActions = useMemo<SyncActions>(
+    () => ({
+      retrySync: () => engineRef.current?.retryParked() ?? Promise.resolve(),
+      discardSync: (clientId) => engineRef.current?.discardParked(clientId) ?? Promise.resolve(0),
+    }),
+    [],
+  );
+
   if (!resolved) return <HydrationGate />;
 
-  return <RepositoryContext.Provider value={resolved}>{children}</RepositoryContext.Provider>;
+  return (
+    <SyncActionsContext.Provider value={syncActions}>
+      <RepositoryContext.Provider value={resolved}>{children}</RepositoryContext.Provider>
+    </SyncActionsContext.Provider>
+  );
 }
 
 function HydrationGate() {

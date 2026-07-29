@@ -4,7 +4,26 @@
  * (never the app singleton) so cases cannot leak into each other.
  */
 import { createSyncStatusHub } from './statusHub';
+import { IDLE_SYNC_STATE } from './engineApi';
+import type { SyncState } from './engineApi';
 import type { QueueCounts, QueueCounter } from './types';
+
+/** Minimal `Pick<SyncEngineApi,'getState'|'subscribe'>` fake — no native deps. */
+function fakeEngine(initial: SyncState) {
+  let state = initial;
+  const listeners = new Set<(s: SyncState) => void>();
+  return {
+    getState: () => state,
+    subscribe: (fn: (s: SyncState) => void) => {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    publish: (s: SyncState) => {
+      state = s;
+      for (const fn of listeners) fn(s);
+    },
+  };
+}
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -253,5 +272,90 @@ describe('createSyncStatusHub', () => {
     await hub.refresh();
 
     expect(warnSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createSyncStatusHub — attachEngine', () => {
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test('attach publishes engine.getState() immediately and mirrors every subsequent publish', () => {
+    const hub = createSyncStatusHub();
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 2, syncing: true });
+
+    hub.attachEngine(engine);
+
+    expect(hub.getState()).toEqual({ ...engine.getState(), countError: false });
+
+    engine.publish({ ...IDLE_SYNC_STATE, pending: 5, syncing: false, completedPulls: 1 });
+
+    expect(hub.getState()).toEqual({
+      ...IDLE_SYNC_STATE,
+      pending: 5,
+      syncing: false,
+      completedPulls: 1,
+      countError: false,
+    });
+  });
+
+  test('detach unsubscribes from the engine and resets to idle', () => {
+    const hub = createSyncStatusHub();
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 3 });
+
+    const detach = hub.attachEngine(engine);
+    detach();
+
+    expect(hub.getState()).toEqual({ ...IDLE_SYNC_STATE, countError: false });
+
+    // A late-arriving engine publish after detach must not resurrect state.
+    engine.publish({ ...IDLE_SYNC_STATE, pending: 99 });
+    expect(hub.getState()).toEqual({ ...IDLE_SYNC_STATE, countError: false });
+  });
+
+  test('refresh() no-ops while attached — the engine drives publishes, not the hub', async () => {
+    const hub = createSyncStatusHub();
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 4 });
+    hub.attachEngine(engine);
+
+    const before = hub.getState();
+    await hub.refresh();
+
+    expect(hub.getState()).toBe(before); // no publish triggered by refresh()
+  });
+
+  test('detach is idempotent — a stale second call cannot stomp a later attach', () => {
+    const hub = createSyncStatusHub();
+    const engineA = fakeEngine({ ...IDLE_SYNC_STATE, pending: 1 });
+    const detachA = hub.attachEngine(engineA);
+    detachA();
+
+    const engineB = fakeEngine({ ...IDLE_SYNC_STATE, pending: 7 });
+    hub.attachEngine(engineB);
+    detachA(); // stale closure re-invoked (e.g. a duplicate cleanup) — must no-op
+
+    expect(hub.getState()).toEqual({ ...engineB.getState(), countError: false });
+  });
+
+  test('epoch: a stale setCounter resolving after attachEngine is ignored', async () => {
+    const hub = createSyncStatusHub();
+    const stale = deferred<QueueCounts>();
+    hub.setCounter(() => stale.promise);
+    const staleRefresh = hub.refresh();
+
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 9 });
+    hub.attachEngine(engine); // bumps epoch — supersedes the in-flight counter run
+
+    stale.resolve({ pending: 100, parked: 0 }); // previous producer resolves late
+    await staleRefresh;
+
+    expect(hub.getState()).toEqual({ ...engine.getState(), countError: false });
+    expect(hub.getState().pending).toBe(9);
   });
 });
