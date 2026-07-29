@@ -116,13 +116,16 @@ appId: com.jobsight.worklog
 - assertVisible:
     id: 'screen-report'
 # The deliveries add wrote through the autosave path (closing the sheet
-# flushes the draft debounce), and nothing drains the queue in M2 — the pill
-# must now read queued. Anchored AFTER the sheet closes (an open RN Modal can
-# occlude the pill from the hierarchy) and to a SECTION write, which enqueues
-# on both the start-report and open-report entry branches (create_report does
-# not enqueue on the open branch).
-- assertVisible:
-    id: 'sync-status-queued'
+# flushes the draft debounce), and the sync engine (M3) now drains the queue
+# on its own cadence — queued is a transient, not a resting state. Assert it
+# ONLY immediately post-write with a short extendedWaitUntil (anchored AFTER
+# the sheet closes: an open RN Modal can occlude the pill from the hierarchy),
+# to a SECTION write, which enqueues on both the start-report and open-report
+# entry branches (create_report does not enqueue on the open branch).
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-queued'
+    timeout: 5000
 
 # --- Equipment: add is gated on a typed name, so open/close only. ---
 - tapOn:
@@ -223,8 +226,13 @@ appId: com.jobsight.worklog
     id: 'report-back'
 - assertVisible:
     id: 'screen-today'
-# Cross-screen: Today's pill reads the same hub — still queued. This is the
-# assertion that proves the counter actually installed (the opening synced
-# assert cannot) and that the subscription spans screens.
-- assertVisible:
-    id: 'sync-status-queued'
+# Cross-screen: Today's pill reads the same hub, proving the subscription
+# spans screens. The sync engine (M3) drains the queue it accumulated above,
+# so the resting state here is synced, not queued — the stronger claim the
+# engine now makes true. A transient sync-status-syncing frame is expected
+# and tolerated (drain isn't instant); only the terminal state is asserted,
+# with a generous wait since the drain runs on its own network round trip.
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-synced'
+    timeout: 30000

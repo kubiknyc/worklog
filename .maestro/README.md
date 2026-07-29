@@ -100,3 +100,15 @@ drains the queue is what the reconciliation assertions still wait for.
 Maestro toggles connectivity with `- setAirplaneMode: enabled` / `disabled`,
 which is the offline half of the flow. `sync-status-synced` after
 `setAirplaneMode: disabled` is the "queue drained" assertion once M3 lands.
+
+### M3a: `report-sections.yaml` now proves a real drain
+
+With the sync engine's push path landed (M3a), `report-sections.yaml` no
+longer treats `sync-status-queued` as a resting state: it is transient, drained
+on the engine's own cadence. The flow asserts it only immediately after the
+deliveries write, with a short `extendedWaitUntil` (5s) — the post-write
+signal that the mutation queue actually enqueued the change. It then adds a
+terminal `sync-status-synced` assert via `extendedWaitUntil` (30s, tolerating a
+transient `sync-status-syncing` frame in between) once back on Today — the
+stronger claim the engine now makes true: the whole section run drains to
+`synced`, not just that a write queues.
