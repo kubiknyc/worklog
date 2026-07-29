@@ -196,4 +196,40 @@ describe('useReparentRedirect', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/report/report-winner'));
     act(() => detach());
   });
+
+  test('a reparents bump that lands before `loaded` resolves is not dropped — it retries once loaded lands', async () => {
+    const row: DailyReportRow = {
+      id: 'report-winner',
+      project_id: 'p1',
+      report_date: '2026-07-29',
+      status: 'draft',
+    };
+    const getReportByDate = jest.fn().mockResolvedValue(row);
+    const repo = makeRepo({ getReportByDate });
+    const engine = fakeEngine(IDLE_SYNC_STATE);
+    const detach = syncStatusHub.attachEngine(engine.api);
+
+    const { rerender } = renderHook(
+      ({ loaded }: { loaded: { projectId: string; reportDate: string } | null }) =>
+        useReparentRedirect('report-loser', loaded),
+      { wrapper: wrapperFor(repo), initialProps: { loaded: null } },
+    );
+
+    // The bump lands while `loaded` is still null — e.g. right after
+    // createReport navigates into /report/[id], before the report data has
+    // resolved. This must NOT be silently consumed.
+    act(() => {
+      engine.publish({ ...IDLE_SYNC_STATE, reparents: 1 });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getReportByDate).not.toHaveBeenCalled();
+
+    // `loaded` resolves afterward — the still-unconsumed bump must now retry.
+    rerender({ loaded: { projectId: 'p1', reportDate: '2026-07-29' } });
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/report/report-winner'));
+    act(() => detach());
+  });
 });

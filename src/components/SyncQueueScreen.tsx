@@ -129,7 +129,7 @@ export function SyncQueueScreen({ rows, isWeb, onRetry, onDiscard, onNotice }: P
                 <Pressable
                   testID={`sync-queue-discard-${m.clientId}`}
                   accessibilityRole="button"
-                  accessibilityLabel="Discard"
+                  accessibilityLabel={`Discard ${kindLabelOf(m.payload.kind)}`}
                   onPress={() => setConfirmTarget(m)}
                   hitSlop={8}
                   style={({ pressed }) => pressed && styles.pressed}

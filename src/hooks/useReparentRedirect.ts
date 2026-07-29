@@ -38,8 +38,13 @@ export function useReparentRedirect(routeId: string, loaded: ReparentIdentity | 
     // Only a CHANGE in reparents triggers a re-resolve — not every render
     // (deps include `loaded`, whose identity can change without a reparent).
     if (reparents === lastSeenRef.current) return;
-    lastSeenRef.current = reparents;
+    // Don't mark this bump "seen" until it's actually actionable: if `loaded`
+    // is still null (e.g. the bump lands right after navigation, before the
+    // report data has resolved), leave lastSeenRef alone so the NEXT effect
+    // run — once `loaded` becomes non-null — still sees the unconsumed bump
+    // and retries. Marking it seen here would silently drop the redirect.
     if (!loaded) return;
+    lastSeenRef.current = reparents;
 
     let cancelled = false;
     void repo.getReportByDate(loaded.projectId, loaded.reportDate).then((row) => {
