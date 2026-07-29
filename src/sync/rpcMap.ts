@@ -9,7 +9,8 @@
 import type { AmendmentSectionChange, Json, MutationPayload, SectionKind } from './types';
 
 export interface RpcCall {
-  readonly fn: 'create_report' | 'update_section' | 'submit_report' | 'lock_report' | 'amend_report';
+  readonly fn:
+    'create_report' | 'update_section' | 'submit_report' | 'lock_report' | 'amend_report';
   readonly args: Readonly<Record<string, Json>>;
 }
 
@@ -59,7 +60,9 @@ function isWeatherContentShape(
 export function sectionWirePayload(section: SectionKind, content: Json): Json {
   if (section !== 'weather') return content;
   if (!isWeatherContentShape(content)) {
-    throw new Error('sectionWirePayload: weather content does not match { condition, tempF } shape');
+    throw new Error(
+      'sectionWirePayload: weather content does not match { condition, tempF } shape',
+    );
   }
   return { condition: content.condition, temp_f: content.tempF };
 }
@@ -114,7 +117,8 @@ export function rpcCallOf(payload: MutationPayload): RpcCall {
       return { fn: 'lock_report', args: { p_report_id: payload.data.reportId } };
     }
     case 'create_amendment': {
-      const { reportId, amendmentId, reason, changes, signerTitle, signaturePngBase64 } = payload.data;
+      const { reportId, amendmentId, reason, changes, signerTitle, signaturePngBase64 } =
+        payload.data;
       return {
         fn: 'amend_report',
         args: {
@@ -123,7 +127,8 @@ export function rpcCallOf(payload: MutationPayload): RpcCall {
           p_reason: reason,
           p_changes: amendmentChangesOf(changes),
           p_signer_title: signerTitle,
-          p_signature_png: signaturePngBase64 === null ? null : base64ToByteaHex(signaturePngBase64),
+          p_signature_png:
+            signaturePngBase64 === null ? null : base64ToByteaHex(signaturePngBase64),
         },
       };
     }
