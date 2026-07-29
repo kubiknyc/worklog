@@ -11,7 +11,14 @@ import {
   deleteLocalReport,
 } from './store.native';
 import { newMutation } from './mutationQueue';
+import { reportSyncIncident } from '../lib/observability.native';
 import type { Mutation, MutationPayload } from './types';
+
+jest.mock('../lib/observability.native', () => ({
+  reportSyncIncident: jest.fn(),
+}));
+
+const mockReportSyncIncident = reportSyncIncident as jest.Mock;
 
 interface Row {
   seq: number;
@@ -156,6 +163,29 @@ function updateSection(reportId: string, section: string, tag: string): Mutation
 }
 
 describe('store.native mutation store', () => {
+  beforeEach(() => {
+    mockReportSyncIncident.mockClear();
+  });
+
+  it('drops a row with unparseable payload JSON, deletes it, and reports it as an incident (one-shot)', async () => {
+    const db = fakeDb();
+    const store = createMutationStore(db as never);
+    await store.enqueue(updateSection('r1', 'crew', 'a'));
+    // Corrupt the persisted payload directly, bypassing the store's own writes.
+    db.rows[0]!.payload = '{not valid json';
+    db.rows[0]!.kind = 'update_section';
+    db.rows[0]!.attempts = 2;
+
+    const all = await store.all();
+
+    expect(all).toEqual([]); // corrupt row filtered out, healthy rest served
+    expect(db.rows).toHaveLength(0); // deleted so the report is one-shot
+    expect(mockReportSyncIncident).toHaveBeenCalledWith('evicted', {
+      kind: 'update_section',
+      attempts: 2,
+    });
+  });
+
   it('enqueue is idempotent on clientId (OR IGNORE)', async () => {
     const db = fakeDb();
     const store = createMutationStore(db as never);

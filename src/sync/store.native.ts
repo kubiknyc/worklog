@@ -11,6 +11,7 @@
  */
 import { all, first, run, tx } from '../db/rows.native';
 import type { Db } from '../db/rows.native';
+import { reportSyncIncident } from '../lib/observability.native';
 import type { RowTarget } from './mutationQueue';
 import type {
   CursorStore,
@@ -57,9 +58,10 @@ function toMutation(r: MutationRow): Mutation | null {
 /**
  * Map rows to Mutations; a row whose payload no longer parses can never be
  * pushed (and its enqueue reported success long ago), so leaving it would hide
- * the loss forever behind a queue entry no UI surfaces. Delete it and warn once
- * with its clientId — the delete makes the warning one-shot. Never throws
- * (`pending()`/`all()` must keep serving the healthy rest of the queue).
+ * the loss forever behind a queue entry no UI surfaces. Delete it and report
+ * it once via the same incident seam a parked/evicted push failure uses — the
+ * delete makes the report one-shot. Never throws (`pending()`/`all()` must
+ * keep serving the healthy rest of the queue).
  */
 async function toMutations(db: Db, rows: MutationRow[]): Promise<Mutation[]> {
   const out: Mutation[] = [];
@@ -69,9 +71,10 @@ async function toMutations(db: Db, rows: MutationRow[]): Promise<Mutation[]> {
       out.push(m);
       continue;
     }
-    console.warn(
-      `[sync] Dropping mutation ${r.client_id}: corrupt payload (unparseable JSON) — this edit will not sync`,
-    );
+    // This edit is unrecoverable — same "user believes it was recorded but it
+    // silently never syncs" shape as an evicted push, so it goes through the
+    // same incident channel rather than a console-only warning.
+    reportSyncIncident('evicted', { kind: r.kind, attempts: r.attempts });
     try {
       await run(db, `DELETE FROM sync_mutations WHERE client_id = ?`, [r.client_id]);
     } catch {

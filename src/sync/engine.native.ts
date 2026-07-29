@@ -106,6 +106,12 @@ export function createSyncEngine(db: Db): SyncEngineApi {
   let backoffTimer: ReturnType<typeof setTimeout> | null = null;
   let netInfoUnsubscribe: (() => void) | null = null;
   let appStateSubscription: { remove(): void } | null = null;
+  // Set by stop(), cleared by start(). Guards the async gap in wrappedRun: a
+  // cycle already in flight when stop() fires must not re-arm the backoff
+  // timer on its resolve — that would leave a zombie drain loop running after
+  // sign-out, or a second engine ticking alongside a freshly started one after
+  // re-sign-in.
+  let stopped = false;
 
   function clearBackoffTimer(): void {
     if (backoffTimer !== null) {
@@ -116,6 +122,7 @@ export function createSyncEngine(db: Db): SyncEngineApi {
 
   async function wrappedRun(): Promise<void> {
     await core.run();
+    if (stopped) return;
     scheduleBackoff();
   }
 
@@ -164,12 +171,14 @@ export function createSyncEngine(db: Db): SyncEngineApi {
   }
 
   function start(): void {
+    stopped = false;
     netInfoUnsubscribe = NetInfo.addEventListener(onNetInfoChange);
     appStateSubscription = AppState.addEventListener('change', onAppStateChange);
     trigger();
   }
 
   function stop(): void {
+    stopped = true;
     netInfoUnsubscribe?.();
     netInfoUnsubscribe = null;
     appStateSubscription?.remove();

@@ -24,7 +24,6 @@ import { useRepository } from '../../src/data';
 import { computeReportDate } from '../../src/data/reportDate';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useActiveProject } from '../../src/project';
-import { syncStatusHub } from '../../src/sync/statusHub';
 import { useTheme } from '../../src/theme';
 
 /** "2026-07-24" → "Thursday, July 24". */
@@ -51,12 +50,12 @@ export default function TodayScreen() {
 
   const { data, loading, error, reload } = useAsyncData(load, [activeProjectId]);
 
-  // Returning from the report screen (status/edits may have changed) refreshes
-  // the report row and recounts the sync queue for the status pill.
+  // Returning from the report screen (status/edits may have changed)
+  // refreshes the report row. The sync status pill re-subscribes to
+  // statusHub on its own; it no longer needs a manual refresh() kick here.
   useFocusEffect(
     useCallback(() => {
       reload();
-      void syncStatusHub.refresh();
     }, [reload]),
   );
 

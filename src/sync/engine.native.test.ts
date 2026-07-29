@@ -258,4 +258,27 @@ describe('createSyncEngine — stop()', () => {
     expect(h.appStateRemove).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
   });
+
+  test('stop() while a run is in flight prevents its resolve from re-arming the backoff timer', async () => {
+    const h = setupHarness();
+    h.core.getState.mockReturnValue(makeState({ pending: 1, lastError: 'boom', online: true }));
+    let resolveRun: () => void = () => {};
+    h.core.run.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const engine = createSyncEngine(FAKE_DB);
+
+    engine.start(); // kicks a run that never resolves until we say so
+    await Promise.resolve();
+
+    engine.stop(); // stop fires while that run is still in flight
+    resolveRun(); // the in-flight run now resolves, after stop()
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(jest.getTimerCount()).toBe(0); // no zombie backoff timer re-armed
+  });
 });

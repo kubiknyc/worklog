@@ -657,6 +657,27 @@ describe('createEngineCore: discardParked', () => {
     expect(deleteLocalReport).toHaveBeenCalledWith('r1');
   });
 
+  it('reports affected>0 even when deleteLocalReport throws after removeMany already succeeded', async () => {
+    const create = mutation(createReportPayload('r1'), { status: 'parked' });
+    const section = mutation(sectionPayload('r1'));
+    const otherReport = mutation(sectionPayload('r2'));
+    const { store, deleteLocalReport, onIncident, core } = harness(
+      [create, section, otherReport],
+      async () => ({ ok: true }),
+    );
+    const cascadeError = new Error('disk full');
+    deleteLocalReport.mockRejectedValueOnce(cascadeError);
+
+    const affected = await core.discardParked(create.clientId);
+
+    // The queue side of the discard is real (removeMany already committed) —
+    // this must never collapse to 0 just because the local-subtree delete
+    // that runs after it also failed.
+    expect(affected).toBe(2);
+    expect(store.rows.map((r) => r.clientId)).toEqual([otherReport.clientId]);
+    expect(onIncident).toHaveBeenCalledWith('evicted', create, cascadeError);
+  });
+
   it('status-guard lets a racing fresh edit survive a discard of a non-create_report kind', async () => {
     const parkedSection = mutation(sectionPayload('r1'), { status: 'parked' });
     const { store, core } = harness([parkedSection], async () => ({ ok: true }));

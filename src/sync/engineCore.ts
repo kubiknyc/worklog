@@ -288,8 +288,24 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
             .filter((m) => reportIdOf(m.payload) === reportId)
             .map((m) => m.clientId);
           await store.removeMany(relatedIds);
-          await deleteLocalReport(reportId);
+          // The queue side of the discard is done the moment removeMany
+          // resolves — record it as affected NOW, not after the local-subtree
+          // delete below. Otherwise a throw from deleteLocalReport (caught
+          // separately, just below) would fall through to the outer catch and
+          // report `affected = 0`, which the UI reads as "nothing to discard"
+          // even though the queue rows are already gone and the local report
+          // subtree is left stranded dirty.
           affected = relatedIds.length;
+          try {
+            await deleteLocalReport(reportId);
+          } catch (error) {
+            // The cascade partially succeeded: the queue is clean but the
+            // local report/child rows are stranded. Never-reject — surface it
+            // through the existing incident seam instead (closest fit: the
+            // report is effectively lost the same way an evicted mutation is
+            // — unrecoverable and not retried).
+            onIncident('evicted', target, error);
+          }
         } else {
           affected = await store.removeParked(clientId);
         }
