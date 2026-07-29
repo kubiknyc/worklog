@@ -16,6 +16,12 @@ export interface SyncState {
    * when a background sync lands new server data (see useRefreshOnFocusAndSync).
    */
   readonly completedPulls: number;
+  /**
+   * Bumped once per same-day-collision reparent (Task 5's engine core).
+   * Monotone across every publish — never reset — so `useReparentRedirect`
+   * can diff against its last-seen value and never observes a rollback.
+   */
+  readonly reparents: number;
 }
 
 export interface SyncEngineApi {
@@ -28,6 +34,12 @@ export interface SyncEngineApi {
   run(): Promise<void>;
   /** Re-queue every parked mutation and sync (explicit user retry). */
   retryParked(): Promise<void>;
+  /**
+   * Discard one parked mutation (Task 8's unwedging surface). Returns the
+   * affected-row count so the caller can tell a real discard (1) from a
+   * guard-won no-op (0, e.g. a racing fresh edit already un-parked the row).
+   */
+  discardParked(clientId: string): Promise<number>;
 }
 
 export const IDLE_SYNC_STATE: SyncState = {
@@ -37,4 +49,5 @@ export const IDLE_SYNC_STATE: SyncState = {
   parked: 0,
   lastError: null,
   completedPulls: 0,
+  reparents: 0,
 };
