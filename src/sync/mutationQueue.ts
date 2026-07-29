@@ -190,6 +190,14 @@ export interface PushOutcome {
   readonly ok: boolean;
   /** Present when `ok` is false. */
   readonly error?: unknown;
+  /**
+   * Set by Task 4's pusher when a `create_report` push hit a same-day
+   * UNIQUE(project_id, report_date) collision and the get-or-create RPC
+   * returned the existing report's id (the "winner"). `applyOutcome` never
+   * branches on it — it exists purely for Task 5's engine to read after the
+   * push and re-parent local rows/queued mutations onto the winner.
+   */
+  readonly reparentedTo?: string;
 }
 
 export interface AppliedOutcome {
@@ -197,6 +205,8 @@ export interface AppliedOutcome {
   readonly next: Mutation | null;
   /** True when the local row(s) must be evicted (RLS denial). */
   readonly evict: boolean;
+  /** `classifyError`'s verdict for a failed outcome; null on success. */
+  readonly errorClass: ErrorClass | null;
 }
 
 /**
@@ -206,7 +216,7 @@ export interface AppliedOutcome {
  * untouched. Permanent/evict → park immediately.
  */
 export function applyOutcome(m: Mutation, outcome: PushOutcome): AppliedOutcome {
-  if (outcome.ok) return { next: null, evict: false };
+  if (outcome.ok) return { next: null, evict: false, errorClass: null };
 
   const cls = classifyError(outcome.error);
   const lastError = messageOf(outcome.error);
@@ -214,20 +224,24 @@ export function applyOutcome(m: Mutation, outcome: PushOutcome): AppliedOutcome 
   // Offline is not a failed attempt — nothing was judged. Leave the mutation
   // exactly as queued so extended offline use can never park valid work.
   if (cls === 'offline') {
-    return { next: { ...m, lastError }, evict: false };
+    return { next: { ...m, lastError }, evict: false, errorClass: cls };
   }
 
   const attempts = m.attempts + 1;
 
   if (cls === 'evict') {
-    return { next: { ...m, attempts, status: 'parked', lastError }, evict: true };
+    return { next: { ...m, attempts, status: 'parked', lastError }, evict: true, errorClass: cls };
   }
   if (cls === 'permanent') {
-    return { next: { ...m, attempts, status: 'parked', lastError }, evict: false };
+    return {
+      next: { ...m, attempts, status: 'parked', lastError },
+      evict: false,
+      errorClass: cls,
+    };
   }
   // retryable
   const status = attempts >= RETRY_CEILING ? 'parked' : 'pending';
-  return { next: { ...m, attempts, status, lastError }, evict: false };
+  return { next: { ...m, attempts, status, lastError }, evict: false, errorClass: cls };
 }
 
 function messageOf(err: unknown): string {

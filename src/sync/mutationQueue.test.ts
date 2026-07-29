@@ -77,18 +77,37 @@ describe('classifyError', () => {
     // status=0 but message doesn't match network/fetch/timeout pattern → retryable
     expect(classifyError({ status: 0, message: 'some other error' })).toBe('retryable');
   });
+
+  it('classifies a supabase-js network-failure shape as offline (task 1b)', () => {
+    // Exact shape a supabase-js PostgrestError/AuthError takes on a transport
+    // failure — no server reply at all, so the retry ceiling must not apply.
+    expect(
+      classifyError({
+        message: 'TypeError: Network request failed',
+        details: '',
+        hint: '',
+        code: '',
+        status: 0,
+      }),
+    ).toBe('offline');
+  });
 });
 
 describe('applyOutcome', () => {
-  it('removes the mutation on success', () => {
-    expect(applyOutcome(base, { ok: true })).toEqual({ next: null, evict: false });
+  it('removes the mutation on success and reports a null errorClass (task 1b)', () => {
+    expect(applyOutcome(base, { ok: true })).toEqual({
+      next: null,
+      evict: false,
+      errorClass: null,
+    });
   });
 
-  it('bumps attempts and stays pending on a retryable error', () => {
-    const { next, evict } = applyOutcome(base, { ok: false, error: { status: 500 } });
+  it('bumps attempts and stays pending on a retryable error, exposing errorClass (task 1b)', () => {
+    const { next, evict, errorClass } = applyOutcome(base, { ok: false, error: { status: 500 } });
     expect(evict).toBe(false);
     expect(next).toMatchObject({ attempts: 1, status: 'pending' });
     expect(next?.lastError).toBeTruthy();
+    expect(errorClass).toBe('retryable');
   });
 
   it('parks once attempts reach the ceiling', () => {
@@ -97,25 +116,39 @@ describe('applyOutcome', () => {
     expect(next).toMatchObject({ attempts: RETRY_CEILING, status: 'parked' });
   });
 
-  it('leaves attempts untouched on an offline failure — offline can never park (review #1)', () => {
+  it('leaves attempts untouched on an offline failure — offline can never park (review #1) — errorClass is offline (task 1b)', () => {
     const offlineError = { name: 'TypeError', message: 'Network request failed' };
     const aged = { ...base, attempts: RETRY_CEILING - 1 };
-    const { next, evict } = applyOutcome(aged, { ok: false, error: offlineError });
+    const { next, evict, errorClass } = applyOutcome(aged, { ok: false, error: offlineError });
     expect(evict).toBe(false);
     expect(next).toMatchObject({ attempts: RETRY_CEILING - 1, status: 'pending' });
     expect(next?.lastError).toBeTruthy();
+    expect(errorClass).toBe('offline');
   });
 
-  it('parks immediately on a permanent error', () => {
-    const { next, evict } = applyOutcome(base, { ok: false, error: { code: '22000' } });
+  it('parks immediately on a permanent error, exposing errorClass (task 1b)', () => {
+    const { next, evict, errorClass } = applyOutcome(base, { ok: false, error: { code: '22000' } });
     expect(evict).toBe(false);
     expect(next).toMatchObject({ attempts: 1, status: 'parked' });
+    expect(errorClass).toBe('permanent');
   });
 
-  it('parks and signals eviction on an RLS denial', () => {
-    const { next, evict } = applyOutcome(base, { ok: false, error: { code: '42501' } });
+  it('parks and signals eviction on an RLS denial, exposing errorClass (task 1b)', () => {
+    const { next, evict, errorClass } = applyOutcome(base, { ok: false, error: { code: '42501' } });
     expect(evict).toBe(true);
     expect(next).toMatchObject({ status: 'parked' });
+    expect(errorClass).toBe('evict');
+  });
+});
+
+describe('PushOutcome.reparentedTo (task 1b)', () => {
+  it('is optional and ignored by applyOutcome when present', () => {
+    // Task 4's pusher sets it on a same-day-collision winner; applyOutcome (this
+    // task's consumer) must not branch on it — behavior is identical with or
+    // without the field.
+    const withReparent = applyOutcome(base, { ok: true, reparentedTo: 'winner-id' });
+    const without = applyOutcome(base, { ok: true });
+    expect(withReparent).toEqual(without);
   });
 });
 
