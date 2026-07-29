@@ -8,6 +8,7 @@
  * client never holds direct INSERT/UPDATE on report tables.
  */
 import { uuidv4 } from '../lib/uuid';
+import { sectionWirePayload } from '../sync/rpcMap';
 import { supabase } from '../supabase/client';
 import type {
   DailyReportRow,
@@ -156,7 +157,10 @@ class SupabaseRepository implements Repository {
       // The generated RPC arg type uses supabase-js's own `Json` (mutable
       // arrays); our seam's `Json` is structurally the same but readonly, so a
       // cast bridges the two nominal Json types without loosening the seam.
-      p_payload: content as never,
+      // sectionWirePayload (src/sync/rpcMap.ts) is the shared weather wire
+      // translation — condition/temp_f snake_case — also used by the native
+      // push handler, so the two paths can't drift on the rename.
+      p_payload: sectionWirePayload(section, content) as never,
       p_is_complete: isComplete,
     });
     if (error) fail('updateSection', error);
