@@ -104,11 +104,14 @@ which is the offline half of the flow. `sync-status-synced` after
 ### M3a: `report-sections.yaml` now proves a real drain
 
 With the sync engine's push path landed (M3a), `report-sections.yaml` no
-longer treats `sync-status-queued` as a resting state: it is transient, drained
-on the engine's own cadence. The flow asserts it only immediately after the
-deliveries write, with a short `extendedWaitUntil` (5s) — the post-write
-signal that the mutation queue actually enqueued the change. It then adds a
-terminal `sync-status-synced` assert via `extendedWaitUntil` (30s, tolerating a
-transient `sync-status-syncing` frame in between) once back on Today — the
-stronger claim the engine now makes true: the whole section run drains to
-`synced`, not just that a write queues.
+longer treats `sync-status-queued` as a resting state: it is transient,
+drained on the engine's own cadence. Against a local Supabase stack the
+drain is fast enough that even a short post-write `extendedWaitUntil` races
+the engine and flakes both ways (caught mid-transition or missed entirely
+because it already reached `synced`) — so the flow drops the intermediate
+`queued` assert entirely rather than chase a race window. It instead adds a
+terminal `sync-status-synced` assert via `extendedWaitUntil` (30s, tolerating
+a transient `sync-status-syncing` frame in between) once back on Today — the
+stronger claim the engine now makes true: the whole section run (report
+creation + every section write) drains to `synced`, which can only pass if
+each write enqueued AND drained.
