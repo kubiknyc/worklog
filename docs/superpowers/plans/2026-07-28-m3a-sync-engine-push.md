@@ -1,680 +1,175 @@
 # M3a — Sync Engine Push Path Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use `- [ ]` checkboxes.
 
-**Goal:** Queued JSON mutations actually drain to Supabase through the five lifecycle RPCs, the sync engine publishes real `SyncState` through `statusHub` (retiring the M2 counter), and parked mutations get a tappable retry surface.
+**Goal:** Queued JSON mutations drain to Supabase through the five lifecycle RPCs, the sync engine publishes real `SyncState` through `statusHub` (retiring the M2 counter in practice), and parked mutations get a tappable retry/discard surface.
 
-**Architecture:** Pure engine core (`engine.ts`) with injected store/pusher/publish seams, thin native shell (`engine.native.ts`) binding NetInfo/AppState/SQLite/Supabase. Push handlers map `MutationPayload` → RPC calls via a pure mapping module (`push.ts`); IO lives only in `push.native.ts` + `reparent.native.ts`. The hub gains `attachEngine` and keeps `setCounter` solely for the online-only fallback.
+**Architecture:** Pure engine core (`src/sync/engineCore.ts`) with injected store/pusher/publish seams; thin native shell (`src/sync/engine.native.ts`) binds NetInfo/AppState/SQLite/Supabase and owns all timers. Pure RPC mapping (`src/sync/rpcMap.ts`); IO only in `push.native.ts` + `reparent.native.ts`. `statusHub` gains `attachEngine`; `setCounter` survives solely for the online-only fallback.
 
-**Tech Stack:** Expo / React Native, TypeScript strict, supabase-js (PostgREST RPCs), expo-sqlite via existing `Db` seam, `@react-native-community/netinfo` (new dep), Jest (jest-expo).
+**Tech stack:** Expo/RN (Hermes), TypeScript strict, supabase-js v2 (PostgREST), expo-sqlite via the `Db` seam, `@react-native-community/netinfo` (new dep), Jest (jest-expo).
 
-**Scope cuts (deliberate):**
-- Pull path (Tier 1/2 scopes, cursors, reconcile, `completedPulls` bumps) → follow-up plan **M3b**. In M3a `completedPulls` stays `0`.
-- Photo kinds (`add_photo`, `update_photo_meta`, `remove_photo`) → **M5**. `rpcCallOf` throws on them; `orderForDrain` already sequences them last so a thrown mapping is unreachable until M5 enqueues one.
-- `amend_report`'s returned `amendment_number` is ignored — the M3b pull backfills the local row (doc 06 §A note). `update_section`'s returned `timestamptz` likewise ignored.
-- Evict-class (403) on JSON kinds: park + `reportSyncIncident('evicted', …)`, **no local row deletion** — the authoritative evictor is M3b's membership sweep. Deleting a local report tree on a transient RLS misread would destroy evidence.
+**Scope cuts (deliberate, recorded):**
+- Pull path (Tier 1/2 cursors, reconcile sweeps, `completedPulls` bumps, amendment-number backfill, `didFallBackToOnlineOnly` surface) → **M3b**. `completedPulls` stays `0`.
+- Photo kinds (`add_photo`, `update_photo_meta`, `remove_photo`) → **M5**. Guarantee: no repository path enqueues photo kinds before M5 (`orderForDrain` only tail-orders `add_photo`); `rpcCallOf` throws on them, and that throw would classify retryable — another reason it must stay unreachable.
+- `amend_report`'s returned `amendment_number` and `update_section`'s returned timestamp are ignored (M3b pull backfills).
+- Evict-class (403/42501): park + incident, **no local row deletion** — M3b's membership sweep is the authoritative evictor.
+- `SyncState.online` has no banner consumer in M3a (deliberate; M3b wires it).
 
 ## Global Constraints
 
-- `npm run verify` green before claiming done (typecheck + format + lint + jest w/ coverage). `npm run check:web` green (CI runs it separately).
-- `src/sync/` stays pure and IO-free except `*.native.ts` files and the sanctioned `statusHub.ts`.
-- Every new native-only import goes in `*.native.ts(x)` files AND `NATIVE_ONLY_MODULES` in `src/platformSplit.test.ts:12` (currently `['expo-sqlite', '@sentry/react-native', 'expo-updates']`).
-- Anything an E2E flow drives needs a `testID`; new testIDs follow `.maestro/README.md` naming; `src/maestroSelectors.test.ts` must stay green.
-- `mutationQueue.ts` is pinned at 100% coverage in `package.json` `coverageThreshold`; do not lower any pin. New `engine.ts` and `push.ts` get their own 95-line pins (Task 9).
-- Report tables are SELECT-only to clients — all writes in this plan go through the five `SECURITY DEFINER` RPCs; never add a direct client INSERT/UPDATE on a report table.
-- No `console.log`; use `src/lib/observability*` seams.
-- Conventional commits (`feat:`/`fix:`/`test:`/`chore:`), no attribution footer.
+- `npm run verify` green before claiming done; `npm run check:web` green.
+- `src/sync/` pure and IO-free except `*.native.ts` and the sanctioned `statusHub.ts`. Timers only in the native shell.
+- **Never create `foo.ts` beside `foo.native.ts`** — tsconfig `moduleSuffixes` + jest-expo haste resolve the bare specifier to the `.native` file everywhere (this is why the pure modules are `rpcMap.ts`/`engineCore.ts`, matching the `engineApi.ts`/`store.native.ts` precedent).
+- New native-only imports go in `*.native.ts(x)` AND `NATIVE_ONLY_MODULES` (`src/platformSplit.test.ts:12`).
+- E2E-driven UI needs `testID`s per `.maestro/README.md`; `src/maestroSelectors.test.ts` stays green (runtime-built ids → `DYNAMIC_TESTIDS`).
+- Coverage pins never lowered; `mutationQueue.ts` stays 100% (all its changes here are branch-free additions); new pins for `rpcMap.ts` and `engineCore.ts` (Task 9).
+- Report tables are SELECT-only to clients — every server write goes through the five `SECURITY DEFINER` RPCs.
+- No `console.log`; use `src/lib/observability*`.
+- Conventional commits; no attribution.
+- A stale worktree at `.claude/worktrees/m3-sync-engine/` holds abandoned drafts — ignore/remove; never resume it.
 
-## Design references (read before starting a task)
+## Design references (read before each task)
 
-- `docs/architecture/06-sync-mappings.md` — authoritative kind→RPC mapping, drain rules, blessed flattened `RowTarget`.
-- `src/sync/types.ts` — `Mutation`, `MutationPayload`, `MutationStore`, `QueueCounts`.
-- `src/sync/mutationQueue.ts` — `orderForDrain`, `applyOutcome`, `classifyError`, `rowTargetOf`, `otherMutationTargetsRow`, `PushOutcome`, `RETRY_CEILING`.
-- `src/sync/engineApi.ts` — `SyncEngineApi`, `SyncState`, `IDLE_SYNC_STATE` (the contract `engine.ts` implements).
-- `src/sync/statusHub.ts` — hub internals; M2 counter mode.
-- `src/sync/store.native.ts` — `createMutationStore(db)`, fake-Db test harness pattern in `store.native.test.ts`.
-- RPC signatures (jobsight-backend `20260717000007_worklog_rpcs.sql`):
-  - `create_report(p_project_id uuid, p_report_date date, p_client_id uuid) returns table(report_id uuid, was_created boolean)`
-  - `update_section(p_report_id uuid, p_section text, p_payload jsonb, p_is_complete boolean default false) returns timestamptz`
-  - `submit_report(p_report_id uuid, p_signer_title text, p_signature_png bytea) returns void` — **no signer-name param**: the server derives the signer from `auth.uid()`; `SubmitReportPayload.signerName` is NOT sent.
-  - `lock_report(p_report_id uuid) returns void`
-  - `amend_report(p_report_id uuid, p_amendment_client_id uuid, p_reason text, p_changes jsonb, p_signer_title text default null, p_signature_png bytea default null) returns integer`
+`docs/architecture/06-sync-mappings.md` (kind→RPC map; flattened `RowTarget` blessed); `src/sync/types.ts`, `mutationQueue.ts`, `engineApi.ts`, `statusHub.ts`, `store.native.ts` (+ its fake-Db test harness); `src/db/rows.native.ts` (`all`/`first`/`run`, zero-arg `tx` — nested `tx` deadlocks); backend RPC signatures (20260717000007_worklog_rpcs.sql): `create_report(p_project_id, p_report_date, p_client_id) → setof (report_id, was_created)`; `update_section(p_report_id, p_section, p_payload jsonb, p_is_complete bool default false) → timestamptz`; `submit_report(p_report_id, p_signer_title, p_signature_png bytea) → void` (no signer-name param — server derives from `auth.uid()`; replay on submitted is an idempotent no-op); `lock_report(p_report_id) → void` (idempotent replay); `amend_report(p_report_id, p_amendment_client_id, p_reason, p_changes jsonb, p_signer_title default null, p_signature_png default null) → integer` (`p_changes` must be a non-empty OBJECT `{section: {"payload": {...}}}`). Errcode contract: 42501 unauthorized · P0002 not found · P0001 illegal lifecycle · 22023 invalid arg · 40001 create race. The weather branch of `worklog_apply_section` reads `payload->>'condition'` and `payload->>'temp_f'` — snake_case, on BOTH the update_section and amend_report paths.
 
 ---
 
-### Task 1: Pure RPC mapping — `src/sync/push.ts`
+### Task 1: Pure RPC mapping — `src/sync/rpcMap.ts` (+ web-path weather fix)
 
-**Files:**
-- Create: `src/sync/push.ts`
-- Test: `src/sync/push.test.ts`
+**Files:** Create `src/sync/rpcMap.ts`, `src/sync/rpcMap.test.ts`. Modify `src/data/supabaseRepo.ts` (route `updateSection` content through the shared helper). Create `src/data/supabaseRepo.test.ts`.
 
-**Interfaces:**
-- Consumes: `MutationPayload`, `Json` from `./types`.
-- Produces: `interface RpcCall { readonly fn: 'create_report' | 'update_section' | 'submit_report' | 'lock_report' | 'amend_report'; readonly args: Readonly<Record<string, Json>> }`; `rpcCallOf(payload: MutationPayload): RpcCall`; `base64ToByteaHex(b64: string): string`. Task 4's `push.native.ts` calls both.
-
-PostgREST decodes a `bytea` parameter from a `\x`-prefixed hex string, not base64 — hence `base64ToByteaHex`.
-
-- [ ] **Step 1: Write the failing test**
-
+**Produces (consumed by Tasks 4, and supabaseRepo):**
 ```ts
-// src/sync/push.test.ts
-import { base64ToByteaHex, rpcCallOf } from './push';
-import type { MutationPayload } from './types';
-
-describe('base64ToByteaHex', () => {
-  it('converts base64 to \\x-prefixed lowercase hex', () => {
-    // 'AQID' is base64 for bytes 0x01 0x02 0x03
-    expect(base64ToByteaHex('AQID')).toBe('\\x010203');
-  });
-  it('handles empty input', () => {
-    expect(base64ToByteaHex('')).toBe('\\x');
-  });
-});
-
-describe('rpcCallOf', () => {
-  it('maps create_report', () => {
-    const p: MutationPayload = {
-      kind: 'create_report',
-      data: { reportId: 'r1', projectId: 'p1', reportDate: '2026-07-28', carryForwardSourceReportId: null },
-    };
-    expect(rpcCallOf(p)).toEqual({
-      fn: 'create_report',
-      args: { p_project_id: 'p1', p_report_date: '2026-07-28', p_client_id: 'r1' },
-    });
-  });
-
-  it('maps update_section (weather rides the same RPC)', () => {
-    const p: MutationPayload = {
-      kind: 'update_section',
-      data: { reportId: 'r1', section: 'weather', content: { condition: 'Rain', tempF: 61 }, isComplete: true },
-    };
-    expect(rpcCallOf(p)).toEqual({
-      fn: 'update_section',
-      args: { p_report_id: 'r1', p_section: 'weather', p_payload: { condition: 'Rain', tempF: 61 }, p_is_complete: true },
-    });
-  });
-
-  it('maps submit_report — signature as bytea hex, signerName never sent', () => {
-    const p: MutationPayload = {
-      kind: 'submit_report',
-      data: { reportId: 'r1', signaturePngBase64: 'AQID', signerName: 'Pat', signerTitle: 'Super' },
-    };
-    expect(rpcCallOf(p)).toEqual({
-      fn: 'submit_report',
-      args: { p_report_id: 'r1', p_signer_title: 'Super', p_signature_png: '\\x010203' },
-    });
-  });
-
-  it('maps lock_report', () => {
-    const p: MutationPayload = { kind: 'lock_report', data: { reportId: 'r1' } };
-    expect(rpcCallOf(p)).toEqual({ fn: 'lock_report', args: { p_report_id: 'r1' } });
-  });
-
-  it('maps create_amendment with null signature passing null bytea', () => {
-    const p: MutationPayload = {
-      kind: 'create_amendment',
-      data: {
-        amendmentId: 'a1', reportId: 'r1', reason: 'wrong crew count',
-        changes: [{ section: 'crew', content: { rows: [] } }],
-        signaturePngBase64: null, signerTitle: null,
-      },
-    };
-    expect(rpcCallOf(p)).toEqual({
-      fn: 'amend_report',
-      args: {
-        p_report_id: 'r1', p_amendment_client_id: 'a1', p_reason: 'wrong crew count',
-        p_changes: [{ section: 'crew', content: { rows: [] } }],
-        p_signer_title: null, p_signature_png: null,
-      },
-    });
-  });
-
-  it('throws on photo kinds (M5)', () => {
-    const p: MutationPayload = {
-      kind: 'remove_photo',
-      data: { photoId: 'ph1', reportId: 'r1', storagePath: 'p1/r1/ph1.jpg' },
-    };
-    expect(() => rpcCallOf(p)).toThrow(/photo kinds are M5/);
-  });
-});
+export interface RpcCall { readonly fn: 'create_report'|'update_section'|'submit_report'|'lock_report'|'amend_report'; readonly args: Readonly<Record<string, Json>> }
+export type RpcName = RpcCall['fn'];
+export function base64ToByteaHex(b64: string): string;            // backslash-x + hex via array+join; in JS source the prefix literal is '\\x' (a bare '\x' is invalid) — pin the escaping in the test. atob verified: Hermes RN 0.81 / Node≥16 / DOM lib types
+export function sectionWirePayload(section: SectionKind, content: Json): Json;  // weather → { condition, temp_f: content.tempF } after shape-narrowing (throw on mismatch); others pass through
+export function rpcCallOf(payload: MutationPayload): RpcCall;
 ```
+Mapping rules: `create_report` → `{p_project_id, p_report_date, p_client_id: reportId}`. `update_section` → `{p_report_id, p_section, p_payload: sectionWirePayload(section, content), p_is_complete}`. `submit_report` → `{p_report_id, p_signer_title, p_signature_png: base64ToByteaHex(...)}` — `signerName` is never sent. `lock_report` → `{p_report_id}`. `create_amendment` → fn `amend_report` with the full arg map: `{p_report_id: reportId, p_amendment_client_id: amendmentId, p_reason: reason, p_changes, p_signer_title: signerTitle, p_signature_png: signaturePngBase64 === null ? null : base64ToByteaHex(signaturePngBase64)}` where `p_changes` = object built from the changes array: `{ [section]: { payload: sectionWirePayload(section, content) } }`, throwing on duplicate section keys. Photo kinds throw `photo kinds are M5`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] Write failing tests: hex conversion (incl. empty); create/lock mappings; update_section weather asserts `p_payload = {condition, temp_f}` snake_case; submit signature-hex + no-signerName; amend object shape incl. weather entry translated + duplicate-section throw; photo-kind throw. supabaseRepo test: weather `updateSection` sends `temp_f` (mocked rpc).
+- [ ] `npx jest src/sync/rpcMap.test.ts src/data/supabaseRepo.test.ts` → FAIL; implement; → PASS.
+- [ ] Commit `feat(sync): pure RPC mapping with shared weather wire translation (native + web paths)`.
 
-Run: `npx jest src/sync/push.test.ts`
-Expected: FAIL — `Cannot find module './push'`
+### Task 1b: Additive `mutationQueue.ts`/`types.ts` changes (100% pin preserved)
 
-- [ ] **Step 3: Write the implementation**
+**Files:** Modify `src/sync/mutationQueue.ts`, `src/sync/mutationQueue.test.ts`, `src/sync/types.ts`.
 
-```ts
-// src/sync/push.ts
-/**
- * Pure payload → RPC mapping for the five lifecycle kinds (doc 06 §A).
- * Photo kinds are storage + direct table ops and land in M5; mapping them
- * here would be dead code the drain order can't reach yet.
- */
-import type { Json, MutationPayload } from './types';
+- `AppliedOutcome` gains `readonly errorClass: ErrorClass | null` (null on success) — `applyOutcome` populates it from its existing `classifyError` call; no new branches.
+- `PushOutcome` gains `readonly reparentedTo?: string` (winner id; set by Task 4's pusher, read by Task 5's engine; `applyOutcome` ignores it).
+- (`Mutation.revision` moved to Task 2 so the store and every fake update in the same commit — typecheck never goes red between tasks.)
+- New test: `classifyError` fed a supabase-js network-failure shape (`{message: 'TypeError: Network request failed', details: '', hint: '', code: '', status: 0}`) → `offline`. Assert `errorClass` on success/failure outcomes.
+- [ ] RED → GREEN → `npm test -- src/sync/mutationQueue.test.ts` confirms 100% pin holds → commit `feat(sync): expose errorClass, reparentedTo, and mutation revision (additive)`.
 
-export interface RpcCall {
-  readonly fn: 'create_report' | 'update_section' | 'submit_report' | 'lock_report' | 'amend_report';
-  readonly args: Readonly<Record<string, Json>>;
-}
+### Task 2: Store extensions — `clearDirty`, revision guards, schema migration v2
 
-/**
- * PostgREST decodes `bytea` params from `\x`-prefixed hex, not base64.
- * atob is available in Hermes and Node ≥ 16 (jest) alike.
- */
-export function base64ToByteaHex(b64: string): string {
-  const bytes = atob(b64);
-  let hex = '\\x';
-  for (let i = 0; i < bytes.length; i += 1) {
-    hex += bytes.charCodeAt(i).toString(16).padStart(2, '0');
-  }
-  return hex;
-}
+**Files:** Modify `src/sync/store.native.ts`, `src/sync/store.native.test.ts`, `src/db/schema.ts`, `src/db/schema.test.ts` (or wherever migrate() is tested — read `src/db/open.native.ts` first), `src/sync/types.ts` (Mutation + MutationStore), `src/sync/mutationQueue.ts` + test (`newMutation` revision:0), and **every in-memory `MutationStore` fake** — `src/data/sqliteRepo.native.test.ts` AND `src/data/createReport.race.test.ts` (`noopMutations`) — which fail `tsc` under the new signatures; grep `MutationStore` across `src/` for any others before committing.
 
-export function rpcCallOf(payload: MutationPayload): RpcCall {
-  switch (payload.kind) {
-    case 'create_report':
-      return {
-        fn: 'create_report',
-        args: {
-          p_project_id: payload.data.projectId,
-          p_report_date: payload.data.reportDate,
-          p_client_id: payload.data.reportId,
-        },
-      };
-    case 'update_section':
-      return {
-        fn: 'update_section',
-        args: {
-          p_report_id: payload.data.reportId,
-          p_section: payload.data.section,
-          p_payload: payload.data.content,
-          p_is_complete: payload.data.isComplete,
-        },
-      };
-    case 'submit_report':
-      // signerName is display-only local state; the server derives the signer
-      // from auth.uid() — sending it would just be an unused (and spoofable) arg.
-      return {
-        fn: 'submit_report',
-        args: {
-          p_report_id: payload.data.reportId,
-          p_signer_title: payload.data.signerTitle,
-          p_signature_png: base64ToByteaHex(payload.data.signaturePngBase64),
-        },
-      };
-    case 'lock_report':
-      return { fn: 'lock_report', args: { p_report_id: payload.data.reportId } };
-    case 'create_amendment':
-      return {
-        fn: 'amend_report',
-        args: {
-          p_report_id: payload.data.reportId,
-          p_amendment_client_id: payload.data.amendmentId,
-          p_reason: payload.data.reason,
-          p_changes: payload.data.changes as unknown as Json,
-          p_signer_title: payload.data.signerTitle,
-          p_signature_png:
-            payload.data.signaturePngBase64 === null
-              ? null
-              : base64ToByteaHex(payload.data.signaturePngBase64),
-        },
-      };
-    case 'add_photo':
-    case 'update_photo_meta':
-    case 'remove_photo':
-      throw new Error(`photo kinds are M5 — no RPC mapping for '${payload.kind}'`);
-  }
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `npx jest src/sync/push.test.ts`
-Expected: PASS (all cases)
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/sync/push.ts src/sync/push.test.ts
-git commit -m "feat(sync): pure payload-to-RPC mapping for the five lifecycle kinds"
-```
-
----
-
-### Task 2: Dirty-clear helper — extend `src/sync/store.native.ts`
-
-**Files:**
-- Modify: `src/sync/store.native.ts` (append)
-- Test: `src/sync/store.native.test.ts` (append, reuse the existing fake-Db harness)
-
-**Interfaces:**
-- Consumes: `RowTarget` from `./mutationQueue` (the shipped flattened `{ table, id }` shape — for `report_sections` the id is `` `${reportId}:${section}` ``, doc 06 §A blessed deviation); `Db`, `run` from `../db/rows.native`.
-- Produces: `clearDirty(db: Db, target: RowTarget): Promise<void>` — Task 5's engine calls it after a successful push when `otherMutationTargetsRow` says the row is uncontested.
-
-Doc 06 §A WHERE clauses: `daily_reports`/`report_amendments`/`report_photos` clear by `id`; `report_sections` splits the composite id and clears by `(report_id, section)` — and when the section is `weather`, the dirtied local row is `report_weather` (cleared by `report_id`), because the queue layer doesn't distinguish weather from other sections but the local mirror does.
-
-- [ ] **Step 1: Write the failing tests** (in `store.native.test.ts`, same fake-Db style as the existing counter tests — assert the exact SQL + args passed to `run`)
-
-```ts
-describe('clearDirty', () => {
-  it('clears daily_reports by id', async () => {
-    const db = makeFakeDb(); // existing harness helper
-    await clearDirty(db, { table: 'daily_reports', id: 'r1' });
-    expect(db.statements).toContainEqual({
-      sql: 'UPDATE daily_reports SET _dirty = 0 WHERE id = ?',
-      args: ['r1'],
-    });
-  });
-
-  it('clears report_sections by composite id', async () => {
-    const db = makeFakeDb();
-    await clearDirty(db, { table: 'report_sections', id: 'r1:crew' });
-    expect(db.statements).toContainEqual({
-      sql: 'UPDATE report_sections SET _dirty = 0 WHERE report_id = ? AND section = ?',
-      args: ['r1', 'crew'],
-    });
-  });
-
-  it('routes the weather section to report_weather', async () => {
-    const db = makeFakeDb();
-    await clearDirty(db, { table: 'report_sections', id: 'r1:weather' });
-    expect(db.statements).toContainEqual({
-      sql: 'UPDATE report_weather SET _dirty = 0 WHERE report_id = ?',
-      args: ['r1'],
-    });
-  });
-
-  it('clears report_amendments and report_photos by id', async () => {
-    const db = makeFakeDb();
-    await clearDirty(db, { table: 'report_amendments', id: 'a1' });
-    await clearDirty(db, { table: 'report_photos', id: 'ph1' });
-    expect(db.statements).toContainEqual({
-      sql: 'UPDATE report_amendments SET _dirty = 0 WHERE id = ?',
-      args: ['a1'],
-    });
-    expect(db.statements).toContainEqual({
-      sql: 'UPDATE report_photos SET _dirty = 0 WHERE id = ?',
-      args: ['ph1'],
-    });
-  });
-});
-```
-
-(Adapt `makeFakeDb`/`db.statements` to whatever the existing harness actually records — read `store.native.test.ts` first and follow its idiom exactly.)
-
-- [ ] **Step 2: Run to verify failure** — `npx jest src/sync/store.native.test.ts` → FAIL (`clearDirty` not exported)
-
-- [ ] **Step 3: Implement** (append to `store.native.ts`)
-
-```ts
-import type { RowTarget } from './mutationQueue';
-
-/**
- * Clear a pushed row's `_dirty` flag (doc 06 §A). Only call when no other
- * queued mutation still targets the row — the engine guards with
- * `otherMutationTargetsRow`. The weather section's dirtied local row lives in
- * `report_weather` even though the queue files it under `report_sections`.
- */
-export async function clearDirty(db: Db, target: RowTarget): Promise<void> {
-  if (target.table === 'report_sections') {
-    const splitAt = target.id.indexOf(':');
-    const reportId = target.id.slice(0, splitAt);
-    const section = target.id.slice(splitAt + 1);
-    if (section === 'weather') {
-      await run(db, 'UPDATE report_weather SET _dirty = 0 WHERE report_id = ?', [reportId]);
-      return;
-    }
-    await run(db, 'UPDATE report_sections SET _dirty = 0 WHERE report_id = ? AND section = ?', [
-      reportId,
-      section,
-    ]);
-    return;
-  }
-  await run(db, `UPDATE ${target.table} SET _dirty = 0 WHERE id = ?`, [target.id]);
-}
-```
-
-(If the existing `run` helper's signature differs, match it; the WHERE shapes are the contract.)
-
-- [ ] **Step 4: Run to verify pass** — `npx jest src/sync/store.native.test.ts` → PASS
-- [ ] **Step 5: Commit** — `git add -A src/sync && git commit -m "feat(sync): clearDirty helper with weather-section routing"`
-
----
+- **Schema migration — MIGRATIONS[2] is the SOLE producer of the column:** `SCHEMA_VERSION` bumps to 2 and `MIGRATIONS[2] = ['ALTER TABLE sync_mutations ADD COLUMN revision INTEGER NOT NULL DEFAULT 0']`. **SCHEMA_V1 stays byte-identical** — a fresh device at user_version 0 runs MIGRATIONS[1] then MIGRATIONS[2] in sequence (open.native.ts applies every step above the stored version), so putting the column in BOTH places would throw `duplicate column name` on every fresh install and silently degrade it to the online-only repo via the provider's catch. Editing V1 alone is equally wrong (already-migrated devices never re-run it → `no such column`). Migration tests must cover BOTH paths: v1→v2 upgrade gains the column; v0→v2 fresh install runs both steps cleanly.
+- **`Mutation.revision` is owned here (not Task 1b):** `types.ts` gains `readonly revision: number`, `newMutation` (mutationQueue.ts — still branch-free, pin holds) sets `0`, and `toMutation` in store.native.ts reads the column — all in this task's single commit, so typecheck is never red between commits.
+- `enqueueCoalescing` bumps `revision = revision + 1` on conflict-update; store reads it into `Mutation.revision`.
+- `remove(clientId, revision)` / `replace(m)` become revision-guarded (`WHERE client_id = ? AND revision = ?`) and **return the affected-row count** (`Promise<number>`); `unpark` unchanged (resets attempts to 0 — deliberate fresh ceiling). New plain helpers for Task 8's discard path: `removeParked(clientId): Promise<number>` (`DELETE … WHERE client_id = ? AND status = 'parked'` — the status guard makes a racing coalesce, which flips the row to pending, win over a stale discard tap) and `removeMany(clientIds): Promise<void>` (unconditional deletes, used only by the create_report cascade).
+- `clearDirty(db, target: RowTarget)`: `daily_reports`/`report_amendments`/`report_photos` by `id`; `report_sections` splits the composite id `${reportId}:${section}` — and when section === `'weather'`, clears `report_weather` by `report_id` (the queue layer files weather under report_sections; the local mirror doesn't).
+- `deleteLocalReport(db, reportId): Promise<void>` — one tx deleting the `daily_reports` row and every child-table row for that report (Task 5's discard cascade consumes it via the injected seam; Task 6 wires it). Implemented and tested HERE.
+- Migration-test caveats: nothing imports `open.native.ts` under Jest today and `jest.setup.js` mocks only async-storage/expo-crypto — the test adds a `jest.mock('expo-sqlite', …)`; and a fake Db won't genuinely reject a duplicate column, so the v0→v2 case asserts the migration SEQUENCE, not real SQLite enforcement (stated so the executor doesn't over-trust it).
+- [ ] Failing tests in the existing fake-Db idiom: 4 clearDirty WHERE shapes incl. weather routing; coalesce bumps revision; guarded remove/replace no-op (0 affected) on stale revision; removeParked no-ops on a pending row; v1→v2 migration adds the column. Update the sqliteRepo fake. RED → GREEN → `npm run verify` → commit `feat(sync): schema v2 revision column, guarded queue writes, clearDirty routing`.
 
 ### Task 3: Re-parent transaction — `src/sync/reparent.native.ts`
 
-**Files:**
-- Create: `src/sync/reparent.native.ts`
-- Test: `src/sync/reparent.native.test.ts` (fake-Db harness again)
+**Files:** Create `src/sync/reparent.native.ts`, `src/sync/reparent.native.test.ts`.
 
-**Interfaces:**
-- Consumes: `Db`, `tx`, `run`, `first` from `../db/rows.native` (read `rows.native.ts` for exact signatures before writing); `Mutation` from `./types`.
-- Produces: `reparentReport(db: Db, loserId: string, winnerId: string): Promise<void>` — Task 4's `create_report` handler calls it when the RPC returns a different `report_id` than the payload's.
-
-Contract (doc 06 §A per-kind notes, verbatim requirements): in ONE SQLite transaction —
-1. Rewrite `report_id = winnerId` on every `report_sections`, `report_weather`, `report_photos`, `report_amendments`, `report_crew`, `report_equipment`, `report_work_performed`, `report_delays`, `report_safety_observations` row where `report_id = loserId`.
-2. Rewrite every OTHER queued `sync_mutations` row whose payload embeds the loser's `reportId`: JSON-parse the stored payload, replace `data.reportId`, and for not-yet-pushed photos also rewrite `data.storagePath` (`<projectId>/<loserId>/<photoId>.jpg` → `<projectId>/<winnerId>/<photoId>.jpg`). Re-serialize in place (same `seq`). Also rewrite composite `client_id`s of coalesced section mutations (`${loserId}:${section}` → `${winnerId}:${section}`) so future coalescing keys on the winner.
-3. Delete the loser's `daily_reports` row.
-
-If the transaction throws, everything rolls back and the `create_report` mutation stays pending — safe, because the RPC is get-or-create-idempotent and returns the same winner next attempt.
-
-- [ ] **Step 1: Write failing tests** — cases: (a) child-table rows rewritten; (b) a queued `update_section` mutation for the loser has payload.reportId AND client_id rewritten; (c) a queued `add_photo` payload gets reportId + storagePath rewritten; (d) loser `daily_reports` row deleted; (e) mutations for unrelated reports untouched. Seed the fake Db's `sync_mutations` with JSON payload strings; assert the rewritten JSON.
-- [ ] **Step 2: Run to verify failure** — `npx jest src/sync/reparent.native.test.ts` → FAIL
-- [ ] **Step 3: Implement**
-
-```ts
-// src/sync/reparent.native.ts
-import { run, selectAll, tx, type Db } from '../db/rows.native'; // match real helper names
-import type { MutationPayload } from './types';
-
-const CHILD_TABLES = [
-  'report_sections', 'report_weather', 'report_photos', 'report_amendments',
-  'report_crew', 'report_equipment', 'report_work_performed', 'report_delays',
-  'report_safety_observations',
-] as const;
-
-/** [02 §C conflict surface 3] Re-home every local artifact of a losing
- * same-day report onto the server's winner, atomically. */
-export async function reparentReport(db: Db, loserId: string, winnerId: string): Promise<void> {
-  await tx(db, async (t) => {
-    for (const table of CHILD_TABLES) {
-      await run(t, `UPDATE ${table} SET report_id = ? WHERE report_id = ?`, [winnerId, loserId]);
-    }
-    const rows = await selectAll<{ client_id: string; payload: string }>(
-      t, 'SELECT client_id, payload FROM sync_mutations', [],
-    );
-    for (const row of rows) {
-      const payload = JSON.parse(row.payload) as MutationPayload;
-      if (payload.kind === 'create_report' || payload.data.reportId !== loserId) continue;
-      const data: Record<string, unknown> = { ...payload.data, reportId: winnerId };
-      if (payload.kind === 'add_photo') {
-        data.storagePath = payload.data.storagePath.replace(`/${loserId}/`, `/${winnerId}/`);
-      }
-      const nextClientId = row.client_id.startsWith(`${loserId}:`)
-        ? `${winnerId}:${row.client_id.slice(loserId.length + 1)}`
-        : row.client_id;
-      await run(
-        t,
-        'UPDATE sync_mutations SET client_id = ?, payload = ? WHERE client_id = ?',
-        [nextClientId, JSON.stringify({ ...payload, data }), row.client_id],
-      );
-    }
-    await run(t, 'DELETE FROM daily_reports WHERE id = ?', [loserId]);
-  });
-}
-```
-
-(Match the real `tx`/`run`/`selectAll` helper names and signatures from `rows.native.ts`; the transaction + rewrite semantics are the contract.)
-
-- [ ] **Step 4: Run to verify pass** — `npx jest src/sync/reparent.native.test.ts` → PASS
-- [ ] **Step 5: Commit** — `git commit -am "feat(sync): atomic create_report collision re-parenting"`
-
----
+**Produces:** `reparentReport(db: Db, loserId: string, winnerId: string): Promise<void>` — called by Task 4 when `create_report` returns a different id. One `tx(db, async () => …)` (zero-arg callback; import `all` aliased `allRows`, plus `run` — no unused imports):
+1. **Loser-wins collision policy throughout.** For `report_sections` and `report_weather` (composite/`report_id` PKs): delete the winner-side row a rewrite would collide with, and for each re-homed section also delete the winner's relational child rows (`report_crew`/`report_equipment`/`report_work_performed`/`report_delays`/`report_safety_observations` — surrogate PKs, safe), then `UPDATE … SET report_id = winner WHERE report_id = loser` across ALL child tables — explicitly: `report_sections`, `report_weather`, `report_photos`, `report_amendments`, `report_crew`, `report_equipment`, `report_work_performed`, `report_delays`, `report_safety_observations`.
+2. **Queue rewrite:** for every queued mutation whose payload embeds the loser id (skip `create_report` itself): rewrite `data.reportId` (and `data.storagePath` for unpushed photos); rewrite coalesced `client_id`s `${loserId}:${section}` → `${winnerId}:${section}`, deleting a pre-existing winner-keyed row first (loser's payload wins).
+3. **Rename, never delete, the report row:** `UPDATE OR REPLACE daily_reports SET id = ? WHERE id = ?` (winner, loser) — OR REPLACE drops a pre-existing winner row; no child ever points at a missing parent (M3a has no pull to materialize the winner). No FKs/triggers exist in schema.ts, so no side effects.
+On throw: full rollback; `create_report` stays pending — safe, the RPC is idempotent and returns the same winner again.
+- [ ] Failing tests (fake-Db): (a) child rewrite; (b) queued section mutation payload+client_id rewrite; (c) queued add_photo reportId+storagePath rewrite; (d) unrelated reports untouched; (e) winner-keyed queue row collision → loser payload survives; (f) winner absent → report row renamed, queryable; (g) winner present locally → single row, loser content kept, winner's colliding section/weather/child rows removed; (h) **idempotency** — running `reparentReport` twice leaves the winner subtree intact (guards against a naive blanket `DELETE … WHERE report_id = winner` implementation destroying re-homed data when create_report re-pushes after a crash between reparent-commit and queue-remove). RED → GREEN → commit `feat(sync): loser-wins re-parenting that renames instead of deleting`.
+**Recorded M5 obligation:** this task rewrites queued `add_photo` payloads' `storagePath` but NOT local `report_photos.storage_path` values — harmless now (no photo rows exist before M5); M5's reparent handling must add the local-row rewrite.
 
 ### Task 4: Native pusher — `src/sync/push.native.ts`
 
-**Files:**
-- Create: `src/sync/push.native.ts`
-- Test: `src/sync/push.native.test.ts` (mock rpc runner + fake Db; everything is injected, no jest.mock needed)
+**Files:** Create `src/sync/push.native.ts`, `src/sync/push.native.test.ts`.
 
-**Interfaces:**
-- Consumes: `rpcCallOf` (Task 1), `reparentReport` (Task 3), `PushOutcome` from `./mutationQueue`, `Mutation` from `./types`.
-- Produces: `type Pusher = (m: Mutation) => Promise<PushOutcome>`; `createPusher(rpc: RpcRunner, db: Db): Pusher` where `type RpcRunner = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>`. Task 6 wires `RpcRunner` to `(fn, args) => supabase.rpc(fn, args)`. Injecting the runner (not the whole client) keeps this file trivially testable.
-
-Behavior:
-- `rpcCallOf(m.payload)` → `await rpc(call.fn, call.args)`.
-- `error` non-null → `{ ok: false, error }` (classification is `applyOutcome`'s job, not the pusher's).
-- `create_report` success: PostgREST returns the `returns table` row as `[{ report_id, was_created }]` (array) — take `data[0]`. If `report_id !== m.payload.data.reportId`, `await reparentReport(db, loserId, report_id)` BEFORE returning `{ ok: true }`; a re-parent throw returns `{ ok: false, error }` so the mutation stays queued (retryable path).
-- Any thrown exception (network) → `{ ok: false, error }`.
-
-- [ ] **Step 1: Write failing tests** — cases: (a) success maps to `{ok:true}`; (b) RPC error object → `{ok:false, error}`; (c) thrown fetch error → `{ok:false, error}`; (d) create_report same-id success does NOT call reparent; (e) create_report collision calls reparent with (loser, winner) then `{ok:true}`; (f) reparent throw → `{ok:false}`.
-- [ ] **Step 2: Verify failure** — `npx jest src/sync/push.native.test.ts` → FAIL
-- [ ] **Step 3: Implement**
-
+**Produces (consumed by Task 6):**
 ```ts
-// src/sync/push.native.ts
-import { rpcCallOf } from './push';
-import { reparentReport } from './reparent.native';
-import type { PushOutcome } from './mutationQueue';
-import type { Mutation } from './types';
-import type { Db } from '../db/rows.native';
-
-export type RpcRunner = (
-  fn: string,
-  args: Record<string, unknown>,
-) => Promise<{ data: unknown; error: unknown }>;
-
+export type RpcRunner = (fn: RpcName, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown; status: number }>;
 export type Pusher = (m: Mutation) => Promise<PushOutcome>;
-
-export function createPusher(rpc: RpcRunner, db: Db): Pusher {
-  return async (m) => {
-    try {
-      const call = rpcCallOf(m.payload);
-      const { data, error } = await rpc(call.fn, call.args as Record<string, unknown>);
-      if (error) return { ok: false, error };
-      if (m.payload.kind === 'create_report') {
-        const row = (Array.isArray(data) ? data[0] : data) as
-          | { report_id: string }
-          | undefined;
-        const winner = row?.report_id;
-        if (winner && winner !== m.payload.data.reportId) {
-          await reparentReport(db, m.payload.data.reportId, winner);
-        }
-      }
-      return { ok: true };
-    } catch (error: unknown) {
-      return { ok: false, error };
-    }
-  };
-}
+export function createPusher(rpc: RpcRunner, db: Db): Pusher;
 ```
+Behavior: `rpcCallOf` → `await rpc(...)`. On error: `{ ok: false, error: { ...error, status } }` — postgrest-js errors are PLAIN objects (verified at source), so the spread preserves `code`/`message` and the merged `status` keeps `classifyError`'s 403-evict/401/5xx branches live. On `create_report` success: `data[0].report_id`; if ≠ payload id, `await reparentReport(db, loser, winner)` then return `{ ok: true, reparentedTo: winner }`; reparent throw → `{ ok: false, error }`. Any thrown exception → `{ ok: false, error }`.
+- [ ] Failing tests: success; error object w/ status merge; thrown fetch error; same-id no-reparent; collision → reparent(loser,winner) + `reparentedTo`; reparent throw → ok:false. RED → GREEN → commit `feat(sync): native pusher with status-preserving errors and collision re-parenting`.
 
-- [ ] **Step 4: Verify pass**, **Step 5: Commit** — `git commit -am "feat(sync): native pusher dispatching lifecycle RPCs with collision re-parenting"`
+### Task 5: Pure engine core — `src/sync/engineCore.ts`
 
----
+**Files:** Create `src/sync/engineCore.ts`, `src/sync/engineCore.test.ts`. Modify `src/sync/engineApi.ts` (additive `readonly reparents: number` on `SyncState`; also add to `IDLE_SYNC_STATE`).
 
-### Task 5: Pure engine core — `src/sync/engine.ts`
-
-**Files:**
-- Create: `src/sync/engine.ts`
-- Test: `src/sync/engine.test.ts`
-
-**Interfaces:**
-- Consumes: `MutationStore`, `Mutation` from `./types`; `orderForDrain`, `applyOutcome`, `otherMutationTargetsRow`, `rowTargetOf`, type `PushOutcome`, type `RowTarget` from `./mutationQueue`; `SyncEngineApi`, `SyncState`, `IDLE_SYNC_STATE` from `./engineApi`.
-- Produces:
-
+**Produces:** `createEngineCore(deps: EngineDeps): EngineCore` where `type EngineCore = Omit<SyncEngineApi, 'start' | 'stop'> & { discardParked(clientId: string): Promise<void> }` — listeners/timers are the shell's job; Task 6 composes `{...core, start, stop}`. `SyncEngineApi` gains the additive `discardParked` member (engineApi.ts), and `SyncState` gains `readonly reparents: number`.
 ```ts
 export interface EngineDeps {
   readonly store: MutationStore;
+  // Restated inline from mutationQueue/types exports — do NOT import the Pusher
+  // alias from push.native.ts (a bare value import would drag the native graph
+  // into the pure core; restating avoids even the type-only dependency).
   readonly push: (m: Mutation) => Promise<PushOutcome>;
   readonly clearDirty: (target: RowTarget) => Promise<void>;
-  /** Report a park/evict for observability; injected so the core stays IO-free. */
-  readonly onIncident: (kind: 'parked' | 'evicted', m: Mutation) => void;
+  readonly onIncident: (kind: 'parked'|'evicted', m: Mutation, error: unknown) => void;
   readonly isOnline: () => boolean;
 }
-export function createEngineCore(deps: EngineDeps): SyncEngineApi;
 ```
+`discardParked(clientId)` (the unwedging path the cross-cycle block requires): look the mutation up via `store.all()`; if its kind is `create_report`, cascade — `store.removeMany` every queued mutation whose payload's `reportId` matches, then `await deps.deleteLocalReport(reportId)` (new injected seam, implemented in store.native.ts as one tx deleting the `daily_reports` row and every child-table row for that report). Rationale: the server never saw this report and `sqliteRepo.createReport` short-circuits on an existing local row, so keeping the local subtree would strand it — every future edit P0002-parks forever with no re-enqueue path. The confirm copy states it plainly: "This removes the report and its changes from this device." For every other kind: `store.removeParked(clientId)` (status-guarded, so a racing fresh edit that re-pended the row survives) — queue row only; local rows keep `_dirty` (recorded consequence: shielded from M3b's pull until a later push clears it). `discardParked` returns the affected count so the UI can show "This change was just updated — it no longer needs attention" when the guard wins (0 rows) instead of appearing to do nothing. Publish a recount after. `EngineDeps` gains `readonly deleteLocalReport: (reportId: string) => Promise<void>` (Task 6 wires it).
+`run()` contract (never rejects; store/clearDirty throws caught per-mutation, surfaced via `lastError`, cycle aborted cleanly):
+1. Single-flight + dirty-coalesce (model on `statusHub`'s `cycle`/`dirty`), so the trailing cycle always recounts the last enqueue.
+2. Cycle start: recount from `store.all()` → publish `{syncing: true, online: isOnline(), pending, parked, lastError, reparents, completedPulls: 0}` — `reparents` carries forward unchanged (monotone across start/end publishes; `useReparentRedirect` must never observe a reset).
+3. Load `store.pending()`, `orderForDrain`. **Skip rules:** (cross-cycle) any PARKED mutation for report R blocks every pending mutation for R — the discard/retry surface is the resolution path; (within-cycle) any failure for report R shadows R's later mutations this cycle. Do NOT gate the drain on `isOnline()` — NetInfo false negatives must never stop sync.
+4. Per mutation (revision captured at load): `outcome = await push(m)`; `applied = applyOutcome(m, outcome)`.
+   - Success: guarded `store.remove(m.clientId, m.revision)`; **if 0 rows affected (fresh coalesce won) skip `clearDirty` entirely**; else clearDirty when the row is uncontested — the contention check calls `store.all()` FRESH at success-handling time (never a cycle-start snapshot; a different-clientId mutation enqueued mid-cycle against the same row must be seen). When `outcome.reparentedTo` is set, BOTH the contention check and the clearDirty target are re-keyed to the winner: build the comparison from a payload with `reportId` rewritten to the winner (the reparent already rewrote every other queued mutation to the winner id, so a loser-keyed `otherMutationTargetsRow` would miss a pending submit/lock and wrongly clear `_dirty` — latent until M3b's pull, then a real shield break). If `reparentedTo`: bump `reparents`, abort the remaining cycle, mark dirty (immediate follow-up reloads rewritten ids — no push against a dead loser id, no spurious incident).
+   - Failure: guarded `store.replace(applied.next)` (0 rows → charge nothing); parked → `onIncident(applied.evict ? 'evicted' : 'parked', m, outcome.error)`.
+   - `applied.errorClass === 'offline'`: stop draining, publish `online: false` and **`lastError: null`** — the queued count IS the offline UX (never-alarm contract).
+5. Cycle end: recount; publish `{online, syncing: false, pending, parked, lastError, reparents, completedPulls: 0}` (lastError = last non-offline failure's message, or null on a clean drain).
+6. `retryParked()`: unpark all parked, then `run()`.
+- [ ] Failing tests: drain order + removals + publish sequence (start AND end recounts); uncontested-only clearDirty; retryable bump + park at ceiling + incident carries error; offline stops drain, `online:false`, `lastError:null`; parked-anything blocks report (parked update_section + pending submit → submit untouched; retryParked drains both in order); within-cycle shadowing (failed create_report → same-report section skipped, not attempted); single-flight; **coalesced edit arriving during in-flight push survives a successful push and stays pending**; **…is not charged an attempt on failure**; reparent bumps `reparents` once, aborts + follow-up cycle pushes with winner id, clearDirty AND its contention check keyed to winner; store-throw does not reject; `discardParked` cascades a parked create_report's whole subtree, status-guard lets a racing fresh edit survive, recount published. RED → GREEN → commit `feat(sync): pure engine core — guarded drain, shadowing, reparent-aware cycles, discard`.
 
-Task 6 instantiates it with native seams. `start()`/`stop()` are no-ops here (trigger wiring is the native shell's job) — the core owns `run()`, `retryParked()`, `getState()`, `subscribe()`.
+### Task 6: Native shell — `src/sync/engine.native.ts` + NetInfo
 
-Behavior contract for `run()`:
-1. **Single-flight + coalesce**: a `run()` during a running cycle returns the same promise but marks dirty → one follow-up cycle runs after (same pattern as `statusHub.refresh()` — read it first).
-2. Cycle: set `{ syncing: true, online: isOnline() }`, publish. Load `store.pending()`, `orderForDrain` it.
-3. **Skip-dependents rule** (doc 06 §A): before pushing `m`, if the queue (from `store.all()`) holds a PARKED `create_report` whose `reportId` equals `m.payload.data.reportId`, skip `m` untouched (not an attempt).
-4. Per mutation: `outcome = await push(m)`; `applied = applyOutcome(m, outcome)`.
-   - `applied.next === null` (success): `store.remove(m.clientId)`; if `!otherMutationTargetsRow(await store.all(), m)` → `clearDirty(rowTargetOf(m.payload))`.
-   - else `store.replace(applied.next)`; if `applied.next.status === 'parked'` → `onIncident(applied.evict ? 'evicted' : 'parked', m)`.
-   - If the outcome classified offline (`applied.next !== null && applied.next.attempts === m.attempts`): set `online: false` and **stop draining** (the rest would fail identically).
-5. End of cycle: recount from `store.all()` → `{ pending, parked }`; publish `{ online, syncing: false, pending, parked, lastError, completedPulls: 0 }` where `lastError` is the last applied mutation's error message or null after a clean drain.
-6. `retryParked()`: `unpark` every parked clientId, then `run()`.
-7. `run()` never rejects.
+**Files:** Create `src/sync/engine.native.ts`, `src/sync/engine.native.test.ts`. Modify `package.json` (dep), `src/platformSplit.test.ts` (`NATIVE_ONLY_MODULES` += `'@react-native-community/netinfo'`).
 
-- [ ] **Step 1: Write failing tests** — use an in-memory `MutationStore` fake (array-backed, ~30 lines, matching the `MutationStore` interface). Cases:
-  - drains two pending mutations in `orderForDrain` order, removes both, publishes `syncing:true` then final `{pending:0, syncing:false}`;
-  - success clears dirty only when uncontested (queue a second mutation targeting the same row → no `clearDirty` call);
-  - retryable failure bumps attempts and republishes counts; parked at ceiling fires `onIncident('parked', …)`;
-  - offline outcome stops the drain (second mutation never pushed) and publishes `online:false`;
-  - skip-dependents: parked `create_report` for r1 + pending `update_section` for r1 → section skipped, zero push calls for it, still pending after;
-  - single-flight: two concurrent `run()`s → cycles run sequentially, both promises resolve;
-  - `retryParked` unparks then drains;
-  - subscriber sees stable snapshots (`getState()` identity changes only on publish).
-- [ ] **Step 2: Verify failure** — `npx jest src/sync/engine.test.ts` → FAIL
-- [ ] **Step 3: Implement** `createEngineCore` per the contract above. Keep it under ~150 lines; model the single-flight/dirty-cycle machinery on `statusHub.ts`'s `cycle`/`dirty` pattern. State updates are immutable (`state = { ...state, … }`) and `subscribe` follows the `engineApi` signature `(fn: (s: SyncState) => void)`.
-- [ ] **Step 4: Verify pass** — also run `npx jest src/sync` to catch regressions.
-- [ ] **Step 5: Commit** — `git commit -am "feat(sync): pure engine core — drain loop, skip-dependents, single-flight"`
-
----
-
-### Task 6: Native shell — `src/sync/engine.native.ts` + NetInfo dependency
-
-**Files:**
-- Create: `src/sync/engine.native.ts`
-- Modify: `package.json` (new dep), `src/platformSplit.test.ts:12` (`NATIVE_ONLY_MODULES` += `'@react-native-community/netinfo'`)
-- Test: `src/sync/engine.native.test.ts` (jest-expo mocks NetInfo/AppState listeners; assert wiring, not behavior — behavior is Task 5's)
-
-**Interfaces:**
-- Consumes: `createEngineCore` (Task 5), `createMutationStore`, `clearDirty` (Task 2), `createPusher` (Task 4), `reportSyncIncident` from `../lib/observability.native`, `supabase` from `../supabase/client`, `Db`.
-- Produces: `createSyncEngine(db: Db): SyncEngineApi` — Task 7's provider calls it.
-
-- [ ] **Step 1: Install the dependency** — `npx expo install @react-native-community/netinfo` (expo-pinned version), then add it to `NATIVE_ONLY_MODULES`. Run `npx jest src/platformSplit.test.ts` → PASS.
-- [ ] **Step 2: Write failing wiring tests** — `start()` subscribes NetInfo + AppState and kicks one `run`; connectivity regained → `run` fires; AppState `active` → `run` fires; `stop()` unsubscribes (no run on later events).
-- [ ] **Step 3: Implement**
-
-```ts
-// src/sync/engine.native.ts
-import NetInfo from '@react-native-community/netinfo';
-import { AppState } from 'react-native';
-import { createEngineCore } from './engine';
-import { createMutationStore, clearDirty } from './store.native';
-import { createPusher } from './push.native';
-import { reportSyncIncident } from '../lib/observability.native';
-import { supabase } from '../supabase/client';
-import type { Db } from '../db/rows.native';
-import type { SyncEngineApi } from './engineApi';
-
-export function createSyncEngine(db: Db): SyncEngineApi {
-  let online = true;
-  const core = createEngineCore({
-    store: createMutationStore(db),
-    push: createPusher((fn, args) => supabase.rpc(fn, args), db),
-    clearDirty: (target) => clearDirty(db, target),
-    onIncident: (kind, m) =>
-      reportSyncIncident(kind, { kind: m.payload.kind, clientId: m.clientId, attempts: m.attempts }),
-    isOnline: () => online,
-  });
-
-  let unsubNet: (() => void) | null = null;
-  let subApp: { remove(): void } | null = null;
-
-  return {
-    ...core,
-    start() {
-      unsubNet = NetInfo.addEventListener((s) => {
-        const was = online;
-        online = s.isConnected !== false;
-        if (!was && online) void core.run();
-      });
-      subApp = AppState.addEventListener('change', (s) => {
-        if (s === 'active') void core.run();
-      });
-      void core.run();
-    },
-    stop() {
-      unsubNet?.();
-      unsubNet = null;
-      subApp?.remove();
-      subApp = null;
-    },
-  };
-}
-```
-
-(Adjust `reportSyncIncident`'s detail shape to the real `SyncIncidentDetail` in `src/lib/observabilityTypes.ts` — read it first.)
-
-- [ ] **Step 4: Verify pass** — `npx jest src/sync/engine.native.test.ts src/platformSplit.test.ts`
-- [ ] **Step 5: Commit** — `git commit -am "feat(sync): native engine shell with NetInfo/AppState triggers"`
-
----
+`createSyncEngine(db: Db): SyncEngineApi` wires: `createMutationStore(db)`; `createPusher(async (fn, args) => await supabase.rpc(fn as never, args as never), db)` — builders are PromiseLike not Promise, and generated `rpc()` overloads key on literal names; both casts live at this single documented site (note: generated `submit_report` types `p_signer_title` non-nullable while the payload and SQL both allow null — the cast covers typecheck, and passing a literal `null` is fine at runtime since the SQL signature permits it; the pusher passes the payload value through unmodified); `clearDirty` curried; `onIncident` builds `SyncIncidentDetail` as `{kind: m.payload.kind, attempts: m.attempts, errorCode, errorStatus}` extracted from the error (NO `clientId` — not in the type) → `reportSyncIncident`. `start()`: NetInfo listener (offline→online edge → run; NetInfo fires current state on subscribe — must not double-run beside start's explicit kick), AppState `'active'` → run, initial kick. **Backoff ladder** (timers live here, not in core): wrap `core.run()`; after each resolve inspect `core.getState()` — schedule one `setTimeout(wrappedRun, delay)` with ladder `[30s, 2m, 10m]` by consecutive non-clean cycles when EITHER `pending > 0 && lastError !== null && online` (server failures) OR `pending > 0 && !state.online && netInfoSaysConnected` (transport failures — captive portal/dead DNS publish offline with `lastError: null` while NetInfo still reports connected, so no NetInfo edge will ever fire; without this arm the queue re-drains only on foreground/nudge). Reset on clean cycle; superseded by any earlier trigger; cleared in `stop()`.
+- [ ] `npx expo install @react-native-community/netinfo`; platformSplit green. Failing wiring tests (fake timers): start subscribes + kicks once (no NetInfo-initial double-run); reconnect/foreground trigger; failing cycle schedules exactly one timer, success resets ladder, `stop()` clears everything. RED → GREEN → commit `feat(sync): native engine shell with NetInfo/AppState triggers and bounded backoff`.
 
 ### Task 7: Hub engine mode + provider wiring
 
-**Files:**
-- Modify: `src/sync/statusHub.ts` (add `attachEngine`), `src/sync/statusHub.test.ts` (new cases)
-- Modify: `src/data/RepositoryProvider.tsx` + `src/data/platformRepo.native.ts` (engine lifecycle; read both files first — the M2 install site is `platformRepo.native.ts:176-181`)
-- Test: existing suites + new hub cases
+**Files:** Modify `src/sync/statusHub.ts` + test; `src/sync/store.native.ts` + `src/sync/store.native.test.ts` (DELETE `createMutationCounter` and its tests — last production caller gone); `src/data/types.ts` (`PlatformRepoBundle` → `{ repo, engine: SyncEngineApi | null }`); `src/data/platformRepo.native.ts` (build engine, nudge → `() => void engine.run()`); `src/data/platformRepo.web.ts` (`engine: null`); `src/data/RepositoryProvider.tsx` (attach/start under `active`, `if (engine)` guard, detach+stop in cleanup before `setCounter(null)`, `retrySync`/`discardSync` exposed via a NEW dedicated `SyncActionsContext` (+ `useSyncActions()` hook) delegating to the engine, no-ops on web — the `Repository` interface and `useRepository()`'s return type are deliberately untouched so no existing screen breaks); `src/data/RepositoryProvider.rekey.test.tsx` (mock → `{repo: {}, engine: null}`).
 
-**Interfaces:**
-- Produces: `SyncStatusHub.attachEngine(engine: Pick<SyncEngineApi, 'getState' | 'subscribe'>): () => void`.
-- `setCounter` SURVIVES for exactly one caller: the online-only fallback (`setCounter(null)` on native local-DB failure and on sign-out). The counter-refresh path is otherwise dead once the engine attaches.
+Hub contract: `attachEngine(engine: Pick<SyncEngineApi,'getState'|'subscribe'>): () => void` — bumps epoch (discarding in-flight counts and superseding any later-resolving stale counter install), publishes `{...engine.getState(), countError: false}` immediately, mirrors every engine publish; detach unsubscribes and resets idle. `refresh()` no-ops (resolved) while attached. `setCounter` survives for exactly the fallback path (`setCounter(null)` in the provider's catch/cleanup). `createMutationCounter` loses its last production caller in this task — **delete it and its tests** (store.native.ts); the M3b fallback surface will not resurrect it (fallback is online-only, no local DB to count).
+- [ ] Failing hub tests: attach mirrors; detach resets; refresh no-op while attached; stale `setCounter` after attach ignored (epoch). Wire provider; `npm run verify && npm run check:web`. Commit `feat(sync): engine publishes through statusHub; provider drives engine lifecycle`.
 
-Hub contract for `attachEngine`:
-- Bumps the epoch (discarding any in-flight count), detaches any counter, immediately publishes `{ ...engine.getState(), countError: false }`, then mirrors every engine publish. Returns a detach function that unsubscribes and resets the hub to idle (same reset semantics as `setCounter(null)`).
-- `refresh()` while an engine is attached is a no-op that resolves (the engine owns state now; the nudge path no longer calls refresh anyway).
+### Task 8: Retry/discard surface + reparent-aware report screen
 
-Provider contract (native): after `openDb()` + repo construction, `const engine = createSyncEngine(db)`; nudge becomes `() => void engine.run()` (replacing `() => void syncStatusHub.refresh()` at `platformRepo.native.ts:181`); on provider mount `syncStatusHub.attachEngine(engine); engine.start()`; on unmount/account-switch `engine.stop()` + detach. The `createMutationCounter` install is removed (its `store.native.ts` implementation stays — the retry surface reuses `store.all()`; delete only if nothing references it after Task 8). Web platform: unchanged (no engine, hub idle).
+**Files:** Create `app/settings/sync.tsx` (thin route), `src/components/SyncQueueScreen.tsx` + test, `src/hooks/useReparentRedirect.ts` + test. Modify `src/components/SyncStatusBanner.tsx` + test (pressable via injected `onPress` → router to `/settings/sync`; `attention` also when engine `lastError !== null` with `parked === 0`, copy "Sync problem — tap to review" — distinct from `countError`'s string; **precedence position pinned**: the new check slots between `countError` and `pending` — full order parked > syncing > countError > lastError > pending > synced — so the existing precedence test extends rather than breaks); `app/(tabs)/settings.tsx` (SheetRow link); `app/_layout.tsx` (register route if explicit); `app/report/[id]/index.tsx` (mount `useReparentRedirect`); `src/data/types.ts` + `sqliteRepo.native.ts` + `supabaseRepo.ts` (`listMutations(): Promise<Mutation[]>` — native delegates to store `all()` [newest-first], web returns `[]`); `.maestro/README.md` inventory.
 
-- [ ] **Step 1: Write failing hub tests** — attach publishes engine snapshot; engine publish mirrors through with `countError:false`; detach resets to idle and stops mirroring; `refresh()` no-ops while attached; attach after counter mode discards a pending count (epoch guard).
-- [ ] **Step 2: Verify failure** — `npx jest src/sync/statusHub.test.ts` → FAIL
-- [ ] **Step 3: Implement `attachEngine`**, keeping the existing counter machinery intact for the fallback path.
-- [ ] **Step 4: Wire the provider** — follow the existing `active`-flag pattern in `RepositoryProvider` (the M2 counter install shows where lifecycle effects live; engine install replaces it 1:1, keyed on `userId` so an account switch rebuilds engine + hub attachment).
-- [ ] **Step 5: Full gate** — `npm run verify && npm run check:web` (the provider renders in the web graph — `createSyncEngine` must only be referenced from `.native` files; the provider gets it via `platformRepo.native.ts`'s platform-split seam, same as the repo itself).
-- [ ] **Step 6: Commit** — `git commit -am "feat(sync): engine publishes through statusHub; provider drives engine lifecycle"`
+Queue screen: rows from `listMutations()` with plain-language kind labels. Per-row detail NEVER shows the raw `lastError` string (an offline device stores "TypeError: Network request failed" — leaking it breaks the never-alarm contract): map via a small pure helper — `isLikelyOffline({ message: m.lastError })`-matching rows (note the object call shape — it returns false for bare strings) → "Waiting for connection", parked rows → "Couldn't send — needs your attention", other pending errors → "Will retry automatically". (`SyncState.lastError` is never used here — nulled on offline aborts, overwritten by later cycles.) "Retry now" (`retrySync`) visible when any parked (copy reflects fresh-ceiling unpark); per-row "Discard" for parked rows wired to the provider's `discardSync(clientId)` context value (→ `engine.discardParked`; no-op on web) with a confirm dialog: change stays on this device only, and **discarding a parked `create_report` states it removes the report's entire queued subtree**; web shows "Sync runs automatically while online" instead of an empty list. Provider (`RepositoryProvider.tsx`, already in Task 7's list) exposes `discardSync` beside `retrySync`. `useReparentRedirect(routeId, loaded: { projectId: string; reportDate: string } | null)`: the screen passes the identity pair from its ALREADY-LOADED report state (the in-memory copy survives the rename; the loser id alone resolves to nothing after Task 3 renames the row — a reportId-only signature would be unimplementable). On `reparents` change (via `useSyncStatus`) with `loaded` non-null: re-resolve by `(projectId, reportDate)` through the repo; `getReportByDate` returns `DailyReportRow | null` — **on null, do nothing** (pinned in the hook test; a transient miss must never navigate); if the resolved id ≠ `routeId` → `router.replace`. testIDs: `sync-queue-screen`, `sync-queue-retry`, `sync-queue-row-<clientId>`, `sync-queue-discard-<clientId>` (dynamic ones → `DYNAMIC_TESTIDS`).
+- [ ] Component/hook tests inside `ThemeProvider` (injected props; no route-file imports). RED → GREEN → `npx jest src/components src/hooks src/maestroSelectors.test.ts` → commit `feat(sync): retry/discard surface, tappable banner, reparent-aware report screen`.
 
----
+### Task 9: Coverage pins + full gate
 
-### Task 8: Retry surface — `app/settings/sync.tsx` + tappable banner
+- [ ] `package.json` `coverageThreshold` += `src/sync/engineCore.ts` and `src/sync/rpcMap.ts` at `{branches: 95, functions: 100, lines: 95, statements: 95}`. `npm test` — add tests if under (never lower pins). `npm run verify && npm run check:web` green. Commit `test(sync): pin engine core and rpc map coverage`.
 
-**Files:**
-- Create: `app/settings/sync.tsx` (route) + `src/components/SyncQueueScreen.tsx` (testable body — Jest ignores `app/`)
-- Modify: `src/components/SyncStatusBanner.tsx` (tappable → navigate; `attention` copy for engine `lastError`), `app/(tabs)/settings.tsx` (add a "Sync status" `SheetRow` linking to the route), `app/_layout.tsx` (register the stack route if layouts are explicit — read it first)
-- Modify: `.maestro/README.md` (testID inventory)
-- Test: `src/components/SyncQueueScreen.test.tsx`, extend `src/components/SyncStatusBanner.test.tsx`
+### Task 10: On-device E2E + Maestro flow impact
 
-**Interfaces:**
-- Consumes: `useSyncStatus()` (existing hook), `store.all()` via a new repo-surface `listMutations(): Promise<Mutation[]>` — check `src/data/types.ts` for where to add it (native impl delegates to the mutation store's `all()`; web impl returns `[]`), and `engine.retryParked()` exposed through a new provider context value `retrySync: () => Promise<void>` (no-op on web).
-- Produces testIDs (add to `.maestro/README.md` inventory): `sync-queue-screen`, `sync-queue-retry`, `sync-queue-row-<clientId>` (dynamic → `DYNAMIC_TESTIDS` in `src/maestroSelectors.test.ts` if a flow uses it), `sync-status` tap target (already exists).
+- [ ] Boot the recorded local recipe (Docker → `supabase start` in ../jobsight-backend → guarded seed → emulator → `adb reverse tcp:54321` + `tcp:8081` → `npx expo run:android` → prewarm bundle → `maestro test .maestro/report-sections.yaml`).
+- [ ] The flow's `sync-status-queued` assert may flake once drains are live: keep it only immediately post-tap (short `extendedWaitUntil`), tolerate a transient `sync-status-syncing`, and ADD a terminal `sync-status-synced` assert (the stronger claim the engine makes true). Update `.maestro/README.md`.
+- [ ] Verify a drain landed: `docker exec supabase_db_PUNCH-LOG-NEW psql -U postgres -d postgres -c "select id, status from daily_reports order by created_at desc limit 3;"`.
+- [ ] Commit `fix(e2e): report-sections flow asserts full queued-to-synced drain`.
 
-Screen behavior: list queued mutations newest-first (`all()` already orders that way) with plain-language kind labels ("Report created", "Crew section", …), status ("waiting" / "needs attention"), and `lastError` detail for parked rows; a "Retry now" `PrimaryButton` visible when any row is parked, calling `retrySync()`. Banner: pressing it routes to `/settings/sync` (use `router.push` from `expo-router`); the banner's `attention` state now also triggers on engine `lastError` non-null with parked=0 ("Sync problem — tap to review") — distinct from `countError`'s "Can't check sync status".
+## Follow-ups (recorded, not this plan)
 
-- [ ] **Step 1: Write failing component tests** (inside `ThemeProvider` wrapper, per repo rule) — renders rows from injected mutations; retry button hidden when nothing parked; press calls the injected retry; banner press calls the injected navigate.
-- [ ] **Step 2: Verify failure**, **Step 3: Implement** (component takes `mutations`/`onRetry` props — the route file only wires context hooks to the component, staying out of Jest's tree).
-- [ ] **Step 4: Verify pass** — `npx jest src/components && npx jest src/maestroSelectors.test.ts`
-- [ ] **Step 5: Commit** — `git commit -am "feat(sync): parked-mutation retry surface and tappable status banner"`
+- **jobsight-backend issue (file before M3b):** `update_section` never bumps `daily_reports.updated_at` — violates doc 06 §B's weather-ride-along/cursor obligation; M3b's pull would miss section edits.
+- **doc 06 §A amendments:** (1) replay paragraph — shipped `submit_report`/`lock_report` replays are idempotent no-ops, not P0001 parks; (2) photo-kind drain note — only `add_photo` is tail-ordered.
+- **M3b:** pull path (explicit `profiles` column list — `select('*')` 403s), reconcile sweeps, `completedPulls`, weather ride-along, amendment-number backfill, online-only-fallback surface, wiring `SyncState.online` into banner copy.
+- **M4 note:** submit UI should pre-check signature size (RPC rejects >1 MB with 22023).
+- **M5:** photo kinds + outbox.
 
----
+## Verification (plan-level)
 
-### Task 9: Coverage pins + full verification
-
-**Files:**
-- Modify: `package.json` `coverageThreshold` — add `src/sync/engine.ts` and `src/sync/push.ts` at `{ branches: 95, functions: 100, lines: 95, statements: 95 }` (mirror the statusHub pin's shape).
-
-- [ ] **Step 1: Add the pins**, run `npm test` — if under threshold, add tests (do NOT lower pins).
-- [ ] **Step 2: `npm run verify`** → green. **`npm run check:web`** → green (proves no native leak from the new modules).
-- [ ] **Step 3: Commit** — `git commit -am "test(sync): pin engine and push mapping coverage"`
-
----
-
-### Task 10: On-device E2E sanity + Maestro flow impact
-
-The existing `.maestro/report-sections.yaml` asserts `sync-status-queued` AFTER section edits — once the engine drains against the local stack, that pill may flip back to `synced` before Maestro asserts, making the flow **newly flaky**. This task decides the flow's shape with a live engine.
-
-- [ ] **Step 1: Boot the local recipe** (memory-recorded, 2026-07-27): Docker → `supabase start` in `../jobsight-backend` → guarded seed → emulator → `adb reverse tcp:54321 tcp:54321` + `tcp:8081` → `npx expo run:android` → prewarm bundle URL → `maestro test .maestro/report-sections.yaml`.
-- [ ] **Step 2: If the queued assertion flakes**, update the flow: keep the queued assert only where a drain can't have completed (immediately after the tap, via `extendedWaitUntil` with a short timeout), and ADD a terminal `sync-status-synced` assertion after edits — the stronger end-to-end claim (edit → queued → drained → synced) the engine now makes true. Update `.maestro/README.md` accordingly.
-- [ ] **Step 3: Verify a real drain landed** — `docker exec supabase_db_PUNCH-LOG-NEW psql -U postgres -d postgres -c "select id, status from daily_reports order by created_at desc limit 3;"` shows the report created by the flow.
-- [ ] **Step 4: Commit** — `git commit -am "fix(e2e): report-sections flow asserts full queued-to-synced drain"`
-
----
-
-## Self-review notes
-
-- **Spec coverage:** engine natives ✔ (T5/T6), five RPC handlers ✔ (T1/T4), statusHub producer + setCounter retirement-in-practice ✔ (T7), retry surface ✔ (T8). The `didFallBackToOnlineOnly` fallback-banner item from the M2 handoff is **deferred to M3b** alongside the pull (it needs the online/offline truth the pull loop refines); recorded here so it isn't lost.
-- **Type consistency:** `Pusher`/`RpcRunner` (T4) consumed by T6; `EngineDeps.clearDirty` matches T2's `clearDirty(db, target)` curried in T6; `RowTarget` is everywhere the shipped flattened `{table, id}` shape.
-- **Placeholder scan:** helper names from `rows.native.ts` (`tx`/`run`/`first`/`selectAll`) are marked "match real signatures" — that is a read-the-file instruction, not a TBD; the WHERE/behavior contracts are fully specified.
-
-## Follow-up plans (not this document)
-
-- **M3b — pull path:** Tier 1 snapshot pulls (explicit `profiles` column list — `select('*')` 403s, doc 06 §B), Tier 2 keyset pulls per `SCOPES`, reconcile sweeps, `completedPulls`, weather ride-along, amendment-number backfill, online-only-fallback surface.
-- **M5 — photo pipeline:** the three photo kinds' handlers + outbox.
+Docs-only on approval: prettier check on the rewritten plan file; structural self-check (every interface consumed by task N produced by task ≤ N; the three wire-shape tests — weather snake_case both paths + web, amend object, network-error classification — present; revision-guard tests present).

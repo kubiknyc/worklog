@@ -44,7 +44,7 @@ interface RowTarget {
 
 **`update_section` — coalescing.** The repository coalesces repeated edits per `(reportId, section)`: enqueue replaces the still-pending mutation's payload in place (same `clientId`, synthesized as `${reportId}:${section}` since the composite key has no single UUID). One section = at most one queued mutation.
 
-**`submit_report`/`lock_report` — replay semantics.** Re-invoked on an already-transitioned report, the RPC raises `P0001` → classified `permanent` → parked and surfaced. Correct per 04 §C.3: the transition already happened; nothing is lost, and the park surface tells the user why.
+**`submit_report`/`lock_report` — replay semantics (amended 2026-07-29 to match the shipped RPCs).** Re-invoked on a report already in the target state, both RPCs return as **idempotent no-ops** (`submit_report` early-returns on `submitted`, `lock_report` on `locked`) — a lost-response retry succeeds cleanly rather than parking. `P0001` still fires for genuinely illegal transitions (e.g. submit on a `locked` report) → classified `permanent` → parked and surfaced, which remains correct per 04 §C.3.
 
 **`create_amendment` — local optimistic rows.** Enqueue writes the local `report_amendments` row (`amendment_number` NULL until pull backfill, `_dirty = 1`) plus `report_amendment_changes` rows computed from local state; the pull later overwrites both with the server's authoritative snapshot.
 
