@@ -9,7 +9,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const NATIVE_ONLY_MODULES = ['expo-sqlite', '@sentry/react-native', 'expo-updates'];
+const NATIVE_ONLY_MODULES = [
+  'expo-sqlite',
+  '@sentry/react-native',
+  'expo-updates',
+  '@react-native-community/netinfo',
+];
 const SCAN_ROOTS = ['src', 'app'];
 const SOURCE_RE = /\.(ts|tsx)$/;
 const NATIVE_RE = /\.native\.(ts|tsx)$/;
