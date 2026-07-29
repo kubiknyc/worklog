@@ -375,6 +375,7 @@ function fakeReportDb() {
     report_weather: [{ report_id: 'r1', _dirty: 1 }],
     report_photos: [{ id: 'ph1', report_id: 'r1', _dirty: 1 }],
     report_amendments: [{ id: 'am1', report_id: 'r1', _dirty: 1 }],
+    report_amendment_changes: [{ id: 'ac1', amendment_id: 'am1', section: 'crew' }],
     report_crew: [{ id: 'c1', report_id: 'r1' }],
     report_equipment: [{ id: 'e1', report_id: 'r1' }],
     report_work_performed: [{ id: 'w1', report_id: 'r1' }],
@@ -385,6 +386,13 @@ function fakeReportDb() {
   function matchUpdateDirty(sql: string): { table: string; whereClause: string } | null {
     const m = /UPDATE (\w+) SET _dirty = 0 WHERE (.+)/i.exec(sql);
     return m ? { table: m[1]!, whereClause: m[2]! } : null;
+  }
+
+  /** `DELETE FROM report_amendment_changes WHERE amendment_id IN (SELECT id FROM report_amendments WHERE report_id = ?)`. */
+  function matchAmendmentChangesSweep(sql: string): boolean {
+    return /DELETE FROM report_amendment_changes\s+WHERE amendment_id IN \(SELECT id FROM report_amendments WHERE report_id = \?\)/i.test(
+      sql,
+    );
   }
 
   function matchDelete(sql: string): { table: string; col: string } | null {
@@ -408,6 +416,16 @@ function fakeReportDb() {
           }
         }
         return { changes };
+      }
+      if (matchAmendmentChangesSweep(sql)) {
+        const [reportId] = params;
+        const amendmentIds = new Set(
+          tables.report_amendments!.filter((a) => a.report_id === reportId).map((a) => a.id),
+        );
+        const rows = tables.report_amendment_changes ?? [];
+        const before = rows.length;
+        tables.report_amendment_changes = rows.filter((r) => !amendmentIds.has(r.amendment_id));
+        return { changes: before - tables.report_amendment_changes.length };
       }
       const del = matchDelete(sql);
       if (del) {
@@ -477,6 +495,9 @@ describe('store.native deleteLocalReport', () => {
     expect(db.tables.report_work_performed).toHaveLength(0);
     expect(db.tables.report_delays).toHaveLength(0);
     expect(db.tables.report_safety_observations).toHaveLength(0);
+    // report_amendment_changes keys off amendment_id, not report_id — swept
+    // via the report_amendments subquery, not the REPORT_CHILD_TABLES loop.
+    expect(db.tables.report_amendment_changes).toHaveLength(0);
   });
 
   it('does not touch rows belonging to a different report', async () => {
@@ -484,5 +505,18 @@ describe('store.native deleteLocalReport', () => {
     db.tables.report_sections.push({ report_id: 'other', section: 'crew', _dirty: 0 });
     await deleteLocalReport(db as never, 'r1');
     expect(db.tables.report_sections).toEqual([{ report_id: 'other', section: 'crew', _dirty: 0 }]);
+  });
+
+  it('sweeps report_amendment_changes via the report_amendments subquery, leaving other reports untouched', async () => {
+    const db = fakeReportDb();
+    // A change row belonging to a DIFFERENT report's amendment must survive.
+    db.tables.report_amendments.push({ id: 'am2', report_id: 'other', _dirty: 0 });
+    db.tables.report_amendment_changes.push({ id: 'ac2', amendment_id: 'am2', section: 'safety' });
+
+    await deleteLocalReport(db as never, 'r1');
+
+    expect(db.tables.report_amendment_changes).toEqual([
+      { id: 'ac2', amendment_id: 'am2', section: 'safety' },
+    ]);
   });
 });

@@ -150,6 +150,10 @@ export function createMutationStore(db: Db): MutationStore {
       return toMutations(db, rows);
     },
     async replace(m) {
+      // Guards against a coalesce race (a coalesced edit bumped the row's
+      // revision after `m` was read for pushing), NOT against re-entrant
+      // pushes: two back-to-back `replace` calls for the same unchanged
+      // revision both succeed, since neither call itself advances it.
       const result = await run(
         db,
         `UPDATE sync_mutations SET attempts = ?, status = ?, last_error = ?
@@ -270,11 +274,10 @@ export async function clearDirty(db: Db, target: RowTarget): Promise<void> {
 }
 
 /**
- * Child tables of a report (schema.ts), all keyed by `report_id`.
- * `report_amendment_changes` is intentionally excluded — it keys off
- * `amendment_id`, not `report_id`; deleting its parent `report_amendments`
- * row orphans it, which is acceptable since nothing reads amendment changes
- * for a report that no longer exists.
+ * Child tables of a report (schema.ts), all keyed directly by `report_id`.
+ * `report_amendment_changes` is NOT in this list — it keys off `amendment_id`,
+ * not `report_id` — and is instead swept via a subquery on `report_amendments`
+ * before that table's own rows are deleted (below).
  */
 const REPORT_CHILD_TABLES = [
   'report_sections',
@@ -292,9 +295,20 @@ const REPORT_CHILD_TABLES = [
  * Task 5's discard cascade: delete a report and every child-table row for it
  * in ONE transaction. `tx` is zero-arg (no nested `tx` calls inside — that
  * deadlocks the transaction queue), so every delete below is a plain `run`.
+ *
+ * `report_amendment_changes` rows key off `amendment_id`, not `report_id`, so
+ * they can't be targeted by the `REPORT_CHILD_TABLES` loop; the subquery here
+ * MUST run before `report_amendments` is deleted (the loop below), or the
+ * subquery would see zero matching amendments and leave the changes orphaned.
  */
 export async function deleteLocalReport(db: Db, reportId: string): Promise<void> {
   await tx(db, async () => {
+    await run(
+      db,
+      `DELETE FROM report_amendment_changes
+       WHERE amendment_id IN (SELECT id FROM report_amendments WHERE report_id = ?)`,
+      [reportId],
+    );
     for (const table of REPORT_CHILD_TABLES) {
       await run(db, `DELETE FROM ${table} WHERE report_id = ?`, [reportId]);
     }
