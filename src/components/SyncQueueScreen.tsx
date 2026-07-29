@@ -118,10 +118,14 @@ export function SyncQueueScreen({ rows, isWeb, onRetry, onDiscard, onNotice }: P
               style={[styles.row, { backgroundColor: colors.surface2, borderColor: colors.border }]}
             >
               <View style={styles.rowBody}>
-                <Text style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.ui.semibold }]}>
+                <Text
+                  style={[styles.rowLabel, { color: colors.text, fontFamily: fonts.ui.semibold }]}
+                >
                   {kindLabelOf(m.payload.kind)}
                 </Text>
-                <Text style={[styles.rowDetail, { color: colors.muted, fontFamily: fonts.ui.regular }]}>
+                <Text
+                  style={[styles.rowDetail, { color: colors.muted, fontFamily: fonts.ui.regular }]}
+                >
                   {rowDetailOf(m)}
                 </Text>
               </View>
@@ -134,7 +138,9 @@ export function SyncQueueScreen({ rows, isWeb, onRetry, onDiscard, onNotice }: P
                   hitSlop={8}
                   style={({ pressed }) => pressed && styles.pressed}
                 >
-                  <Text style={{ color: colors.accent, fontFamily: fonts.ui.semibold }}>Discard</Text>
+                  <Text style={{ color: colors.accent, fontFamily: fonts.ui.semibold }}>
+                    Discard
+                  </Text>
                 </Pressable>
               ) : null}
             </View>

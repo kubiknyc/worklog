@@ -46,9 +46,9 @@ describe('kindLabelOf', () => {
 
 describe('rowDetailOf never-alarm mapping', () => {
   test('parked always reads "needs your attention", regardless of lastError', () => {
-    expect(rowDetailOf(mutation({ status: 'parked', lastError: 'TypeError: Network request failed' }))).toBe(
-      "Couldn't send — needs your attention",
-    );
+    expect(
+      rowDetailOf(mutation({ status: 'parked', lastError: 'TypeError: Network request failed' })),
+    ).toBe("Couldn't send — needs your attention");
   });
 
   test('a pending row with an offline-shaped lastError reads "Waiting for connection"', () => {
@@ -96,7 +96,13 @@ describe('confirmMessageOf', () => {
 describe('SyncQueueScreen rendering', () => {
   test('renders the screen root testID', () => {
     render(
-      <SyncQueueScreen rows={[]} isWeb={false} onRetry={noop} onDiscard={noopDiscard} onNotice={noop} />,
+      <SyncQueueScreen
+        rows={[]}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
       { wrapper },
     );
     expect(screen.getByTestId('sync-queue-screen')).toBeTruthy();
@@ -104,7 +110,13 @@ describe('SyncQueueScreen rendering', () => {
 
   test('native empty queue shows the empty state, not the web copy', () => {
     render(
-      <SyncQueueScreen rows={[]} isWeb={false} onRetry={noop} onDiscard={noopDiscard} onNotice={noop} />,
+      <SyncQueueScreen
+        rows={[]}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
       { wrapper },
     );
     expect(screen.getByText('Nothing queued')).toBeTruthy();
@@ -126,7 +138,13 @@ describe('SyncQueueScreen rendering', () => {
       mutation({ clientId: 'b', status: 'parked', lastError: rawError }),
     ];
     render(
-      <SyncQueueScreen rows={rows} isWeb={false} onRetry={noop} onDiscard={noopDiscard} onNotice={noop} />,
+      <SyncQueueScreen
+        rows={rows}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
       { wrapper },
     );
     expect(screen.getByTestId('sync-queue-row-a')).toBeTruthy();
@@ -176,9 +194,18 @@ describe('SyncQueueScreen rendering', () => {
   });
 
   test('only parked rows expose a Discard button', () => {
-    const rows = [mutation({ clientId: 'a', status: 'pending' }), mutation({ clientId: 'b', status: 'parked' })];
+    const rows = [
+      mutation({ clientId: 'a', status: 'pending' }),
+      mutation({ clientId: 'b', status: 'parked' }),
+    ];
     render(
-      <SyncQueueScreen rows={rows} isWeb={false} onRetry={noop} onDiscard={noopDiscard} onNotice={noop} />,
+      <SyncQueueScreen
+        rows={rows}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
       { wrapper },
     );
     expect(screen.queryByTestId('sync-queue-discard-a')).toBeNull();

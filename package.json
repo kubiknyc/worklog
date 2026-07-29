@@ -87,6 +87,18 @@
         "functions": 100,
         "lines": 90,
         "statements": 90
+      },
+      "src/sync/engineCore.ts": {
+        "branches": 95,
+        "functions": 100,
+        "lines": 95,
+        "statements": 95
+      },
+      "src/sync/rpcMap.ts": {
+        "branches": 95,
+        "functions": 100,
+        "lines": 95,
+        "statements": 95
       }
     }
   },
