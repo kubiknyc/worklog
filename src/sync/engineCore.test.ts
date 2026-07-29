@@ -592,6 +592,32 @@ describe('createEngineCore: run() drain', () => {
     expect(core.getState().lastError).toBe('end recount boom');
   });
 
+  it('offline never-alarm wins even when the end-of-cycle recount also throws', async () => {
+    // Sequence: the drain aborts offline (stoppedOffline=true, thrown=null),
+    // then the cycle-end store.all() recount itself throws. The offline
+    // never-alarm contract must still publish lastError:null, not the
+    // read-failure message.
+    const m1 = mutation(sectionPayload('r1'));
+    const store = new FakeStore([m1]);
+    const originalAll = store.all.bind(store);
+    const offlineErr = { name: 'TypeError', message: 'Network request failed' };
+    jest
+      .spyOn(store, 'all')
+      .mockImplementationOnce(originalAll) // cycle-start recount succeeds
+      .mockRejectedValueOnce(new Error('end recount boom')); // cycle-end recount throws
+    const core = createEngineCore({
+      store,
+      push: jest.fn(async () => ({ ok: false, error: offlineErr })),
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
+
+    await expect(core.run()).resolves.toBeUndefined();
+    expect(core.getState()).toMatchObject({ online: false, lastError: null, syncing: false });
+  });
+
   it('the drain is not gated on isOnline() — a false negative must not stop the drain', async () => {
     const m1 = mutation(sectionPayload('r1'));
     const store = new FakeStore([m1]);

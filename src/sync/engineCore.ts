@@ -150,7 +150,10 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
               // when reparented, since the reparent already rewrote every other
               // queued mutation to the winner id.
               const freshAll = await store.all();
-              const contended = otherMutationTargetsRow(freshAll, { ...m, payload: comparePayload });
+              const contended = otherMutationTargetsRow(freshAll, {
+                ...m,
+                payload: comparePayload,
+              });
               if (!contended) {
                 await clearDirty(rowTargetOf(comparePayload));
               }
@@ -218,7 +221,10 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
       thrown = thrown ?? errorMessage(err);
     }
     const online = stoppedOffline ? false : isOnline();
-    const lastError = thrown ?? (stoppedOffline ? null : lastFailureMessage);
+    // Offline's never-alarm contract is absolute: it must win even when the
+    // cycle-end recount itself throws (a store read failure must not surface
+    // as a false alarm on top of "we're offline").
+    const lastError = stoppedOffline ? null : (thrown ?? lastFailureMessage);
     publish({
       online,
       syncing: false,
