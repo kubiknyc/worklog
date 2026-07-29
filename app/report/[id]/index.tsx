@@ -49,6 +49,7 @@ import type {
 import { emptyContentFor } from '../../../src/data/sectionContent';
 import type { Json, ReportSectionRow } from '../../../src/data/types';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
+import { useReparentRedirect } from '../../../src/hooks/useReparentRedirect';
 import { REPORT_ROWS } from '../../../src/report/sectionMeta';
 import {
   summarizeCrewWork,
@@ -83,6 +84,18 @@ export default function ReportDetailScreen() {
   }, [repo, reportId]);
 
   const { data, loading, error, reload } = useAsyncData(load, [reportId]);
+
+  // Task 8: follow a same-day reparent off THIS report's loser id onto the
+  // winner. The identity pair comes from the already-loaded report (not the
+  // route id alone — the loser id resolves to nothing after the rename).
+  const reparentIdentity = useMemo(
+    () =>
+      data?.report
+        ? { projectId: data.report.project_id, reportDate: data.report.report_date }
+        : null,
+    [data?.report],
+  );
+  useReparentRedirect(reportId, reparentIdentity);
 
   const sectionByKind = useMemo(() => {
     const map = new Map<Exclude<SectionKind, 'weather'>, ReportSectionRow>();

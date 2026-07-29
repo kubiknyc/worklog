@@ -10,7 +10,7 @@
  * mutation-payload discriminator).
  */
 import type { SyncEngineApi } from '../sync/engineApi';
-import type { Json, SectionKind } from '../sync/types';
+import type { Json, Mutation, SectionKind } from '../sync/types';
 
 export type { Json, SectionKind };
 
@@ -96,6 +96,12 @@ export interface Repository {
   listSections(reportId: string): Promise<readonly ReportSectionRow[]>;
   getWeather(reportId: string): Promise<WeatherRow | null>;
   listMembers(projectId: string): Promise<readonly MemberRow[]>;
+  /**
+   * Every queued mutation (Task 8's retry/discard surface), newest first.
+   * Native delegates to the store's `all()`; web is online-only and has no
+   * local queue, so it always returns `[]`.
+   */
+  listMutations(): Promise<readonly Mutation[]>;
 
   // ── Writes (optimistic; native enqueues, web calls RPCs) ───────────────────
   /**

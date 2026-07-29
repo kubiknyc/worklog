@@ -41,6 +41,16 @@ const DYNAMIC_TESTIDS: readonly { readonly prefix: string; readonly source: stri
     prefix: 'sync-status-',
     source: path.join('src', 'components', 'SyncStatusBanner.tsx'),
   },
+  // `sync-queue-row-${clientId}` — one row per queued mutation.
+  {
+    prefix: 'sync-queue-row-',
+    source: path.join('src', 'components', 'SyncQueueScreen.tsx'),
+  },
+  // `sync-queue-discard-${clientId}` — the per-row Discard button on a parked row.
+  {
+    prefix: 'sync-queue-discard-',
+    source: path.join('src', 'components', 'SyncQueueScreen.tsx'),
+  },
 ];
 
 const SCAN_ROOTS = ['src', 'app'];

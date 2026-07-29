@@ -11,6 +11,12 @@ export { RecentsRow } from './RecentsRow';
 export { ReportStatusChip, REPORT_STATUS_LABELS } from './ReportStatusChip';
 export { SheetRow } from './SheetRow';
 export {
+  SyncQueueScreen,
+  confirmMessageOf,
+  kindLabelOf,
+  rowDetailOf,
+} from './SyncQueueScreen';
+export {
   ConnectedSyncStatusBanner,
   SyncStatusBanner,
   bannerLabelOf,

@@ -45,6 +45,7 @@ The convention, applied as screens are built rather than retrofitted:
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
 | Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-synced`, `sync-status-queued` — deliberate exception to `<screen>-<state>`: the pill is the same surface on every screen |
 | Section sheet | `sheet-<section>` + `-done` / `-none` / `-add` | `sheet-crew-work`, `sheet-crew-work-done`, `sheet-crew-work-none`, `sheet-deliveries-add` |
+| Sync queue screen | `sync-queue-screen`, `sync-queue-retry`, `sync-queue-row-<clientId>`, `sync-queue-discard-<clientId>` | Task 8's retry/discard surface (`app/settings/sync.tsx`); the row/discard ids are dynamic — declared in `DYNAMIC_TESTIDS` |
 
 `PrimaryButton`, `TextField` and `SheetRow` all accept an optional `testID` and
 forward it — use it rather than asserting on their `label` or

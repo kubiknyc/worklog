@@ -9,6 +9,7 @@
  */
 import { uuidv4 } from '../lib/uuid';
 import { sectionWirePayload } from '../sync/rpcMap';
+import type { Mutation } from '../sync/types';
 import { supabase } from '../supabase/client';
 import type {
   DailyReportRow,
@@ -91,6 +92,11 @@ class SupabaseRepository implements Repository {
       .maybeSingle();
     if (error) fail('getWeather', error);
     return data as WeatherRow | null;
+  }
+
+  async listMutations(): Promise<readonly Mutation[]> {
+    // Web is online-only — no local queue to list.
+    return [];
   }
 
   async listMembers(projectId: string): Promise<readonly MemberRow[]> {

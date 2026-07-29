@@ -15,7 +15,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { tx } from '../db/rows.native';
 import { uuidv4 } from '../lib/uuid';
 import { newMutation } from '../sync/mutationQueue';
-import type { MutationStore } from '../sync/types';
+import type { Mutation, MutationStore } from '../sync/types';
 import { isRelationalSection, rowsOf } from './sectionContent';
 import type {
   DailyReportRow,
@@ -282,6 +282,11 @@ export function createSqliteRepo(
          FROM report_weather WHERE report_id = ?`,
         [reportId],
       );
+    },
+
+    async listMutations(): Promise<readonly Mutation[]> {
+      // Task 8's queue screen; `all()` is already newest-first (ORDER BY seq DESC).
+      return mutations.all();
     },
 
     async listMembers(projectId: string): Promise<readonly MemberRow[]> {
