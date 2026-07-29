@@ -1,3 +1,4 @@
+import type { SyncState } from './engineApi';
 import { createEngineCore } from './engineCore';
 import type { EngineDeps } from './engineCore';
 import { newMutation, RETRY_CEILING, rowTargetOf } from './mutationQueue';
@@ -22,6 +23,30 @@ function submitPayload(reportId: string): MutationPayload {
   return {
     kind: 'submit_report',
     data: { reportId, signaturePngBase64: 'x', signerName: 'A', signerTitle: null },
+  };
+}
+
+function photoPayload(reportId: string, photoId: string): MutationPayload {
+  return {
+    kind: 'add_photo',
+    data: {
+      photoId,
+      reportId,
+      projectId: 'p1',
+      storagePath: `p1/${reportId}/${photoId}.jpg`,
+      localUri: 'file://x',
+      width: 10,
+      height: 10,
+      capturedAt: null,
+      exifDateTimeOriginal: null,
+      gpsLat: null,
+      gpsLng: null,
+      gpsAccuracy: null,
+      source: 'camera',
+      tradeTag: null,
+      locationTag: null,
+      caption: null,
+    },
   };
 }
 
@@ -105,23 +130,75 @@ function harness(rows: readonly Mutation[], pushImpl: EngineDeps['push']): Harne
   const deleteLocalReport = jest.fn(async (_reportId: string) => {});
   const isOnline = jest.fn(() => true);
   const push = jest.fn(pushImpl);
-  const core = createEngineCore({ store, push, clearDirty, onIncident, isOnline, deleteLocalReport });
+  const core = createEngineCore({
+    store,
+    push,
+    clearDirty,
+    onIncident,
+    isOnline,
+    deleteLocalReport,
+  });
   return { store, clearDirty, onIncident, deleteLocalReport, isOnline, push, core };
 }
 
 describe('createEngineCore: run() drain', () => {
-  it('drains JSON mutations before photos, removes on success, and publishes start+end recounts', async () => {
+  it('removes a successfully-pushed mutation and drains to empty', async () => {
     const m1 = mutation(createReportPayload('r1'));
-    const publishes: number[] = [];
     const { store, core } = harness([m1], async () => ({ ok: true }));
-    core.subscribe((s) => publishes.push(s.pending));
 
     await core.run();
 
     expect(store.rows).toHaveLength(0);
-    // start recount (pending=1), end recount (pending=0)
-    expect(publishes).toEqual([1, 0]);
-    expect(core.getState()).toMatchObject({ syncing: false, pending: 0, parked: 0, lastError: null });
+    expect(core.getState()).toMatchObject({
+      syncing: false,
+      pending: 0,
+      parked: 0,
+      lastError: null,
+    });
+  });
+
+  it('drains via orderForDrain: JSON mutations push before photos regardless of queue order', async () => {
+    // Queued photo-first, section-second — the drain must still push the
+    // section first (orderForDrain moves add_photo to the tail).
+    const photo = mutation(photoPayload('r1', 'photo1'));
+    const section = mutation(sectionPayload('r1'));
+    const { store, push, core } = harness([photo, section], async () => ({ ok: true }));
+
+    await core.run();
+
+    const pushedIds = push.mock.calls.map((c) => c[0]!.clientId);
+    expect(pushedIds).toEqual([section.clientId, photo.clientId]);
+    expect(store.rows).toHaveLength(0);
+  });
+
+  it('publishes the full start-of-cycle and end-of-cycle state shape (syncing flips, counts recount)', async () => {
+    const m1 = mutation(createReportPayload('r1'));
+    const publishes: SyncState[] = [];
+    const { core } = harness([m1], async () => ({ ok: true }));
+    core.subscribe((s) => publishes.push(s));
+
+    await core.run();
+
+    expect(publishes).toEqual([
+      {
+        online: true,
+        syncing: true,
+        pending: 1,
+        parked: 0,
+        lastError: null,
+        reparents: 0,
+        completedPulls: 0,
+      },
+      {
+        online: true,
+        syncing: false,
+        pending: 0,
+        parked: 0,
+        lastError: null,
+        reparents: 0,
+        completedPulls: 0,
+      },
+    ]);
   });
 
   it('clears dirty only when the row is uncontested (fresh store.all() check)', async () => {
@@ -165,14 +242,32 @@ describe('createEngineCore: run() drain', () => {
     const m1 = mutation(sectionPayload('r1'));
     const m2 = mutation(sectionPayload('r2'));
     const err = { name: 'TypeError', message: 'Network request failed' };
-    const { store, push, core, isOnline } = harness([m1, m2], async () => ({ ok: false, error: err }));
+    const { store, push, core, isOnline } = harness([m1, m2], async () => ({
+      ok: false,
+      error: err,
+    }));
     isOnline.mockReturnValue(true);
 
     await core.run();
 
     expect(push).toHaveBeenCalledTimes(1); // stopped after the first offline failure
-    expect(store.rows).toHaveLength(2); // untouched — offline doesn't charge attempts
+    // store.replace still fires (guarded) — but offline's applyOutcome leaves
+    // attempts untouched, so the persisted row is functionally the same.
+    expect(store.rows).toHaveLength(2);
+    expect(store.rows[0]).toMatchObject({ attempts: 0, status: 'pending' });
+    expect(store.rows[1]).toMatchObject({ attempts: 0, status: 'pending' });
     expect(core.getState()).toMatchObject({ online: false, lastError: null, syncing: false });
+  });
+
+  it('onIncident fires "evicted" (not "parked") for an RLS-denial failure', async () => {
+    const m1 = mutation(sectionPayload('r1'));
+    const err = { status: 403 };
+    const { store, onIncident, core } = harness([m1], async () => ({ ok: false, error: err }));
+
+    await core.run();
+
+    expect(onIncident).toHaveBeenCalledWith('evicted', m1, err);
+    expect(store.rows[0]).toMatchObject({ status: 'parked' });
   });
 
   it('a parked mutation for a report blocks every pending mutation for that report; retryParked drains both in order', async () => {
@@ -191,16 +286,14 @@ describe('createEngineCore: run() drain', () => {
     expect(push.mock.calls[1]![0]!.clientId).toBe(pendingSubmit.clientId);
   });
 
-  it('a failure for a report shadows that report\'s later mutations this cycle', async () => {
+  it("a failure for a report shadows that report's later mutations this cycle", async () => {
     const failingCreate = mutation(createReportPayload('r1'));
     const sameSectionEdit = mutation(sectionPayload('r1'));
     const otherReport = mutation(createReportPayload('r2'));
-    const { push, core } = harness(
-      [failingCreate, sameSectionEdit, otherReport],
-      async (m) =>
-        m.clientId === failingCreate.clientId
-          ? { ok: false, error: { code: '22000' } }
-          : { ok: true },
+    const { push, core } = harness([failingCreate, sameSectionEdit, otherReport], async (m) =>
+      m.clientId === failingCreate.clientId
+        ? { ok: false, error: { code: '22000' } }
+        : { ok: true },
     );
 
     await core.run();
@@ -211,20 +304,35 @@ describe('createEngineCore: run() drain', () => {
     expect(pushedIds).toContain(otherReport.clientId); // different report — unaffected
   });
 
-  it('is single-flight: a concurrent run() call shares the in-flight cycle', async () => {
+  it('is single-flight: a concurrent run() call shares the in-flight cycle, and the trailing cycle recounts a late enqueue', async () => {
     const m1 = mutation(sectionPayload('r1'));
+    const store = new FakeStore([m1]);
     let resolvePush!: (o: PushOutcome) => void;
     const pushPromise = new Promise<PushOutcome>((resolve) => {
       resolvePush = resolve;
     });
-    const { push, core } = harness([m1], async () => pushPromise);
+    const push = jest.fn(async (_m: Mutation): Promise<PushOutcome> => pushPromise);
+    const core = createEngineCore({
+      store,
+      push,
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
 
     const first = core.run();
-    const second = core.run();
+    const second = core.run(); // in-flight → coalesced via `dirty`, shares `first`'s promise
+    // A fresh mutation lands while the first push is still in flight — the
+    // dirty-coalesce contract requires the trailing cycle to pick it up.
+    const late = mutation(sectionPayload('r2'));
+    await store.enqueue(late);
     resolvePush({ ok: true });
     await Promise.all([first, second]);
 
-    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledTimes(2); // m1 in cycle 1, `late` in the trailing cycle 2
+    expect(push.mock.calls[1]![0]!.clientId).toBe(late.clientId);
+    expect(core.getState()).toMatchObject({ pending: 0, parked: 0 });
   });
 
   it('a coalesced edit arriving during an in-flight push survives a successful push and stays pending', async () => {
@@ -317,6 +425,49 @@ describe('createEngineCore: run() drain', () => {
     expect(store.rows).toHaveLength(0);
   });
 
+  it('reparent contention check is keyed to the winner, not the loser — a winner-rewritten pending mutation blocks clearDirty', async () => {
+    // Both `create` and `submit` target the SAME local row (daily_reports:reportId).
+    // The reparent cascade (simulated here, real work is push.native.ts's SQL
+    // transaction) rewrites `submit`'s payload to the winner id the moment
+    // `create`'s push resolves. If the engine's contention check compares
+    // against the LOSER id, it will find nothing else targeting the loser row
+    // (submit already moved off it) and wrongly clear _dirty. Keyed to the
+    // WINNER, it correctly sees `submit` still owns that row and skips.
+    const loserId = 'r1';
+    const winnerId = 'r-winner';
+    const create = mutation(createReportPayload(loserId));
+    const submit = mutation(submitPayload(loserId));
+    const store = new FakeStore([create, submit]);
+    const clearDirty = jest.fn(async () => {});
+    const push = jest.fn(async (m: Mutation): Promise<PushOutcome> => {
+      if (m.clientId === create.clientId) {
+        const i = store.rows.findIndex((r) => r.clientId === submit.clientId);
+        if (i !== -1) {
+          store.rows[i] = { ...store.rows[i]!, payload: submitPayload(winnerId) };
+        }
+        return { ok: true, reparentedTo: winnerId };
+      }
+      // The follow-up cycle's submit push fails (retryable) — it must never
+      // reach the success/clearDirty branch, so any clearDirty call observed
+      // can only have come from the (buggy) loser-keyed check on `create`.
+      return { ok: false, error: { status: 500 } };
+    });
+    const core = createEngineCore({
+      store,
+      push,
+      clearDirty,
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
+
+    await core.run();
+
+    expect(core.getState().reparents).toBe(1);
+    expect(push).toHaveBeenCalledTimes(2); // create (cycle 1), submit (follow-up cycle 2)
+    expect(clearDirty).not.toHaveBeenCalled();
+  });
+
   it('reparents is monotone across cycles — never reset by a later clean run', async () => {
     const loserId = 'r1';
     const winnerId = 'r-winner';
@@ -403,6 +554,44 @@ describe('createEngineCore: run() drain', () => {
     expect(core.getState().lastError).toBe('replace failed');
   });
 
+  it('a store.all() throw at cycle START does not reject and still surfaces via lastError (never-rejects is absolute, not per-mutation)', async () => {
+    const m1 = mutation(sectionPayload('r1'));
+    const store = new FakeStore([m1]);
+    jest.spyOn(store, 'all').mockRejectedValueOnce(new Error('start recount boom'));
+    const core = createEngineCore({
+      store,
+      push: jest.fn(async () => ({ ok: true })),
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
+
+    await expect(core.run()).resolves.toBeUndefined();
+    expect(core.getState().lastError).toBe('start recount boom');
+  });
+
+  it('a store.all() throw at cycle END does not reject and still surfaces via lastError', async () => {
+    const m1 = mutation(sectionPayload('r1'));
+    const store = new FakeStore([m1]);
+    const originalAll = store.all.bind(store);
+    jest
+      .spyOn(store, 'all')
+      .mockImplementationOnce(originalAll) // cycle-start recount succeeds
+      .mockRejectedValueOnce(new Error('end recount boom')); // cycle-end recount throws
+    const core = createEngineCore({
+      store,
+      push: jest.fn(async () => ({ ok: false, error: { status: 500 } })),
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
+
+    await expect(core.run()).resolves.toBeUndefined();
+    expect(core.getState().lastError).toBe('end recount boom');
+  });
+
   it('the drain is not gated on isOnline() — a false negative must not stop the drain', async () => {
     const m1 = mutation(sectionPayload('r1'));
     const store = new FakeStore([m1]);
@@ -428,9 +617,12 @@ describe('createEngineCore: discardParked', () => {
     const create = mutation(createReportPayload('r1'), { status: 'parked' });
     const section = mutation(sectionPayload('r1'));
     const otherReport = mutation(sectionPayload('r2'));
-    const { store, deleteLocalReport, core } = harness([create, section, otherReport], async () => ({
-      ok: true,
-    }));
+    const { store, deleteLocalReport, core } = harness(
+      [create, section, otherReport],
+      async () => ({
+        ok: true,
+      }),
+    );
 
     const affected = await core.discardParked(create.clientId);
 
@@ -462,6 +654,21 @@ describe('createEngineCore: discardParked', () => {
     expect(publishes).toHaveLength(1);
   });
 
+  it('does not reject when store.all() throws — returns 0 and still attempts a recount', async () => {
+    const store = new FakeStore([]);
+    jest.spyOn(store, 'all').mockRejectedValueOnce(new Error('boom'));
+    const core = createEngineCore({
+      store,
+      push: jest.fn(async () => ({ ok: true })),
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
+
+    await expect(core.discardParked('anything')).resolves.toBe(0);
+  });
+
   it('publishes a recount after a successful discard', async () => {
     const parkedSection = mutation(sectionPayload('r1'), { status: 'parked' });
     const { core } = harness([parkedSection], async () => ({ ok: true }));
@@ -483,5 +690,23 @@ describe('createEngineCore: retryParked', () => {
 
     expect(push).toHaveBeenCalledTimes(1);
     expect(store.rows).toHaveLength(0); // pushed successfully and removed
+  });
+
+  it('does not reject when store.all() throws — still calls run() so anything already pending drains', async () => {
+    const pending = mutation(sectionPayload('r1'));
+    const store = new FakeStore([pending]);
+    jest.spyOn(store, 'all').mockRejectedValueOnce(new Error('boom'));
+    const push = jest.fn(async () => ({ ok: true }) as PushOutcome);
+    const core = createEngineCore({
+      store,
+      push,
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+    });
+
+    await expect(core.retryParked()).resolves.toBeUndefined();
+    expect(push).toHaveBeenCalledTimes(1); // run() still executed and drained the pending row
   });
 });
