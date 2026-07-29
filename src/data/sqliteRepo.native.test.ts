@@ -132,6 +132,7 @@ function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: st
       attempts: number;
       lastError: string | null;
       payload: unknown;
+      revision: number;
     }
   >();
   const kinds: string[] = [];
@@ -147,17 +148,20 @@ function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: st
           attempts: m.attempts,
           lastError: m.lastError,
           payload: m.payload,
+          revision: m.revision,
         });
       }
     },
     async enqueueCoalescing(m) {
       kinds.push('coalesce');
+      const existing = map.get(m.clientId);
       map.set(m.clientId, {
         clientId: m.clientId,
         status: 'pending',
         attempts: 0,
         lastError: null,
         payload: m.payload,
+        revision: (existing?.revision ?? m.revision) + (existing ? 1 : 0),
       });
     },
     async pending() {
@@ -167,16 +171,32 @@ function fakeMutations(): MutationStore & { map: Map<string, unknown>; kinds: st
       return [...map.values()] as never;
     },
     async replace(m) {
+      const existing = map.get(m.clientId);
+      if (!existing || existing.revision !== m.revision) return 0;
       map.set(m.clientId, {
         clientId: m.clientId,
         status: m.status,
         attempts: m.attempts,
         lastError: m.lastError,
         payload: m.payload,
+        revision: m.revision,
       });
+      return 1;
     },
-    async remove(id) {
+    async remove(id, revision) {
+      const existing = map.get(id);
+      if (!existing || existing.revision !== revision) return 0;
       map.delete(id);
+      return 1;
+    },
+    async removeParked(id) {
+      const existing = map.get(id);
+      if (!existing || existing.status !== 'parked') return 0;
+      map.delete(id);
+      return 1;
+    },
+    async removeMany(ids) {
+      for (const id of ids) map.delete(id);
     },
     async unpark(id) {
       const m = map.get(id);

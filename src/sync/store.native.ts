@@ -9,8 +9,9 @@
  * WorkLog rows carry client-UUID-equals-server-id keys, so there are no
  * provisional NEW-n codes to sequence.
  */
-import { all, first, run } from '../db/rows.native';
+import { all, first, run, tx } from '../db/rows.native';
 import type { Db } from '../db/rows.native';
+import type { RowTarget } from './mutationQueue';
 import type {
   CursorStore,
   Mutation,
@@ -28,6 +29,7 @@ interface MutationRow {
   attempts: number;
   status: string;
   last_error: string | null;
+  revision: number;
 }
 
 /**
@@ -49,6 +51,7 @@ function toMutation(r: MutationRow): Mutation | null {
     attempts: r.attempts,
     status: r.status as MutationStatus,
     lastError: r.last_error,
+    revision: r.revision,
   };
 }
 
@@ -87,8 +90,8 @@ export function createMutationStore(db: Db): MutationStore {
       await run(
         db,
         `INSERT OR IGNORE INTO sync_mutations
-           (client_id, kind, payload, created_at, attempts, status, last_error)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (client_id, kind, payload, created_at, attempts, status, last_error, revision)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.clientId,
           m.payload.kind,
@@ -97,6 +100,7 @@ export function createMutationStore(db: Db): MutationStore {
           m.attempts,
           m.status,
           m.lastError,
+          m.revision,
         ],
       );
     },
@@ -107,17 +111,21 @@ export function createMutationStore(db: Db): MutationStore {
       // last_error=NULL) so a fresh edit both supersedes a parked mutation's
       // stale content and buys a fresh retry ceiling. `created_at` (and thus
       // the AUTOINCREMENT `seq` drain order) is deliberately NOT touched on
-      // conflict — the section keeps its original queue position.
+      // conflict — the section keeps its original queue position. `revision`
+      // bumps on every coalesce so a push already in flight for the pre-edit
+      // payload fails its revision-guarded `replace`/`remove` and can't
+      // clobber this fresher edit.
       await run(
         db,
         `INSERT INTO sync_mutations
-           (client_id, kind, payload, created_at, attempts, status, last_error)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+           (client_id, kind, payload, created_at, attempts, status, last_error, revision)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (client_id) DO UPDATE SET
            payload    = excluded.payload,
            status     = 'pending',
            attempts   = 0,
-           last_error = NULL`,
+           last_error = NULL,
+           revision   = sync_mutations.revision + 1`,
         [
           m.clientId,
           m.payload.kind,
@@ -126,6 +134,7 @@ export function createMutationStore(db: Db): MutationStore {
           m.attempts,
           m.status,
           m.lastError,
+          m.revision,
         ],
       );
     },
@@ -141,14 +150,39 @@ export function createMutationStore(db: Db): MutationStore {
       return toMutations(db, rows);
     },
     async replace(m) {
-      await run(
+      const result = await run(
         db,
-        `UPDATE sync_mutations SET attempts = ?, status = ?, last_error = ? WHERE client_id = ?`,
-        [m.attempts, m.status, m.lastError, m.clientId],
+        `UPDATE sync_mutations SET attempts = ?, status = ?, last_error = ?
+         WHERE client_id = ? AND revision = ?`,
+        [m.attempts, m.status, m.lastError, m.clientId, m.revision],
       );
+      return result.changes;
     },
-    async remove(clientId) {
-      await run(db, `DELETE FROM sync_mutations WHERE client_id = ?`, [clientId]);
+    async remove(clientId, revision) {
+      const result = await run(
+        db,
+        `DELETE FROM sync_mutations WHERE client_id = ? AND revision = ?`,
+        [clientId, revision],
+      );
+      return result.changes;
+    },
+    async removeParked(clientId) {
+      // Status guard (not a revision guard): a racing coalesce flips a parked
+      // row back to 'pending' before this runs, so the WHERE clause misses it
+      // and the fresh edit survives a stale discard tap.
+      const result = await run(
+        db,
+        `DELETE FROM sync_mutations WHERE client_id = ? AND status = 'parked'`,
+        [clientId],
+      );
+      return result.changes;
+    },
+    async removeMany(clientIds) {
+      // Unconditional — used only by the create_report reparent cascade, which
+      // already owns the decision to drop these rows outright.
+      for (const clientId of clientIds) {
+        await run(db, `DELETE FROM sync_mutations WHERE client_id = ?`, [clientId]);
+      }
     },
     async unpark(clientId) {
       await run(
@@ -205,4 +239,65 @@ export function createCursorStore(db: Db): CursorStore {
       );
     },
   };
+}
+
+/** Splits a `report_sections` composite id (`${reportId}:${section}`) into its parts. */
+function splitSectionId(id: string): { reportId: string; section: string } {
+  const i = id.indexOf(':');
+  return { reportId: id.slice(0, i), section: id.slice(i + 1) };
+}
+
+/**
+ * Clear `_dirty` on the local row(s) a successfully-pushed mutation targets.
+ * `report_sections` splits the composite id [R2]; when the section is
+ * `'weather'` this ALSO clears `report_weather` by `report_id` — the queue
+ * files a weather override under `report_sections` [R3], but the local
+ * mirror for weather lives in its own 1:1 table, not a `report_sections` row.
+ */
+export async function clearDirty(db: Db, target: RowTarget): Promise<void> {
+  if (target.table === 'report_sections') {
+    const { reportId, section } = splitSectionId(target.id);
+    await run(db, `UPDATE report_sections SET _dirty = 0 WHERE report_id = ? AND section = ?`, [
+      reportId,
+      section,
+    ]);
+    if (section === 'weather') {
+      await run(db, `UPDATE report_weather SET _dirty = 0 WHERE report_id = ?`, [reportId]);
+    }
+    return;
+  }
+  await run(db, `UPDATE ${target.table} SET _dirty = 0 WHERE id = ?`, [target.id]);
+}
+
+/**
+ * Child tables of a report (schema.ts), all keyed by `report_id`.
+ * `report_amendment_changes` is intentionally excluded — it keys off
+ * `amendment_id`, not `report_id`; deleting its parent `report_amendments`
+ * row orphans it, which is acceptable since nothing reads amendment changes
+ * for a report that no longer exists.
+ */
+const REPORT_CHILD_TABLES = [
+  'report_sections',
+  'report_weather',
+  'report_photos',
+  'report_amendments',
+  'report_crew',
+  'report_equipment',
+  'report_work_performed',
+  'report_delays',
+  'report_safety_observations',
+] as const;
+
+/**
+ * Task 5's discard cascade: delete a report and every child-table row for it
+ * in ONE transaction. `tx` is zero-arg (no nested `tx` calls inside — that
+ * deadlocks the transaction queue), so every delete below is a plain `run`.
+ */
+export async function deleteLocalReport(db: Db, reportId: string): Promise<void> {
+  await tx(db, async () => {
+    for (const table of REPORT_CHILD_TABLES) {
+      await run(db, `DELETE FROM ${table} WHERE report_id = ?`, [reportId]);
+    }
+    await run(db, `DELETE FROM daily_reports WHERE id = ?`, [reportId]);
+  });
 }

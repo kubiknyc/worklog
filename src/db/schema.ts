@@ -17,7 +17,7 @@
  */
 
 /** Bump when DDL changes; `open.native` migrates forward by PRAGMA user_version. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Columns of each mirrored domain table, by name. The parity test checks these
@@ -292,7 +292,18 @@ export const SCHEMA_V1: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 ];
 
-/** Migrations indexed by target version. `MIGRATIONS[n]` upgrades (n-1) → n. */
+/**
+ * Migrations indexed by target version. `MIGRATIONS[n]` upgrades (n-1) → n.
+ *
+ * MIGRATIONS[2] is the SOLE producer of `sync_mutations.revision` — SCHEMA_V1
+ * stays byte-identical. `open.native.ts` applies every step above the stored
+ * `user_version`, so a fresh device at version 0 runs MIGRATIONS[1] then
+ * MIGRATIONS[2] in sequence. Adding the column to SCHEMA_V1 as well would
+ * throw `duplicate column name` on that fresh-install path; editing SCHEMA_V1
+ * alone would leave already-migrated devices (already at v1) with `no such
+ * column` since they never re-run it.
+ */
 export const MIGRATIONS: Readonly<Record<number, readonly string[]>> = {
   1: SCHEMA_V1,
+  2: ['ALTER TABLE sync_mutations ADD COLUMN revision INTEGER NOT NULL DEFAULT 0'],
 };

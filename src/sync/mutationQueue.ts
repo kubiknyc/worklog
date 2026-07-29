@@ -137,6 +137,7 @@ export function newMutation(
     attempts: 0,
     status: 'pending',
     lastError: null,
+    revision: 0,
   };
 }
 

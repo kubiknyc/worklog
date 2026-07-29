@@ -53,8 +53,10 @@ function noopMutations(): MutationStore {
     enqueueCoalescing: async () => {},
     pending: async () => [] as never,
     all: async () => [] as never,
-    replace: async () => {},
-    remove: async () => {},
+    replace: async () => 0,
+    remove: async () => 0,
+    removeParked: async () => 0,
+    removeMany: async () => {},
     unpark: async () => {},
   };
 }

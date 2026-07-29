@@ -212,6 +212,14 @@ export interface Mutation {
   readonly attempts: number;
   readonly status: MutationStatus;
   readonly lastError: string | null;
+  /**
+   * Optimistic-concurrency counter for the QUEUED ROW itself (distinct from any
+   * domain-row version). `newMutation` starts it at 0; `enqueueCoalescing` bumps
+   * it on every coalesced edit. `remove`/`replace` guard their write on it so a
+   * push in flight can't clobber a coalesce that landed while the push was
+   * pending, and a stale ack can't resurrect a row a fresh edit just replaced.
+   */
+  readonly revision: number;
 }
 
 /**
@@ -238,8 +246,23 @@ export interface MutationStore {
   pending(): Promise<Mutation[]>;
   /** All mutations (for the sync-status UI), newest issue first. */
   all(): Promise<Mutation[]>;
-  replace(m: Mutation): Promise<void>;
-  remove(clientId: string): Promise<void>;
+  /**
+   * Revision-guarded write (`WHERE client_id = ? AND revision = ?`) — a no-op
+   * (0 affected) when a coalesce bumped the row's revision after `m` was read
+   * for pushing. Returns the affected-row count so the caller can detect the
+   * no-op and skip any dependent bookkeeping (e.g. clearDirty).
+   */
+  replace(m: Mutation): Promise<number>;
+  /** Revision-guarded delete; returns the affected-row count (0 if stale). */
+  remove(clientId: string, revision: number): Promise<number>;
+  /**
+   * Task 8's discard path: delete only if still `parked` — the status guard
+   * lets a racing coalesce (which flips the row to `pending`) win over a stale
+   * discard tap. Returns the affected-row count.
+   */
+  removeParked(clientId: string): Promise<number>;
+  /** Unconditional deletes, used only by the create_report cascade. */
+  removeMany(clientIds: readonly string[]): Promise<void>;
   /** Flip a parked mutation back to pending for an explicit user retry. */
   unpark(clientId: string): Promise<void>;
 }
