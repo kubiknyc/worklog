@@ -7,7 +7,12 @@ allowed-tools: Read, Grep, Glob, Bash, Task, Agent, Write
 # Whole-repo review
 
 You are auditing the entire WorkLog repo, not a diff. Output is a written report.
-**Change nothing** — no edits, no commits, no "while I was here" fixes.
+
+**Change nothing in the repo** — no edits, no commits, no "while I was here"
+fixes. The one file you create is the report, and it goes in the scratchpad:
+that is why this skill carries `Write` and deliberately does not carry `Edit`.
+If a gate dirties the worktree — `check:parity` does, by regenerating a tracked
+snapshot — restore it before continuing, and verify the restore.
 
 ## How this differs from `worklog-reviewer`
 
@@ -36,10 +41,27 @@ Run the real gates first. A repo-wide review that reports model intuitions
 while the actual checks are unrun is guessing.
 
 ```bash
-ls node_modules >/dev/null 2>&1 || echo "DEPS ABSENT — gates cannot run"
-npm run verify;     echo "verify=$?"      # typecheck + format:check + lint + test
-npm run check:web;  echo "check:web=$?"   # the real platform-split check
-npm run check:parity; echo "parity=$?"    # regenerates from ../jobsight-backend
+# Test for entries, not for the directory: a fresh container has an empty
+# node_modules/, where plain `ls node_modules` still exits 0.
+[ -n "$(ls -A node_modules 2>/dev/null)" ] || echo "DEPS ABSENT — gates cannot run"
+
+npm run verify; echo "verify=$?"   # typecheck + format:check + lint + test
+
+# check:web needs the two public Supabase vars: src/supabase/client.ts throws
+# when they are absent, so without them the gate fails for a reason that has
+# nothing to do with the platform split. Placeholders suffice — the export
+# needs them present, not valid. This mirrors ci.yml's web-export job.
+EXPO_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co \
+EXPO_PUBLIC_SUPABASE_ANON_KEY=placeholder-anon-key \
+  npm run check:web; echo "check:web=$?"
+
+# check:parity REGENERATES src/db/serverColumns.generated.json and only then
+# diffs it, so on real drift it leaves the worktree dirty — exactly when it
+# finds something. Capture the result, then restore the file: this review
+# changes nothing, including when a gate fails.
+npm run check:parity; echo "parity=$?"
+git checkout -- src/db/serverColumns.generated.json
+git status --porcelain src/db/serverColumns.generated.json  # must print nothing
 ```
 
 **Check the exit code, not the tail of the output.** Piping a gate into `tail`
@@ -87,15 +109,26 @@ Audit the guards themselves, not the code they guard:
   A native dep that is *used* correctly but not *registered* means the guard is
   blind to every future use of it.
 
-  **"Native-only" means "does not resolve in the web bundle" — not "is a React
-  Native package."** Several deps look native and are not: `expo-secure-store`,
-  `expo-crypto` and `@react-native-async-storage/async-storage` are all imported
-  from non-`.native.` files today and all ship web builds, so they are correctly
-  *absent* from the array. Before reporting one, check its import sites and
-  confirm the `web-export` job is red. A static import inside a `Platform.OS`
-  branch is not by itself a finding — `src/supabase/client.ts` is exactly that
-  shape and is correct, because the guard protects `expo export`, not import
-  hygiene. Getting this backwards is the most likely false positive in this pass.
+  Two separate questions here, and conflating them is the likeliest error in
+  this pass:
+
+  1. **Is the module native-only?** Decide that from the module itself — does
+     its API work in a web bundle — and never from whether anything currently
+     imports it. A new native dep imported *only* from `.native.` files keeps
+     `web-export` green and still belongs in the array, because the array exists
+     to catch the *next* import, the one from a file in the web graph. **A green
+     export never clears a missing registration.**
+  2. **Does a web-graph file import it today?** That is what turns the guard
+     red, and it is a separate and more urgent finding.
+
+  The array lists modules that must never appear in a non-`.native.` file — so a
+  module the app *deliberately* imports from a shared file cannot be in it.
+  `expo-secure-store` (`src/supabase/client.ts:14`), `expo-crypto` and
+  `@react-native-async-storage/async-storage` are each imported from a shared
+  file behind a `Platform.OS` branch with a real web fallback; they are correctly
+  absent, and registering one would fail `platformSplit.test.ts` against a file
+  that works as designed. Look for that deliberate web path before concluding
+  either way.
 - `src/maestroSelectors.test.ts` — every entry in `DYNAMIC_TESTIDS` is an
   assertion downgraded from "this testID exists" to "this prefix appears in
   this file." Is each one still genuinely runtime-built, or has a now-static
@@ -143,9 +176,15 @@ Build the import graph and check the seams hold *everywhere*:
 The invariants live in `worklog-reviewer`; what this pass adds is *completeness*
 — checking that the contract holds across every path, not the one in a diff:
 
-- **Every write goes through the queue.** Enumerate every mutating call site in
-  `src/data/` and `src/sync/` and account for each. A read path that writes, or
-  a repo method bypassing `mutationQueue`, is the highest-value finding here.
+- **Every offline-capable write goes through the queue.** Enumerate the mutating
+  call sites in `src/data/` and `src/sync/` and account for each — but scope the
+  *finding* to native, offline-capable report mutations. Several direct writes
+  are deliberate and documented: `supabaseRepo.ts` is the online-only web repo
+  and calls RPCs directly, and `createProject.ts`'s header explains why project
+  creation is online-only on every platform and never touches the queue.
+  Reporting those is a false HIGH. The real finding is a native report-mutation
+  path that bypasses `mutationQueue`, or a read path that writes — check for a
+  header comment sanctioning the direct write before reporting either.
 - **Mutation-kind coverage.** Every kind in `src/sync/types.ts` has a push
   handler, an entry in `rpcMap.ts`, an ordering rule in the drain, a conflict
   rule, and a test. Missing corners of that matrix are invisible per-diff.
@@ -175,8 +214,11 @@ The invariants live in `worklog-reviewer`; what this pass adds is *completeness*
   new screens with no testIDs at all.
 - **Dark mode and reduced motion.** Every surface renders in both themes;
   animations respect `useReducedMotion`.
-- **Accessibility.** Touch targets ≥44pt, labels on icon-only controls,
-  form fields associated with their labels.
+- **Accessibility.** Touch targets **≥48×48 px** — this repo's own floor
+  (`docs/PRD.md` AC-T1, for gloved field use), not the 44pt platform default, so
+  a 44–47 px control is a spec regression. AC-T2 additionally requires ≥8 px
+  between adjacent hit areas and ≥12 px between a stepper's `+`/`−`. Also labels
+  on icon-only controls, and form fields associated with their labels.
 - **React correctness at scale.** Effect cleanup (subscriptions, timers,
   `AbortController`), list keys that are never the index, functional `setState`
   in async paths, no `useEffect` computing derived state.
@@ -199,11 +241,11 @@ Coverage percentage is the input, not the finding.
   non-zero when *either* operand is missing, so that version reports every file
   as untested. This has already burned one run.)
 
-  It currently returns ~35 files, concentrated in `src/components/`. The global
-  thresholds (40/55/57/55) are low enough that all of them pass. Rank by blast
-  radius — `src/lib/errors.ts` and `src/db/rows.native.ts` matter far more than
-  `Skeleton.tsx`. List them with a recommended priority; do not report each as
-  its own finding.
+  Whatever it returns, the global thresholds (40/55/57/55) are low enough that
+  every one of those files passes CI — that is the point, not the count. Rank by
+  blast radius: `src/lib/errors.ts` and `src/db/rows.native.ts` matter far more
+  than `Skeleton.tsx`. List them with a recommended priority; do not report each
+  as its own finding.
 - **Assertion quality.** Tests that assert implementation detail (call counts,
   internal shape) instead of behavior, or that would pass against a broken
   implementation. Check the 100%-pinned files hardest: `mutationQueue.ts` at
@@ -228,9 +270,11 @@ Coverage percentage is the input, not the finding.
 - **Client-side trust.** Any check enforcing a permission or lifecycle rule in
   the client that the server does not also enforce (report tables are
   SELECT-only; lifecycle writes go through `SECURITY DEFINER` RPCs).
-- **Dependencies.** `npm audit`; version drift from Expo SDK 54's expected
-  pins (`npx expo-doctor`); anything in `dependencies` that belongs in
-  `devDependencies`.
+- **Dependencies.** `npm audit`; anything in `dependencies` that belongs in
+  `devDependencies`. For SDK 54 drift, read CI's `deps` job rather than running
+  `npx expo-doctor` here: `expo-doctor` is not a dependency of this repo, so an
+  unpinned `npx` invocation downloads whatever version is current at review time
+  and executes it. If you do run it locally, pin the version explicitly.
 - **Doc↔code truth.** `CLAUDE.md`, `.maestro/README.md`, and
   `docs/architecture/` describing structure that no longer exists — wrong file
   paths, renamed modules, commands that fail. Also: `docs/architecture/00-README.md`
