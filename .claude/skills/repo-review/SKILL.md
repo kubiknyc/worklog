@@ -247,8 +247,19 @@ plainly rather than filling it.
 
 ## Output
 
-Write to `docs/reviews/YYYY-MM-DD-repo-review.md` (get the date from `date +%F`;
-create the directory if needed) and summarize the top findings in chat.
+Write the raw report to the scratchpad and summarize the top findings in chat.
+That draft is working output, not an artifact — do not commit it.
+
+Commit a report only once its findings are **resolved**: each one fixed (cite
+the SHA), declined (say why), or filed as a GitHub issue (see
+`docs/agents/issue-tracker.md`). The resolved version goes to
+`docs/superpowers/reviews/YYYY-MM-DD-repo-review.md` (date from `date +%F`),
+alongside the existing reviews. Do not create a second reviews directory.
+
+An unresolved report committed as a to-do list rots — "35 untested modules" is
+wrong within weeks and reads as current to whoever finds it next. A report that
+records what was *decided* ages correctly, which is why
+`2026-07-19-phase4-dynamic-review.md` is still worth reading.
 
 ```markdown
 # Repo review — YYYY-MM-DD (<commit sha>)
