@@ -299,8 +299,14 @@ review loses its audience:
 - **Style, formatting, and naming preferences.** `prettier` and `eslint` own
   these; if they pass, there is no finding.
 - **`expo-secure-store` / `expo-crypto` / `@react-native-async-storage/async-storage`
-  missing from `NATIVE_ONLY_MODULES`.** Adjudicated 2026-07-30: all resolve on
-  web, `web-export` green. Correctly absent. Re-open only if `web-export` fails.
+  missing from `NATIVE_ONLY_MODULES`.** Adjudicated 2026-07-30: each is imported
+  from a *shared* file behind a `Platform.OS` branch with a real web fallback
+  (`src/supabase/client.ts:14` and its `WebStorageAdapter` are the clearest
+  case), so the array — a list of modules that must never appear in a
+  non-`.native.` file — cannot contain them. Registering one would fail
+  `platformSplit.test.ts` against a file that works as designed. Note this is
+  *not* "the export is green, so it's fine": per Pass A, a green export never
+  clears a missing registration.
 - **`src/sync/engineApi.ts` unpinned and untested.** Its only runtime export is
   the `IDLE_SYNC_STATE` constant, covered via `statusHub.test.ts` and
   `engineCore.test.ts`.
