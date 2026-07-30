@@ -275,4 +275,56 @@ describe('useReparentRedirect', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/report/report-winner'));
     act(() => detach());
   });
+
+  test('a loaded identity change while a fetch is in flight starts a replacement fetch and still navigates', async () => {
+    const row: DailyReportRow = {
+      id: 'report-winner',
+      project_id: 'p1',
+      report_date: '2026-07-29',
+      status: 'draft',
+    };
+    // The first call's promise deliberately never settles — it simulates a
+    // still-in-flight request that gets cancelled by the effect re-run
+    // below. If the in-flight marker leaked across that cancellation, the
+    // second call would never happen and this test would time out.
+    const firstPromise: Promise<DailyReportRow | null> = new Promise(() => {
+      /* never settles */
+    });
+    const getReportByDate = jest
+      .fn()
+      .mockReturnValueOnce(firstPromise)
+      .mockResolvedValue(row);
+    const repo = makeRepo({ getReportByDate });
+    const engine = fakeEngine(IDLE_SYNC_STATE);
+    const detach = syncStatusHub.attachEngine(engine.api);
+
+    const { rerender } = renderHook(
+      ({ loaded }: { loaded: ReturnType<typeof identityOf> }) =>
+        useReparentRedirect('report-loser', loaded),
+      {
+        wrapper: wrapperFor(repo),
+        initialProps: { loaded: identityOf() },
+      },
+    );
+
+    act(() => {
+      engine.publish({ ...IDLE_SYNC_STATE, reparents: 1 });
+    });
+    await waitFor(() => expect(getReportByDate).toHaveBeenCalledTimes(1));
+
+    // Re-render with a NEW `loaded` object of the same content — mirrors the
+    // report screen rebuilding its `loaded` via `useMemo` on a reload while
+    // the first fetch (still pending, above) hasn't settled. This cancels
+    // the first request and must start a replacement fetch for the SAME
+    // reparents bump, not strand it.
+    rerender({ loaded: identityOf() });
+
+    await waitFor(() => expect(getReportByDate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/report/report-winner'));
+    act(() => detach());
+  });
 });
+
+function identityOf(): { projectId: string; reportDate: string } {
+  return { projectId: 'p1', reportDate: '2026-07-29' };
+}

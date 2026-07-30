@@ -34,9 +34,17 @@ export function useReparentRedirect(routeId: string, loaded: ReparentIdentity | 
   const { reparents } = useSyncStatus();
   const lastSeenRef = useRef(reparents);
   // The `reparents` value a resolve is currently in flight for — distinct
-  // from `lastSeenRef` (which only advances on a SETTLED attempt). Guards
-  // against a re-render with unchanged `reparents` (e.g. `repo`'s identity
-  // shifting) re-firing the RPC for a request already pending.
+  // from `lastSeenRef` (which only advances on a SETTLED, still-relevant
+  // attempt). Guards against a same-render duplicate (e.g. `repo`'s identity
+  // shifting without an actual reparents change) re-firing the RPC for a
+  // request already pending. Cleared in the effect's own CLEANUP, not in
+  // `.then`/`.catch` — cleanup fires on every re-run (including one triggered
+  // by `loaded` getting a fresh object identity from a report-screen reload
+  // while the fetch is still in flight), so the marker can never outlive the
+  // request it belongs to. If it were only cleared from `.then`/`.catch`, a
+  // cancelled in-flight request would leave it set forever (the cancelled
+  // callback bails before reaching the clear), permanently stranding that
+  // bump — never retried, never navigated.
   const inFlightForRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -60,7 +68,6 @@ export function useReparentRedirect(routeId: string, loaded: ReparentIdentity | 
         // Only consume the bump once the resolve actually settled — mirrors
         // the `!loaded` guard above.
         lastSeenRef.current = reparents;
-        inFlightForRef.current = null;
         if (!row) return; // transient miss — never navigate
         if (row.id !== routeId) {
           router.replace(`/report/${row.id}`);
@@ -70,13 +77,20 @@ export function useReparentRedirect(routeId: string, loaded: ReparentIdentity | 
         if (cancelled) return;
         // Swallow-with-intent: a transient resolve failure must never
         // navigate and must not crash. Deliberately do NOT mark this bump
-        // "seen" — clearing only the in-flight marker lets a later effect
-        // re-run (this same bump on a fresh render, or a genuinely new
-        // reparents bump) retry the resolve instead of silently losing it.
-        inFlightForRef.current = null;
+        // "seen" — the in-flight marker is cleared below in cleanup, so a
+        // later effect re-run (this same bump on a fresh render, or a
+        // genuinely new reparents bump) retries the resolve instead of
+        // silently losing it.
       });
     return () => {
       cancelled = true;
+      // Always clear here, not in `.then`/`.catch` — this runs on EVERY
+      // re-run of this effect (a real reparents bump, or just `loaded`/`repo`
+      // getting a new identity while the request above is still pending), so
+      // a cancelled request can never leave the marker stuck. The next
+      // effect execution is then free to start a replacement fetch for the
+      // same bump.
+      inFlightForRef.current = null;
     };
   }, [reparents, loaded, repo, routeId]);
 }

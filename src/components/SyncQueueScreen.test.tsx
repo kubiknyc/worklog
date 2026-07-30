@@ -189,9 +189,7 @@ describe('SyncQueueScreen rendering', () => {
       />,
       { wrapper },
     );
-    expect(
-      screen.getByText('Retries start over with a fresh set of attempts.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Retries start over with a fresh set of attempts.')).toBeTruthy();
   });
 
   test('pressing retry calls onRetry', () => {
