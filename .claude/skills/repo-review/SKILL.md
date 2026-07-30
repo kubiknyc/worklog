@@ -1,0 +1,276 @@
+---
+name: repo-review
+description: Whole-repo code audit of WorkLog — sweeps every file in src/, app/, scripts/, .maestro/ and config for the defect classes a per-diff review structurally cannot see (guard-allowlist decay, cross-file drift, dead code, untested modules, doc↔code divergence, aggregate security posture). Use for "review the whole repo", "audit the codebase", a pre-milestone health check, or onboarding an unfamiliar area. For a single change or PR, use the worklog-reviewer agent instead.
+allowed-tools: Read, Grep, Glob, Bash, Task, Write
+---
+
+# Whole-repo review
+
+You are auditing the entire WorkLog repo, not a diff. Output is a written report.
+**Change nothing** — no edits, no commits, no "while I was here" fixes.
+
+## How this differs from `worklog-reviewer`
+
+The `worklog-reviewer` agent (`.claude/agents/worklog-reviewer.md`) reviews a
+diff against the repo's hard invariants. It is the authority on what each
+invariant *is* — **read it before you start and do not restate its list here.**
+
+A diff review sees one side of a boundary at a time. This review exists for the
+defects that only exist in the aggregate:
+
+- a guard test whose allowlist has quietly grown until it guards nothing
+- the same concept implemented two different ways in two modules
+- a module nobody imports, or an export nobody calls
+- a whole directory with no tests, passing because global thresholds are low
+- documentation that describes code that no longer exists
+- an invariant honored in 9 places and violated in the 10th
+
+Every finding you report must be one a reviewer looking at a single commit
+**could not** have found. If a finding would have been caught by
+`worklog-reviewer` on the commit that introduced it, it still counts — but say
+so, because that means a guard is missing.
+
+## Step 0 — facts before opinions
+
+Run the real gates first. A repo-wide review that reports model intuitions
+while the actual checks are unrun is guessing.
+
+```bash
+npm run verify          # typecheck + format:check + lint + test w/ coverage
+npm run check:web       # expo export --platform web — the real platform-split check
+npm run check:parity    # regenerates server columns from ../jobsight-backend
+```
+
+`check:parity` needs the sibling clone at `../jobsight-backend`. If it is absent,
+say the parity gate was **not run** — never infer parity from the committed
+snapshot, that is the thing being checked.
+
+Capture the coverage table from `npm test`; Pass E depends on it.
+
+Then read, in order: `CLAUDE.md`, `docs/architecture/00-README.md` (the index —
+it records what is settled vs. still an open decision), `.maestro/README.md`,
+`.claude/rules/`.
+
+## Passes
+
+The repo is ~160 source files — too much for one context to hold at review
+depth. Run the six passes below as separate subagents (one `Task` each, in
+parallel), give each the pass text plus Step 0's output, and require every
+finding to arrive with a `file:line` and a concrete failure scenario. Then
+dedupe and rank the merged set yourself. Reviewing sequentially in one context
+is acceptable for a single pass on request, but not for a full audit — quality
+collapses in the back half.
+
+### Pass A — Guard integrity
+
+This repo defends its invariants with executable guards. If a guard has gone
+blind, every invariant behind it is unprotected and no diff review will notice.
+Audit the guards themselves, not the code they guard:
+
+- `src/platformSplit.test.ts` — is every native-only dependency in
+  `package.json` present in `NATIVE_ONLY_MODULES`? Cross-check the dependency
+  list against the array. A native dep that is *used* correctly but not
+  *registered* means the guard is blind to every future use of it. Currently
+  registered: `expo-sqlite`, `@sentry/react-native`, `expo-updates`,
+  `@react-native-community/netinfo` — anything native-only in `dependencies`
+  beyond those is a finding.
+- `src/maestroSelectors.test.ts` — every entry in `DYNAMIC_TESTIDS` is an
+  assertion downgraded from "this testID exists" to "this prefix appears in
+  this file." Is each one still genuinely runtime-built, or has a now-static
+  testID been left in the escape hatch?
+- `src/db/schemaParity.test.ts` — every entry in `LOCAL_ONLY` / `SERVER_ONLY`
+  is a deliberate hole in parity. Does each still carry a comment justifying
+  it, and is that justification still true?
+- `package.json` `coverageThreshold` — do the per-file pins still name the
+  files that matter? A pinned file that was split in two leaves the new half
+  unpinned.
+- `collectCoverageFrom` exclusions (`!src/**/types.ts`, `!src/**/index.ts`,
+  `!src/lib/observability.web.ts`, …) — is each excluded file genuinely
+  logic-free? An `index.ts` that grew real code is invisible to coverage.
+- CI (`.github/workflows/ci.yml`) — does it run every gate the docs claim, and
+  does each gate actually fail the build?
+
+**Report a widened allowlist as its own finding**, separate from whatever it
+lets through.
+
+### Pass B — Layering and boundaries
+
+Build the import graph and check the seams hold *everywhere*:
+
+- **Repository seam.** Screens and components import the `src/data` interface,
+  never `src/supabase/client` directly. Known legitimate importers: `AuthProvider`,
+  `supabaseRepo`, `createProject`, `inviteMember`, `platformRepo.native`,
+  `engine.native`. Anything in `app/`, `src/components/`, or `src/hooks/`
+  reaching the client directly is a finding.
+- **Platform split, in reality not in theory.** For each `*.native.ts(x)`,
+  confirm a web counterpart exists or the module is never reached from the web
+  graph. For each non-native file, confirm no transitive path pulls in a native
+  module — `check:web` proves the whole graph, the grep guard only proves
+  direct imports.
+- **`app/` is routes only.** No business logic, no tests, and nothing in `src/`
+  importing from `app/`.
+- **Cycles and orphans.** Circular imports; exported symbols with no importer;
+  files nothing reaches; entries in `src/components/index.ts` re-exporting
+  components no screen renders.
+- **Duplication and drift.** Two implementations of the same idea — date/
+  timezone handling, error shapes, id minting, retry/backoff, storage key
+  formats. Say which one is correct and why.
+
+### Pass C — The offline-first contract, end to end
+
+The invariants live in `worklog-reviewer`; what this pass adds is *completeness*
+— checking that the contract holds across every path, not the one in a diff:
+
+- **Every write goes through the queue.** Enumerate every mutating call site in
+  `src/data/` and `src/sync/` and account for each. A read path that writes, or
+  a repo method bypassing `mutationQueue`, is the highest-value finding here.
+- **Mutation-kind coverage.** Every kind in `src/sync/types.ts` has a push
+  handler, an entry in `rpcMap.ts`, an ordering rule in the drain, a conflict
+  rule, and a test. Missing corners of that matrix are invisible per-diff.
+- **Idempotency and replay.** Every mutation must survive being sent twice
+  (retry after an ambiguous failure) and being drained in a different order
+  than enqueued. Check reparenting, cursor advancement, and tombstones against
+  a replayed queue.
+- **Failure paths.** For each network call: timeout, 409, 403, 5xx, and offline
+  mid-drain. Look for a path that drops a queued mutation on the floor, or
+  advances a cursor before the write is durable.
+- **OTA shape compatibility.** Any SQLite schema or mutation-payload shape that
+  changed without a both-shapes read path is a device-bricking bug for a user
+  offline across the update. Compare `src/db/schema.ts` migrations against the
+  payload builders.
+- **Purity.** `src/sync/` and most of `src/db/` are IO-free by design
+  (`statusHub.ts` is the one sanctioned stateful exception). Flag any import of
+  a platform API into a pure module.
+
+### Pass D — UI surface
+
+- **Theme tokens.** Sweep for hardcoded colors and magic spacing:
+  `grep -rn "#[0-9a-fA-F]\{3,8\}\b" src app --include=*.tsx`. Compare against
+  `src/theme/tokens.ts`.
+- **testID coverage.** Every interactive element an E2E flow will plausibly
+  drive needs one, following `.maestro/README.md`'s convention. The guard only
+  checks testIDs flows *already* reference — the gap is the reverse direction:
+  new screens with no testIDs at all.
+- **Dark mode and reduced motion.** Every surface renders in both themes;
+  animations respect `useReducedMotion`.
+- **Accessibility.** Touch targets ≥44pt, labels on icon-only controls,
+  form fields associated with their labels.
+- **React correctness at scale.** Effect cleanup (subscriptions, timers,
+  `AbortController`), list keys that are never the index, functional `setState`
+  in async paths, no `useEffect` computing derived state.
+- **Copy.** Plain language; no internal labels (M6, R1, "phase", "Tier-2") in
+  any user-facing string.
+
+### Pass E — Test suite quality
+
+Coverage percentage is the input, not the finding.
+
+- **Untested modules.** 35 source files currently have no sibling test,
+  including `src/lib/errors.ts`, `src/lib/time.ts`, `src/data/createProject.ts`,
+  `src/data/inviteMember.ts`, `src/data/RepositoryProvider.tsx`,
+  `src/hooks/useSyncStatus.ts`, `src/db/rows.native.ts`, and most of
+  `src/components/`. Global thresholds (40/55/57/55) are low enough that these
+  pass. Rank by blast radius — `errors.ts` and `rows.native.ts` matter far more
+  than `Skeleton.tsx`. List them with a recommended priority; do not report all
+  35 as findings.
+- **Assertion quality.** Tests that assert implementation detail (call counts,
+  internal shape) instead of behavior, or that would pass against a broken
+  implementation. Check the 100%-pinned files hardest: `mutationQueue.ts` at
+  100% coverage with weak assertions is worse than 80% with sharp ones, because
+  the number says it is safe.
+- **Race-prone tests.** Fake-timer misuse, unawaited promises, ordering
+  assumptions between concurrent operations.
+- **E2E flows.** Do `.maestro/*.yaml` cover the critical paths (login, create
+  report, fill a section, sync while offline)? Does any flow assert on visible
+  copy rather than a testID?
+- **The provider wrapper rule.** Component tests must render inside
+  `ThemeProvider`; a test that skips it is testing a component that cannot exist.
+
+### Pass F — Security, config, and doc truth
+
+- **Secrets.** Only `EXPO_PUBLIC_*` may reach the client bundle — this repo is
+  public. Check `.env.example`, `app.json`, `eas.json`, and every
+  `process.env` read.
+- **PII in telemetry.** Sentry breadcrumbs, `console.log`, and error payloads
+  must not carry report contents, photo metadata, GPS coordinates, or user
+  identifiers beyond an opaque id.
+- **Client-side trust.** Any check enforcing a permission or lifecycle rule in
+  the client that the server does not also enforce (report tables are
+  SELECT-only; lifecycle writes go through `SECURITY DEFINER` RPCs).
+- **Dependencies.** `npm audit`; version drift from Expo SDK 54's expected
+  pins (`npx expo-doctor`); anything in `dependencies` that belongs in
+  `devDependencies`.
+- **Doc↔code truth.** `CLAUDE.md`, `.maestro/README.md`, and
+  `docs/architecture/` describing structure that no longer exists — wrong file
+  paths, renamed modules, commands that fail. Also: `docs/architecture/00-README.md`
+  lists **open decisions** (R1 photo tag edits, distribution list scope, lock
+  grace window). If code has silently implemented one, that is a HIGH finding
+  regardless of which way it went.
+
+## Known non-findings
+
+Do not report these. They are settled, and re-reporting them each run is how a
+review loses its audience:
+
+- **Missing `CONTEXT.md` or `docs/adr/`.** `docs/agents/domain.md` says
+  explicitly to proceed silently — they are created lazily by `/domain-modeling`.
+- **`docs/architecture/00-README.md` marked "DRAFT — awaiting approval."**
+  Known status, not drift.
+- **No migrations in this repo.** They live in `../jobsight-backend` by design.
+- **`src/sync/statusHub.ts` holding module-level mutable state.** The one
+  sanctioned exception to sync purity.
+- **Tests absent under `app/`.** Required, not a gap.
+- **`FABLE5-PROMPT-worklog.md` at the repo root.** The spec of record.
+- **Style, formatting, and naming preferences.** `prettier` and `eslint` own
+  these; if they pass, there is no finding.
+
+## Evidence discipline
+
+A whole-repo sweep is the highest-false-positive review there is: you are
+reading code without the context of the change that produced it. A reviewer
+asked to find problems in 160 files will find some regardless.
+
+Before reporting anything:
+
+1. **Verify it.** Read the file, not just the grep hit. Check whether a guard,
+   a test, or a type already prevents it.
+2. **Construct the failure.** Name inputs or state that produce a wrong result.
+   If you cannot, it is an observation, not a finding — cut it.
+3. **Check it is not deliberate.** Search for a comment, test, or doc that
+   sanctions it. The `LOCAL_ONLY`/`SERVER_ONLY`/`DYNAMIC_TESTIDS` allowlists all
+   carry justifying comments; so do several apparent violations.
+4. **Do not propose architecture.** "This would be cleaner as X" is not a
+   finding. Defects, drift, and gaps are.
+
+Ten verified findings beat sixty speculative ones. Report an empty section
+plainly rather than filling it.
+
+## Output
+
+Write to `docs/reviews/YYYY-MM-DD-repo-review.md` (get the date from `date +%F`;
+create the directory if needed) and summarize the top findings in chat.
+
+```markdown
+# Repo review — YYYY-MM-DD (<commit sha>)
+
+## Gate results
+verify / check:web / check:parity — pass, fail, or NOT RUN with the reason.
+
+## Findings
+### CRITICAL   (invariant violated, data loss, secret exposure, broken build)
+### HIGH       (wrong behavior on a real path, blind guard, missing server-side check)
+### MEDIUM     (gap that will cause a defect under a plausible change)
+### LOW        (drift, dead code, doc divergence)
+
+For each: one-line summary · `file:line` · concrete failure scenario · why a
+per-diff review could not have caught it.
+
+## Test gaps
+Untested modules ranked by blast radius, with a suggested first test for the top few.
+
+## Coverage of this review
+Which passes ran, which areas were read shallowly, what was not examined.
+```
+
+That last section is not optional. A whole-repo review that does not state its
+own blind spots reads as exhaustive when it is not.
