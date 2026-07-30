@@ -193,9 +193,27 @@ The invariants live in `worklog-reviewer`; what this pass adds is *completeness*
   Reporting those is a false HIGH. The real finding is a native report-mutation
   path that bypasses `mutationQueue`, or a read path that writes — check for a
   header comment sanctioning the direct write before reporting either.
-- **Mutation-kind coverage.** Every kind in `src/sync/types.ts` has a push
-  handler, an entry in `rpcMap.ts`, an ordering rule in the drain, a conflict
-  rule, and a test. Missing corners of that matrix are invisible per-diff.
+- **Mutation-kind coverage.** Walk every kind in the `MutationPayload` union
+  (`src/sync/types.ts`) against `rpcMap.ts`, the drain order in
+  `mutationQueue.ts`, and its tests. Missing corners of that matrix are
+  invisible per-diff.
+
+  **Staged kinds are not gaps.** `add_photo`, `update_photo_meta` and
+  `remove_photo` are declared in the union and deliberately unimplemented:
+  `rpcMap.ts` throws `'photo kinds are M5'`, and `rpcMap.test.ts` asserts that
+  throw. A kind whose absence is explicit, milestone-tagged and *tested* is a
+  plan, not a defect — reporting those three would be three false findings on
+  every run. The real finding is a kind with no handler **and** no explicit
+  throw: one that falls through silently.
+
+- **Conflict resolution is row-level, not per-kind.** Do not go hunting for a
+  per-mutation-kind conflict table; there isn't one and there shouldn't be.
+  `conflict.ts` is generic last-writer-wins on `updated_at` over any
+  `MergeableItem` (`isServerNewer` / `mergeItem` / `resolveItem`). What actually
+  matters: every pulled row type flows through `resolveItem`; `_dirty` clears
+  exactly when the server row wins, since a stuck dirty flag shows the row as
+  pending forever and re-merges it on every pull; and `_dirty` survives only
+  while something queued still targets the row (`otherMutationTargetsRow`).
 - **Idempotency and replay.** Every mutation must survive being sent twice
   (retry after an ambiguous failure) and being drained in a different order
   than enqueued. Check reparenting, cursor advancement, and tombstones against
