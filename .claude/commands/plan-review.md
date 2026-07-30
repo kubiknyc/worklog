@@ -11,20 +11,26 @@ reasoning.
 
 ## 1. Externalize the plan
 
-If `$1` is a path, use it. Otherwise write the current plan verbatim to
-`.plan-review/plan.md` — every step, every file it names, every claim it makes
-about how the code works today. Do not summarize it and do not repair it on the
-way out: a plan that is only coherent in your head is a finding, and flattening
-it to a file is how that surfaces.
+If `$1` is a path, use it. Otherwise flatten the current plan verbatim — every
+step, every file it names, every claim it makes about how the code works today.
+Do not summarize it and do not repair it on the way out: a plan that is only
+coherent in your head is a finding, and flattening it is how that surfaces.
 
-Write the user's original request to `.plan-review/request.md`.
+Write it to `.plan-review/plan.md`, and the user's original request to
+`.plan-review/request.md`.
+
+**If writes are blocked** — you are in plan mode, which is read-only, and this
+is the normal case — do not try to work around it and do not leave plan mode to
+get around it. Pass the plan and the request inline in each reviewer's prompt
+instead. Everything below works the same way; the files are a convenience, not
+the mechanism.
 
 ## 2. Fan out
 
 Spawn three `plan-reviewer` subagents **in parallel, in a single message**.
-Give each one the two file paths and its lens — nothing else. Do not paste your
-reasoning, your confidence, or which parts you think are risky. That framing is
-exactly the bias being controlled for.
+Give each one the plan, the original request, and its lens — nothing else. Do
+not paste your reasoning, your confidence, or which parts you think are risky.
+That framing is exactly the bias being controlled for.
 
 - lens `factual-grounding` — verify every claim the plan makes about existing
   code against the actual files
@@ -33,7 +39,8 @@ exactly the bias being controlled for.
 
 ## 3. Merge
 
-Collect the JSON verdicts and write them to `.plan-review/findings.json`.
+Collect the JSON verdicts and write them to `.plan-review/findings.json` if you
+can write; otherwise just hold them.
 
 - **Drop** any finding with no `file` and no concrete `failure_scenario`. That
   is the filter that removes plausible-sounding noise.
