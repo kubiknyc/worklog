@@ -57,11 +57,19 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=placeholder-anon-key \
 
 # check:parity REGENERATES src/db/serverColumns.generated.json and only then
 # diffs it, so on real drift it leaves the worktree dirty — exactly when it
-# finds something. Capture the result, then restore the file: this review
-# changes nothing, including when a gate fails.
-npm run check:parity; echo "parity=$?"
-git checkout -- src/db/serverColumns.generated.json
-git status --porcelain src/db/serverColumns.generated.json  # must print nothing
+# finds something. Restoring afterwards is only safe if the snapshot was clean
+# going in: `git checkout --` would otherwise destroy someone's uncommitted
+# edit (mid-schema-change is exactly when that file is dirty). If it is dirty,
+# skip the gate and report NOT RUN — a review never trades someone's work for
+# a gate result.
+SNAP=src/db/serverColumns.generated.json
+if git diff --quiet -- "$SNAP" && git diff --cached --quiet -- "$SNAP"; then
+  npm run check:parity; echo "parity=$?"
+  git checkout -- "$SNAP"
+  git status --porcelain "$SNAP"   # must print nothing
+else
+  echo "parity=NOT RUN — $SNAP has uncommitted changes"
+fi
 ```
 
 **Check the exit code, not the tail of the output.** Piping a gate into `tail`
