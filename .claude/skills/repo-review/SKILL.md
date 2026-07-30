@@ -36,14 +36,28 @@ Run the real gates first. A repo-wide review that reports model intuitions
 while the actual checks are unrun is guessing.
 
 ```bash
-npm run verify          # typecheck + format:check + lint + test w/ coverage
-npm run check:web       # expo export --platform web — the real platform-split check
-npm run check:parity    # regenerates server columns from ../jobsight-backend
+ls node_modules >/dev/null 2>&1 || echo "DEPS ABSENT — gates cannot run"
+npm run verify;     echo "verify=$?"      # typecheck + format:check + lint + test
+npm run check:web;  echo "check:web=$?"   # the real platform-split check
+npm run check:parity; echo "parity=$?"    # regenerates from ../jobsight-backend
 ```
 
-`check:parity` needs the sibling clone at `../jobsight-backend`. If it is absent,
-say the parity gate was **not run** — never infer parity from the committed
-snapshot, that is the thing being checked.
+**Check the exit code, not the tail of the output.** Piping a gate into `tail`
+or `head` returns *that* command's status, so a failed gate reads as a pass —
+this has already happened once on a calibration run.
+
+Gates are unrunnable more often than you'd expect, and each failure mode looks
+different:
+
+- **`node_modules/` empty** (fresh container): `verify` dies at `tsc` with
+  `Cannot find module 'react'` and `expo/tsconfig.base not found`. That is the
+  environment, not the code. Either `npm ci` first or report **NOT RUN**.
+- **`../jobsight-backend` absent**: `check:parity` cannot run. Never infer
+  parity from the committed snapshot — that is the thing being checked.
+
+When a gate cannot run locally, fall back to the latest CI result for the
+commit and **label it second-hand**. Do not silently report a gate as passing
+because CI once did.
 
 Capture the coverage table from `npm test`; Pass E depends on it.
 
@@ -68,12 +82,20 @@ blind, every invariant behind it is unprotected and no diff review will notice.
 Audit the guards themselves, not the code they guard:
 
 - `src/platformSplit.test.ts` — is every native-only dependency in
-  `package.json` present in `NATIVE_ONLY_MODULES`? Cross-check the dependency
-  list against the array. A native dep that is *used* correctly but not
-  *registered* means the guard is blind to every future use of it. Currently
-  registered: `expo-sqlite`, `@sentry/react-native`, `expo-updates`,
-  `@react-native-community/netinfo` — anything native-only in `dependencies`
-  beyond those is a finding.
+  `package.json` present in `NATIVE_ONLY_MODULES`? Read the array (don't trust a
+  list written here — it goes stale) and cross-check it against `dependencies`.
+  A native dep that is *used* correctly but not *registered* means the guard is
+  blind to every future use of it.
+
+  **"Native-only" means "does not resolve in the web bundle" — not "is a React
+  Native package."** Several deps look native and are not: `expo-secure-store`,
+  `expo-crypto` and `@react-native-async-storage/async-storage` are all imported
+  from non-`.native.` files today and all ship web builds, so they are correctly
+  *absent* from the array. Before reporting one, check its import sites and
+  confirm the `web-export` job is red. A static import inside a `Platform.OS`
+  branch is not by itself a finding — `src/supabase/client.ts` is exactly that
+  shape and is correct, because the guard protects `expo export`, not import
+  hygiene. Getting this backwards is the most likely false positive in this pass.
 - `src/maestroSelectors.test.ts` — every entry in `DYNAMIC_TESTIDS` is an
   assertion downgraded from "this testID exists" to "this prefix appears in
   this file." Is each one still genuinely runtime-built, or has a now-static
@@ -165,14 +187,23 @@ The invariants live in `worklog-reviewer`; what this pass adds is *completeness*
 
 Coverage percentage is the input, not the finding.
 
-- **Untested modules.** 35 source files currently have no sibling test,
-  including `src/lib/errors.ts`, `src/lib/time.ts`, `src/data/createProject.ts`,
-  `src/data/inviteMember.ts`, `src/data/RepositoryProvider.tsx`,
-  `src/hooks/useSyncStatus.ts`, `src/db/rows.native.ts`, and most of
-  `src/components/`. Global thresholds (40/55/57/55) are low enough that these
-  pass. Rank by blast radius — `errors.ts` and `rows.native.ts` matter far more
-  than `Skeleton.tsx`. List them with a recommended priority; do not report all
-  35 as findings.
+- **Untested modules.** Compute the list, never quote a remembered count:
+
+  ```bash
+  for f in $(find src \( -name '*.ts' -o -name '*.tsx' \) | grep -vE '\.test\.|\.d\.ts|/index\.ts$|types\.ts$'); do
+    b="${f%.*}"; [ -f "$b.test.ts" ] || [ -f "$b.test.tsx" ] || echo "$f"
+  done
+  ```
+
+  (Use the two `-f` tests, not `ls "$b".test.ts "$b".test.tsx` — `ls` exits
+  non-zero when *either* operand is missing, so that version reports every file
+  as untested. This has already burned one run.)
+
+  It currently returns ~35 files, concentrated in `src/components/`. The global
+  thresholds (40/55/57/55) are low enough that all of them pass. Rank by blast
+  radius — `src/lib/errors.ts` and `src/db/rows.native.ts` matter far more than
+  `Skeleton.tsx`. List them with a recommended priority; do not report each as
+  its own finding.
 - **Assertion quality.** Tests that assert implementation detail (call counts,
   internal shape) instead of behavior, or that would pass against a broken
   implementation. Check the 100%-pinned files hardest: `mutationQueue.ts` at
@@ -223,6 +254,16 @@ review loses its audience:
 - **`FABLE5-PROMPT-worklog.md` at the repo root.** The spec of record.
 - **Style, formatting, and naming preferences.** `prettier` and `eslint` own
   these; if they pass, there is no finding.
+- **`expo-secure-store` / `expo-crypto` / `@react-native-async-storage/async-storage`
+  missing from `NATIVE_ONLY_MODULES`.** Adjudicated 2026-07-30: all resolve on
+  web, `web-export` green. Correctly absent. Re-open only if `web-export` fails.
+- **`src/sync/engineApi.ts` unpinned and untested.** Its only runtime export is
+  the `IDLE_SYNC_STATE` constant, covered via `statusHub.test.ts` and
+  `engineCore.test.ts`.
+- **The `deps` CI job's `continue-on-error: true`.** Documented as deliberately
+  non-blocking at `.github/workflows/ci.yml:135-136`.
+- **`react-native-webview`, `react-native-signature-canvas`, `expo-dev-client`
+  in `dependencies` with no import sites.** Staged for later milestones.
 
 ## Evidence discipline
 
