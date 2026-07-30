@@ -1,7 +1,7 @@
 ---
 name: repo-review
 description: Whole-repo code audit of WorkLog — sweeps every file in src/, app/, scripts/, .maestro/ and config for the defect classes a per-diff review structurally cannot see (guard-allowlist decay, cross-file drift, dead code, untested modules, doc↔code divergence, aggregate security posture). Use for "review the whole repo", "audit the codebase", a pre-milestone health check, or onboarding an unfamiliar area. For a single change or PR, use the worklog-reviewer agent instead.
-allowed-tools: Read, Grep, Glob, Bash, Task, Write
+allowed-tools: Read, Grep, Glob, Bash, Task, Agent, Write
 ---
 
 # Whole-repo review
@@ -54,7 +54,7 @@ it records what is settled vs. still an open decision), `.maestro/README.md`,
 ## Passes
 
 The repo is ~160 source files — too much for one context to hold at review
-depth. Run the six passes below as separate subagents (one `Task` each, in
+depth. Run the six passes below as separate subagents (one each, dispatched in
 parallel), give each the pass text plus Step 0's output, and require every
 finding to arrive with a `file:line` and a concrete failure scenario. Then
 dedupe and rank the merged set yourself. Reviewing sequentially in one context
