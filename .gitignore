@@ -9,6 +9,9 @@ expo-env.d.ts
 *.tsbuildinfo
 coverage/
 
+# Scratch output from /plan-review
+.plan-review/
+
 # Generated native projects (CNG / prebuild)
 android/
 ios/
