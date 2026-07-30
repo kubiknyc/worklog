@@ -53,8 +53,17 @@ export function createPusher(rpc: RpcRunner, db: Db): Pusher {
       }
 
       if (m.payload.kind === 'create_report') {
-        const rows = data as readonly CreateReportRow[];
-        const winnerId = rows[0]!.report_id;
+        // A malformed success response (missing/shaped-wrong rows) is a server-
+        // contract bug, not a transient failure — but the plain-object error
+        // below (no status/code) still classifies 'retryable' under
+        // classifyError's asError fallback, parking it at the ceiling with the
+        // attention UI rather than crashing on an unchecked `rows[0]!` cast.
+        const rows = Array.isArray(data) ? (data as readonly CreateReportRow[]) : null;
+        const firstRow = rows?.[0];
+        if (!rows || rows.length === 0 || typeof firstRow?.report_id !== 'string') {
+          return { ok: false, error: { message: 'create_report returned no rows' } };
+        }
+        const winnerId = firstRow.report_id;
         const loserId = m.payload.data.reportId;
         if (winnerId !== loserId) {
           await reparentReport(db, loserId, winnerId);

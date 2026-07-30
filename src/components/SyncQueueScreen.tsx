@@ -94,8 +94,13 @@ export function SyncQueueScreen({ rows, isWeb, onRetry, onDiscard, onNotice }: P
   return (
     <View testID="sync-queue-screen" style={[styles.root, { backgroundColor: colors.bg }]}>
       {hasParked ? (
-        <View style={{ paddingHorizontal: sizes.screenPad, paddingTop: spacing.md }}>
+        <View
+          style={{ paddingHorizontal: sizes.screenPad, paddingTop: spacing.md, gap: spacing.xs }}
+        >
           <PrimaryButton testID="sync-queue-retry" label="Retry now" onPress={onRetry} />
+          <Text style={[styles.rowDetail, { color: colors.muted, fontFamily: fonts.ui.regular }]}>
+            Retries start over with a fresh set of attempts.
+          </Text>
         </View>
       ) : null}
 

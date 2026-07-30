@@ -33,6 +33,11 @@ export function useReparentRedirect(routeId: string, loaded: ReparentIdentity | 
   const repo = useRepository();
   const { reparents } = useSyncStatus();
   const lastSeenRef = useRef(reparents);
+  // The `reparents` value a resolve is currently in flight for — distinct
+  // from `lastSeenRef` (which only advances on a SETTLED attempt). Guards
+  // against a re-render with unchanged `reparents` (e.g. `repo`'s identity
+  // shifting) re-firing the RPC for a request already pending.
+  const inFlightForRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Only a CHANGE in reparents triggers a re-resolve — not every render
@@ -44,15 +49,32 @@ export function useReparentRedirect(routeId: string, loaded: ReparentIdentity | 
     // run — once `loaded` becomes non-null — still sees the unconsumed bump
     // and retries. Marking it seen here would silently drop the redirect.
     if (!loaded) return;
-    lastSeenRef.current = reparents;
+    if (inFlightForRef.current === reparents) return;
+    inFlightForRef.current = reparents;
 
     let cancelled = false;
-    void repo.getReportByDate(loaded.projectId, loaded.reportDate).then((row) => {
-      if (cancelled || !row) return; // transient miss — never navigate
-      if (row.id !== routeId) {
-        router.replace(`/report/${row.id}`);
-      }
-    });
+    void repo
+      .getReportByDate(loaded.projectId, loaded.reportDate)
+      .then((row) => {
+        if (cancelled) return;
+        // Only consume the bump once the resolve actually settled — mirrors
+        // the `!loaded` guard above.
+        lastSeenRef.current = reparents;
+        inFlightForRef.current = null;
+        if (!row) return; // transient miss — never navigate
+        if (row.id !== routeId) {
+          router.replace(`/report/${row.id}`);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Swallow-with-intent: a transient resolve failure must never
+        // navigate and must not crash. Deliberately do NOT mark this bump
+        // "seen" — clearing only the in-flight marker lets a later effect
+        // re-run (this same bump on a fresh render, or a genuinely new
+        // reparents bump) retry the resolve instead of silently losing it.
+        inFlightForRef.current = null;
+      });
     return () => {
       cancelled = true;
     };

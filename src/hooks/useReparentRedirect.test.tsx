@@ -232,4 +232,47 @@ describe('useReparentRedirect', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/report/report-winner'));
     act(() => detach());
   });
+
+  test('a rejected resolve does not navigate, does not crash, and a later reparents bump retries', async () => {
+    const row: DailyReportRow = {
+      id: 'report-winner',
+      project_id: 'p1',
+      report_date: '2026-07-29',
+      status: 'draft',
+    };
+    // A persistent base (mockResolvedValue) plus a one-time reject means the
+    // FIRST call rejects and every call after — including the deliberate
+    // retry bump below, and any incidental extra call from this suite's
+    // shared afterEach lowering `reparents` back to 0 on teardown — resolves
+    // `row`, matching the pattern every other test in this file already uses.
+    const getReportByDate = jest
+      .fn()
+      .mockResolvedValue(row)
+      .mockRejectedValueOnce(new Error('transient'));
+    const repo = makeRepo({ getReportByDate });
+    const engine = fakeEngine(IDLE_SYNC_STATE);
+    const detach = syncStatusHub.attachEngine(engine.api);
+
+    renderHook(
+      () => useReparentRedirect('report-loser', { projectId: 'p1', reportDate: '2026-07-29' }),
+      { wrapper: wrapperFor(repo) },
+    );
+
+    act(() => {
+      engine.publish({ ...IDLE_SYNC_STATE, reparents: 1 });
+    });
+    await waitFor(() => expect(getReportByDate).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    act(() => {
+      engine.publish({ ...IDLE_SYNC_STATE, reparents: 2 });
+    });
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/report/report-winner'));
+    act(() => detach());
+  });
 });

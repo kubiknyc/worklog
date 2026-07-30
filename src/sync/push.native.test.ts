@@ -144,4 +144,55 @@ describe('createPusher', () => {
 
     expect(outcome).toEqual({ ok: false, error: reparentError });
   });
+
+  test('create_report empty rows: explicit ok:false, never touches rows[0]', async () => {
+    const rpc: jest.MockedFunction<RpcRunner> = jest.fn().mockResolvedValue({
+      data: [],
+      error: null,
+      status: 200,
+    });
+    const pusher = createPusher(rpc, FAKE_DB);
+
+    const outcome = await pusher(createReportMutation('report-1'));
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: { message: 'create_report returned no rows' },
+    });
+    expect(mockReparentReport).not.toHaveBeenCalled();
+  });
+
+  test('create_report null data: explicit ok:false, not a thrown TypeError', async () => {
+    const rpc: jest.MockedFunction<RpcRunner> = jest.fn().mockResolvedValue({
+      data: null,
+      error: null,
+      status: 200,
+    });
+    const pusher = createPusher(rpc, FAKE_DB);
+
+    const outcome = await pusher(createReportMutation('report-1'));
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: { message: 'create_report returned no rows' },
+    });
+    expect(mockReparentReport).not.toHaveBeenCalled();
+  });
+
+  test('create_report row missing report_id: explicit ok:false', async () => {
+    const rpc: jest.MockedFunction<RpcRunner> = jest.fn().mockResolvedValue({
+      data: [{}],
+      error: null,
+      status: 200,
+    });
+    const pusher = createPusher(rpc, FAKE_DB);
+
+    const outcome = await pusher(createReportMutation('report-1'));
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: { message: 'create_report returned no rows' },
+    });
+    expect(mockReparentReport).not.toHaveBeenCalled();
+  });
 });

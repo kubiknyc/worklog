@@ -164,6 +164,7 @@ describe('SyncQueueScreen rendering', () => {
       { wrapper },
     );
     expect(screen.queryByTestId('sync-queue-retry')).toBeNull();
+    expect(screen.queryByText('Retries start over with a fresh set of attempts.')).toBeNull();
 
     rerender(
       <SyncQueueScreen
@@ -175,6 +176,22 @@ describe('SyncQueueScreen rendering', () => {
       />,
     );
     expect(screen.getByTestId('sync-queue-retry')).toBeTruthy();
+  });
+
+  test('the retry control explains a retry re-arms fresh attempts', () => {
+    render(
+      <SyncQueueScreen
+        rows={[mutation({ status: 'parked' })]}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+    expect(
+      screen.getByText('Retries start over with a fresh set of attempts.'),
+    ).toBeTruthy();
   });
 
   test('pressing retry calls onRetry', () => {
