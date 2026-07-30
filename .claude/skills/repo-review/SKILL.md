@@ -161,15 +161,23 @@ lets through.
 Build the import graph and check the seams hold *everywhere*:
 
 - **Repository seam.** Screens and components import the `src/data` interface,
-  never `src/supabase/client` directly. Known legitimate importers: `AuthProvider`,
-  `supabaseRepo`, `createProject`, `inviteMember`, `platformRepo.native`,
-  `engine.native`. Anything in `app/`, `src/components/`, or `src/hooks/`
-  reaching the client directly is a finding.
-- **Platform split, in reality not in theory.** For each `*.native.ts(x)`,
-  confirm a web counterpart exists or the module is never reached from the web
-  graph. For each non-native file, confirm no transitive path pulls in a native
-  module — `check:web` proves the whole graph, the grep guard only proves
-  direct imports.
+  never `src/supabase/client` directly. Compute the importer list rather than
+  trusting one written here — `grep -rln "supabase/client" src app --include=*.ts
+  --include=*.tsx | grep -v '\.test\.'`. As of 2026-07-30 it returns exactly six
+  legitimate importers (`AuthProvider`, `supabaseRepo`, `createProject`,
+  `inviteMember`, `platformRepo.native`, `engine.native`); treat a seventh as
+  the finding, and anything under `app/`, `src/components/` or `src/hooks/` as
+  the finding regardless of count.
+- **Platform split, in reality not in theory.** For each non-native file,
+  confirm no transitive path pulls in a native module — `check:web` proves the
+  whole graph, the grep guard only proves direct imports.
+
+  **A `*.native.ts(x)` file with no `*.web` sibling is normal, not a finding.**
+  Seven of them have none today (`sqliteRepo`, `engine`, `push`, `reparent`,
+  `store`, `rows`, `open`): the web graph simply never reaches them, because
+  `platformRepo.web.ts` doesn't import them. The pairing that must exist is at
+  the *seam* — `platformRepo.native` / `platformRepo.web` — not per file. Report
+  a missing counterpart only when the web graph actually reaches the module.
 - **`app/` is routes only.** No business logic, no tests, and nothing in `src/`
   importing from `app/`.
 - **Cycles and orphans.** Circular imports; exported symbols with no importer;
@@ -304,9 +312,11 @@ Coverage percentage is the input, not the finding.
 - **Doc↔code truth.** `CLAUDE.md`, `.maestro/README.md`, and
   `docs/architecture/` describing structure that no longer exists — wrong file
   paths, renamed modules, commands that fail. Also: `docs/architecture/00-README.md`
-  lists **open decisions** (R1 photo tag edits, distribution list scope, lock
-  grace window). If code has silently implemented one, that is a HIGH finding
-  regardless of which way it went.
+  has a **"Decisions needed from you"** section — read it there rather than
+  trusting a list here, since it shrinks as decisions get made (as of
+  2026-07-30: R1 photo tag edits, distribution-list scope, lock grace window).
+  If code has silently implemented one, that is a HIGH finding regardless of
+  which way it went.
 
 ## Known non-findings
 
