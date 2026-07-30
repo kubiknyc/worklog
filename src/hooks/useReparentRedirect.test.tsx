@@ -290,10 +290,7 @@ describe('useReparentRedirect', () => {
     const firstPromise: Promise<DailyReportRow | null> = new Promise(() => {
       /* never settles */
     });
-    const getReportByDate = jest
-      .fn()
-      .mockReturnValueOnce(firstPromise)
-      .mockResolvedValue(row);
+    const getReportByDate = jest.fn().mockReturnValueOnce(firstPromise).mockResolvedValue(row);
     const repo = makeRepo({ getReportByDate });
     const engine = fakeEngine(IDLE_SYNC_STATE);
     const detach = syncStatusHub.attachEngine(engine.api);
