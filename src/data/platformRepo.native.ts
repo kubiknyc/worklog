@@ -1,12 +1,14 @@
 /**
  * Native repository factory — opens the device database, guards it against a
- * cross-user handover, wires the mutation store + SQLite repository + sync
- * engine, and seeds a best-effort reference mirror so the offline reads have
- * projects/members to show on first run. Native-only; the explicit `.native`
- * imports here are safe because this file is never in the web bundle's graph.
+ * cross-user handover, and wires the mutation store + SQLite repository +
+ * sync engine. Native-only; the explicit `.native` imports here are safe
+ * because this file is never in the web bundle's graph.
  *
- * `seedReferenceMirror` is a temporary bridge: M3's Tier-1 reference pull
- * (cursored, incremental, run by the engine) replaces it wholesale.
+ * The reference mirror (projects/members/profiles/prefs) is populated by the
+ * sync engine's Tier-1 pull, not by this factory: `engine.start()`'s initial
+ * kick performs the first pull, and `useRefreshOnFocusAndSync` (Task 11)
+ * refetches screens when `completedPulls` bumps. Hydration therefore no
+ * longer awaits a network round-trip before returning the repo bundle.
  */
 import { openDb } from '../db/open.native';
 import { first, run, tx, type Db } from '../db/rows.native';
@@ -100,70 +102,6 @@ export async function reconcileDbOwnership(db: Db): Promise<void> {
 }
 
 /**
- * Best-effort online snapshot of the reference tables the offline reads need
- * (projects, members, profiles, prefs). Every step swallows its own failure —
- * being offline is the normal case, and a partial seed is still useful. No
- * cursors are written; M3's cursored Tier-1 pull supersedes this entirely.
- */
-export async function seedReferenceMirror(db: Db): Promise<void> {
-  try {
-    const projects = await supabase
-      .from('projects')
-      .select('id, name, address, timezone, lat, lng');
-    if (!projects.error && projects.data) {
-      for (const p of projects.data) {
-        await run(
-          db,
-          `INSERT OR REPLACE INTO projects (id, name, address, timezone, lat, lng) VALUES (?, ?, ?, ?, ?, ?)`,
-          [p.id, p.name, p.address, p.timezone, p.lat, p.lng],
-        );
-      }
-    }
-
-    const profiles = await supabase
-      .from('profiles')
-      .select('id, full_name, email, phone, company, trade, avatar_url');
-    if (!profiles.error && profiles.data) {
-      for (const pr of profiles.data) {
-        await run(
-          db,
-          `INSERT OR REPLACE INTO profiles (id, full_name, email, phone, company, trade, avatar_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [pr.id, pr.full_name, pr.email, pr.phone, pr.company, pr.trade, pr.avatar_url],
-        );
-      }
-    }
-
-    const members = await supabase
-      .from('project_members')
-      .select('project_id, user_id, role, created_at');
-    if (!members.error && members.data) {
-      for (const m of members.data) {
-        await run(
-          db,
-          `INSERT OR REPLACE INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
-          [m.project_id, m.user_id, m.role, m.created_at],
-        );
-      }
-    }
-
-    const prefs = await supabase.from('report_member_prefs').select('project_id, user_id, title');
-    if (!prefs.error && prefs.data) {
-      for (const pf of prefs.data) {
-        await run(
-          db,
-          `INSERT OR REPLACE INTO report_member_prefs (project_id, user_id, title) VALUES (?, ?, ?)`,
-          [pf.project_id, pf.user_id, pf.title],
-        );
-      }
-    }
-  } catch {
-    // Offline / RLS / transient — a missing or partial mirror is acceptable;
-    // M3's reference pull will fill it in. Never let seeding fail hydration.
-  }
-}
-
-/**
  * `sessionUserId` is the signed-in user from `RepositoryProvider`'s
  * `useAuth()` — nullable because the provider mounts at the app root and runs
  * signed-out too. With null the engine still drains queued pushes; only the
@@ -178,8 +116,6 @@ export async function createPlatformRepository(
   // before any read or write can touch it.
   await reconcileDbOwnership(db);
   const mutations = createMutationStore(db);
-  // Best-effort refresh of the reference mirror (swallowed on failure).
-  await seedReferenceMirror(db);
   const engine = createSyncEngine(db, sessionUserId);
   // The nudge kicks the engine after every enqueued write, so a new mutation
   // drains promptly instead of waiting for the next backoff/NetInfo/AppState

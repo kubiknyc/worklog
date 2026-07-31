@@ -99,6 +99,12 @@
         "functions": 100,
         "lines": 95,
         "statements": 95
+      },
+      "src/sync/pullCore.ts": {
+        "branches": 95,
+        "functions": 100,
+        "lines": 95,
+        "statements": 95
       }
     }
   },

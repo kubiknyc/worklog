@@ -198,6 +198,17 @@ M12 account deletion ── LAST: built against the COMPLETE schema (deletion mu
 - [ ] **Column-parity jest test green**; sync-mapping table (kind→handler→table) delivered.
 - [ ] Seed: demo `super` + disposable deletion-test credentials.
 
+### M3 status (post-hoc, recorded by the M3b pull-path plan)
+
+M3 shipped in two sub-milestones: **M3a** (push path — mutation queue drain,
+lifecycle RPCs, re-parenting; landed on `main`) and **M3b** (pull path — Tier-1
+reference snapshot, Tier-2 per-project cursored feeds, dirty-shielded
+appliers, membership/id reconcile sweeps, `completedPulls` UI refetch signal).
+
+- [x] **M3a** — push path complete.
+- [x] **M3b** — pull path complete (`docs/superpowers/plans/2026-07-30-m3b-sync-engine-pull.md`, Tasks 1–12). `seedReferenceMirror`'s best-effort network seed retired; Tier-1 pull owns the reference mirror; `pullCore.ts` added to the per-file coverage-pin ladder (95/100/95/95).
+- [ ] **Deferred to M4:** the doc-05 global coverage-threshold raise (65/55/68/65) is NOT taken as part of M3b — `collectCoverageFrom` excludes every `*.native.ts` module, so M3b's four new native pull modules sit outside the global denominator entirely, and `pullCore.ts` carries its own pin instead of moving the global floor. ~31 of the 71 files in the global coverage pool currently lack sibling tests, so the raise needs its own dedicated test-backfill task rather than riding on M3b. Tracked alongside the other M4 follow-ups in the M3b plan doc (submit UI signature pre-check, rotation/sweep cadence tuning, amendment UX, submit/lock clientId scheme).
+
 ### Phase 4 — Code DoD
 - [ ] Every milestone M0–M12 landed; no placeholders, no TODOs, no pseudo-code (spec §10).
 - [ ] `tsc --noEmit` green under strict; jest green incl. schema-parity + all `mutationQueue` pure-policy tests.
