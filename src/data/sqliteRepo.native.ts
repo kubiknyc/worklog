@@ -10,13 +10,12 @@
  * database; platformRepo.native.ts does that and injects the open handle, the
  * mutation store, and the nudge.
  */
-import type { SQLiteDatabase } from 'expo-sqlite';
-
 import { tx } from '../db/rows.native';
 import { uuidv4 } from '../lib/uuid';
 import { newMutation } from '../sync/mutationQueue';
 import type { Mutation, MutationStore } from '../sync/types';
-import { isRelationalSection, rowsOf } from './sectionContent';
+import { asRecord, explodeSection, num, str, type Db } from './sectionExplode.native';
+import { isRelationalSection } from './sectionContent';
 import type {
   DailyReportRow,
   Json,
@@ -28,38 +27,9 @@ import type {
   WeatherRow,
 } from './types';
 
-export type Db = Pick<
-  SQLiteDatabase,
-  'getAllAsync' | 'getFirstAsync' | 'runAsync' | 'withTransactionAsync'
->;
+export type { Db };
 
 const noop = (): void => {};
-
-// ── Opaque-row field accessors ───────────────────────────────────────────────
-// Queue payloads are opaque `Json` by design, so relational rows reaching the
-// explode path could be missing, null, or mistyped — coerce defensively rather
-// than crash the write (mirrors rowsOf's tolerance in sectionContent.ts).
-
-function asRecord(j: Json): Record<string, Json> {
-  return j !== null && typeof j === 'object' && !Array.isArray(j)
-    ? (j as Record<string, Json>)
-    : {};
-}
-function str(v: Json): string | null {
-  return typeof v === 'string' ? v : null;
-}
-function num(v: Json): number | null {
-  return typeof v === 'number' ? v : null;
-}
-function boolInt(v: Json): number {
-  return v === true ? 1 : 0;
-}
-/** Client uuid when present and non-empty, else a fresh one — mirrors the RPC's
- * `coalesce(nullif(r->>'id','')::uuid, gen_random_uuid())`. */
-function rowId(rec: Record<string, Json>): string {
-  const id = rec.id;
-  return typeof id === 'string' && id.length > 0 ? id : uuidv4();
-}
 
 // ── Raw row shapes as SQLite returns them (JSON as TEXT, booleans as 0/1) ─────
 
@@ -130,105 +100,6 @@ export function createSqliteRepo(
     });
     nudge();
     return row;
-  }
-
-  // ── Relational explode: delete-and-insert child rows, per worklog_apply_section ──
-  async function explode(reportId: string, section: SectionKind, content: Json): Promise<void> {
-    const rows = rowsOf(content);
-    if (section === 'crew') {
-      await db.runAsync(`DELETE FROM report_crew WHERE report_id = ?`, [reportId]);
-      for (const r of rows) {
-        const rec = asRecord(r);
-        await db.runAsync(
-          `INSERT INTO report_crew (id, report_id, trade, headcount, hours, is_carried_forward)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            rowId(rec),
-            reportId,
-            str(rec.trade) ?? '',
-            num(rec.headcount) ?? 0,
-            num(rec.hours) ?? 0,
-            boolInt(rec.is_carried_forward),
-          ],
-        );
-      }
-    } else if (section === 'equipment') {
-      await db.runAsync(`DELETE FROM report_equipment WHERE report_id = ?`, [reportId]);
-      for (const r of rows) {
-        const rec = asRecord(r);
-        // on_site defaults TRUE server-side (only an explicit false clears it).
-        await db.runAsync(
-          `INSERT INTO report_equipment (id, report_id, name, status, on_site)
-           VALUES (?, ?, ?, ?, ?)`,
-          [
-            rowId(rec),
-            reportId,
-            str(rec.name) ?? '',
-            str(rec.status) ?? 'active',
-            rec.on_site === false ? 0 : 1,
-          ],
-        );
-      }
-    } else if (section === 'work_performed') {
-      await db.runAsync(`DELETE FROM report_work_performed WHERE report_id = ?`, [reportId]);
-      for (const r of rows) {
-        const rec = asRecord(r);
-        await db.runAsync(
-          `INSERT INTO report_work_performed (id, report_id, trade, area, note)
-           VALUES (?, ?, ?, ?, ?)`,
-          [rowId(rec), reportId, str(rec.trade) ?? '', str(rec.area) ?? '', str(rec.note) ?? ''],
-        );
-      }
-    } else if (section === 'delays') {
-      await db.runAsync(`DELETE FROM report_delays WHERE report_id = ?`, [reportId]);
-      for (const r of rows) {
-        const rec = asRecord(r);
-        await db.runAsync(
-          `INSERT INTO report_delays (id, report_id, cause, responsible_party, duration_hours, is_ongoing, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            rowId(rec),
-            reportId,
-            str(rec.cause) ?? '',
-            str(rec.responsible_party),
-            num(rec.duration_hours),
-            boolInt(rec.is_ongoing),
-            str(rec.note),
-          ],
-        );
-      }
-      // Recompute the denormalized flag exactly like the RPC: any delay row → true.
-      await db.runAsync(
-        `UPDATE daily_reports
-           SET has_delay = CASE WHEN EXISTS (SELECT 1 FROM report_delays WHERE report_id = ?) THEN 1 ELSE 0 END
-         WHERE id = ?`,
-        [reportId, reportId],
-      );
-    } else if (section === 'safety') {
-      await db.runAsync(`DELETE FROM report_safety_observations WHERE report_id = ?`, [reportId]);
-      for (const r of rows) {
-        const rec = asRecord(r);
-        await db.runAsync(
-          `INSERT INTO report_safety_observations (id, report_id, obs_type, description, is_incident)
-           VALUES (?, ?, ?, ?, ?)`,
-          [
-            rowId(rec),
-            reportId,
-            str(rec.obs_type) ?? '',
-            str(rec.description),
-            boolInt(rec.is_incident),
-          ],
-        );
-      }
-      // has_incident is true only when at least one observation is itself an incident.
-      await db.runAsync(
-        `UPDATE daily_reports
-           SET has_incident = CASE WHEN EXISTS
-             (SELECT 1 FROM report_safety_observations WHERE report_id = ? AND is_incident = 1) THEN 1 ELSE 0 END
-         WHERE id = ?`,
-        [reportId, reportId],
-      );
-    }
   }
 
   return {
@@ -363,7 +234,7 @@ export function createSqliteRepo(
             [reportId, section, JSON.stringify(content), isComplete ? 1 : 0],
           );
           if (isRelationalSection(section)) {
-            await explode(reportId, section, content);
+            await explodeSection(db, reportId, section, content);
           }
         }
         // Coalesce per (reportId, section): a fresh edit supersedes any parked
