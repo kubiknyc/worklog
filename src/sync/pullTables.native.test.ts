@@ -4,8 +4,8 @@
  * `runAsync`/`getAllAsync` call and counts `withTransactionAsync` entries so
  * tests can assert the whole replace happens inside ONE transaction.
  */
-import { applyReferenceSnapshot } from './pullTables.native';
-import type { ReferenceSnapshot } from './pullTables.native';
+import { applyReferenceSnapshot, applyReports, applySections } from './pullTables.native';
+import type { ReferenceSnapshot, PulledReportBundle, PulledSection } from './pullTables.native';
 import type { Db } from '../db/rows.native';
 
 type Row = Record<string, unknown>;
@@ -281,5 +281,428 @@ describe('applyReferenceSnapshot', () => {
     );
 
     expect(diff.changed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyReports / applySections — dirty shield + ride-alongs
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory stand-in for `daily_reports` / `report_weather` / `report_sections`
+ * / `report_crew`. Parses the SQL generically (column lists off INSERT/SELECT)
+ * so it doesn't need one branch per exact query string, and records every
+ * `withTransactionAsync` entry so tests can assert one tx per CALL.
+ */
+function fakeReportDb(
+  seed: {
+    daily_reports?: readonly Row[];
+    report_weather?: readonly Row[];
+    report_sections?: readonly Row[];
+    report_crew?: readonly Row[];
+  } = {},
+) {
+  const daily_reports = new Map<string, Row>();
+  (seed.daily_reports ?? []).forEach((r) => daily_reports.set(`${r.id}`, { ...r }));
+  const report_weather = new Map<string, Row>();
+  (seed.report_weather ?? []).forEach((r) => report_weather.set(`${r.report_id}`, { ...r }));
+  const report_sections = new Map<string, Row>();
+  (seed.report_sections ?? []).forEach((r) =>
+    report_sections.set(`${r.report_id}:${r.section}`, { ...r }),
+  );
+  let report_crew: Row[] = (seed.report_crew ?? []).map((r) => ({ ...r }));
+
+  const calls: { sql: string; params: readonly unknown[] }[] = [];
+  let txCount = 0;
+
+  async function getFirstAsync<T>(sql: string, params: readonly unknown[] = []): Promise<T | null> {
+    calls.push({ sql, params });
+    const m = sql.match(/SELECT (.+?) FROM (\w+) WHERE (.+)/is);
+    if (!m) return null;
+    const [, colsRaw, table] = m;
+    const cols = colsRaw.split(',').map((c) => c.trim());
+    let row: Row | undefined;
+    if (table === 'daily_reports') row = daily_reports.get(`${params[0]}`);
+    else if (table === 'report_weather') row = report_weather.get(`${params[0]}`);
+    else if (table === 'report_sections') row = report_sections.get(`${params[0]}:${params[1]}`);
+    if (!row) return null;
+    const out: Row = {};
+    for (const c of cols) out[c] = row[c] ?? null;
+    return out as unknown as T;
+  }
+
+  async function getAllAsync<T>(): Promise<T[]> {
+    return [] as T[];
+  }
+
+  async function runAsync(
+    sql: string,
+    params: readonly unknown[] = [],
+  ): Promise<{ changes: number }> {
+    calls.push({ sql, params });
+
+    if (/^UPDATE daily_reports SET status = \? WHERE id = \?/i.test(sql)) {
+      const [status, id] = params as string[];
+      const row = daily_reports.get(id);
+      if (row) row.status = status;
+      return { changes: row ? 1 : 0 };
+    }
+    if (/^UPDATE daily_reports\s+SET has_delay/i.test(sql)) return { changes: 0 };
+    if (/^UPDATE daily_reports\s+SET has_incident/i.test(sql)) return { changes: 0 };
+
+    const del = sql.match(/^DELETE FROM (\w+) WHERE report_id = \?/i);
+    if (del) {
+      const [reportId] = params as string[];
+      if (del[1] === 'report_crew')
+        report_crew = report_crew.filter((r) => r.report_id !== reportId);
+      return { changes: 0 };
+    }
+
+    const ins = sql.match(/^INSERT INTO (\w+) \(([^)]+)\)/i);
+    if (ins) {
+      const table = ins[1];
+      const cols = ins[2].split(',').map((c) => c.trim());
+      const row: Row = {};
+      cols.forEach((c, i) => (row[c] = (params as unknown[])[i]));
+
+      if (table === 'daily_reports') {
+        row._dirty = 0;
+        daily_reports.set(`${row.id}`, row);
+      } else if (table === 'report_weather') {
+        const prior = report_weather.get(`${row.report_id}`);
+        row._dirty = prior?._dirty ?? 0;
+        report_weather.set(`${row.report_id}`, row);
+      } else if (table === 'report_sections') {
+        row._dirty = 0;
+        report_sections.set(`${row.report_id}:${row.section}`, row);
+      } else if (table === 'report_crew') {
+        report_crew.push(row);
+      }
+      return { changes: 1 };
+    }
+
+    return { changes: 0 };
+  }
+
+  return {
+    daily_reports,
+    report_weather,
+    report_sections,
+    get report_crew(): readonly Row[] {
+      return report_crew;
+    },
+    calls,
+    get txCount(): number {
+      return txCount;
+    },
+    getFirstAsync,
+    getAllAsync,
+    runAsync,
+    async withTransactionAsync(fn: () => Promise<void>): Promise<void> {
+      txCount++;
+      await fn();
+    },
+  };
+}
+
+function reportRow(overrides: Row = {}): Record<string, unknown> {
+  return {
+    id: 'r1',
+    project_id: 'p1',
+    report_date: '2026-07-01',
+    status: 'draft',
+    has_incident: false,
+    has_delay: false,
+    created_by: 'u1',
+    created_at: '2026-07-01T00:00:00Z',
+    submitted_by: null,
+    submitted_at: null,
+    locked_by: null,
+    locked_at: null,
+    updated_at: '2026-07-01T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function reportBundle(overrides: Partial<PulledReportBundle> = {}): PulledReportBundle {
+  return { report: reportRow(), weather: null, ...overrides };
+}
+
+describe('applyReports', () => {
+  it('clean report (no local row) is inserted verbatim, _dirty = 0', async () => {
+    const db = fakeReportDb();
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({ report: reportRow({ id: 'r1', status: 'submitted' }) }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(result.hardSkipped).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.daily_reports.get('r1')).toMatchObject({ status: 'submitted', _dirty: 0 });
+  });
+
+  it('clean local report is replaced verbatim regardless of timestamps (server older)', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-05T00:00:00Z', _dirty: 0 }],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'submitted', updated_at: '2026-07-01T00:00:00Z' }),
+      }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(db.daily_reports.get('r1')).toMatchObject({
+      status: 'submitted',
+      updated_at: '2026-07-01T00:00:00Z',
+      _dirty: 0,
+    });
+  });
+
+  it('no-op rule: clean local row with identical updated_at is skipped (not written, applied unchanged, cursor credited)', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-01T10:00:00Z', _dirty: 0 }],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({ report: reportRow({ id: 'r1', status: 'draft' }) }),
+    ]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.calls.some((c) => /^INSERT INTO daily_reports/i.test(c.sql))).toBe(false);
+    expect(db.calls.some((c) => /^UPDATE daily_reports SET status/i.test(c.sql))).toBe(false);
+  });
+
+  it('dirty report keeps local content but adopts server status — server NEWER than local', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-01T00:00:00Z', _dirty: 1 }],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'submitted', updated_at: '2026-07-05T00:00:00Z' }),
+      }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(result.cursorKeys).toEqual(['2026-07-05T00:00:00Z']);
+    const local = db.daily_reports.get('r1');
+    expect(local?.status).toBe('submitted');
+    expect(local?.updated_at).toBe('2026-07-01T00:00:00Z'); // content/timestamp untouched — only status moved
+    expect(local?._dirty).toBe(1);
+  });
+
+  it('dirty report keeps local content but adopts server status — server OLDER than local (timestamps must not matter)', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-10T00:00:00Z', _dirty: 1 }],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'submitted', updated_at: '2026-07-01T00:00:00Z' }),
+      }),
+    ]);
+    expect(result.applied).toBe(1);
+    const local = db.daily_reports.get('r1');
+    expect(local?.status).toBe('submitted');
+    expect(local?.updated_at).toBe('2026-07-10T00:00:00Z');
+    expect(local?._dirty).toBe(1);
+  });
+
+  it('dirty report with same status as server: nothing changes, but timestamp still credited', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-01T00:00:00Z', _dirty: 1 }],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'draft', updated_at: '2026-07-09T00:00:00Z' }),
+      }),
+    ]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-09T00:00:00Z']);
+    expect(db.calls.some((c) => /^UPDATE daily_reports SET status/i.test(c.sql))).toBe(false);
+  });
+
+  it('malformed report row (no id/status) is hardSkipped', async () => {
+    const db = fakeReportDb();
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({ report: reportRow({ id: null }) }),
+      reportBundle({ report: reportRow({ status: undefined }) }),
+    ]);
+    expect(result.hardSkipped).toBe(2);
+    expect(result.applied).toBe(0);
+  });
+
+  it('weather rides the same tx on clean weather (no local weather row)', async () => {
+    const db = fakeReportDb();
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1' }),
+        weather: {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'sunny',
+          auto_temp_f: 72,
+        },
+      }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(db.txCount).toBe(1);
+    expect(db.report_weather.get('r1')).toMatchObject({
+      weather_source: 'auto',
+      auto_condition: 'sunny',
+      auto_temp_f: 72,
+    });
+  });
+
+  it('dirty weather row is untouched while the parent report still applies', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-01T00:00:00Z', _dirty: 1 }],
+      report_weather: [
+        { report_id: 'r1', weather_source: 'manual', override_condition: 'rain', _dirty: 1 },
+      ],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'submitted', updated_at: '2026-07-05T00:00:00Z' }),
+        weather: {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'sunny',
+          auto_temp_f: 72,
+        },
+      }),
+    ]);
+    expect(result.applied).toBe(1); // report status change applied
+    expect(db.report_weather.get('r1')).toMatchObject({
+      weather_source: 'manual',
+      override_condition: 'rain',
+      _dirty: 1,
+    });
+  });
+
+  it('weather === null leaves local report_weather untouched (not a deletion)', async () => {
+    const db = fakeReportDb({
+      report_weather: [
+        { report_id: 'r1', weather_source: 'auto', auto_condition: 'sunny', _dirty: 0 },
+      ],
+    });
+    await applyReports(db as unknown as Db, [
+      reportBundle({ report: reportRow({ id: 'r1' }), weather: null }),
+    ]);
+    expect(db.report_weather.get('r1')).toMatchObject({
+      weather_source: 'auto',
+      auto_condition: 'sunny',
+    });
+  });
+});
+
+function sectionRow(overrides: Row = {}): PulledSection {
+  return {
+    report_id: 'r1',
+    section: 'general_notes',
+    payload: { text: 'hello' },
+    is_complete: true,
+    updated_at: '2026-07-01T10:00:00Z',
+    ...overrides,
+  } as PulledSection;
+}
+
+describe('applySections', () => {
+  it('clean section (no local row) is upserted, _dirty = 0', async () => {
+    const db = fakeReportDb();
+    const result = await applySections(db as unknown as Db, [sectionRow()]);
+    expect(result.applied).toBe(1);
+    expect(result.hardSkipped).toBe(0);
+    expect(db.report_sections.get('r1:general_notes')).toMatchObject({
+      payload: JSON.stringify({ text: 'hello' }),
+      _dirty: 0,
+    });
+  });
+
+  it('clean section upsert re-explodes children in the same tx', async () => {
+    const db = fakeReportDb({
+      report_sections: [
+        { report_id: 'r1', section: 'crew', updated_at: '2026-07-01T00:00:00Z', _dirty: 0 },
+      ],
+      report_crew: [{ id: 'stale', report_id: 'r1', trade: 'stale-trade' }],
+    });
+    const result = await applySections(db as unknown as Db, [
+      sectionRow({
+        section: 'crew',
+        payload: {
+          rows: [
+            { id: 'c1', trade: 'electrical', headcount: 3, hours: 8, is_carried_forward: false },
+          ],
+        },
+        updated_at: '2026-07-05T00:00:00Z',
+      }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(db.txCount).toBe(1);
+    expect(db.report_crew).toHaveLength(1);
+    expect(db.report_crew[0]).toMatchObject({ trade: 'electrical' });
+  });
+
+  it('no-op rule: clean local section with identical updated_at is skipped', async () => {
+    const db = fakeReportDb({
+      report_sections: [
+        {
+          report_id: 'r1',
+          section: 'general_notes',
+          updated_at: '2026-07-01T10:00:00Z',
+          _dirty: 0,
+        },
+      ],
+    });
+    const result = await applySections(db as unknown as Db, [sectionRow()]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.calls.some((c) => /^INSERT INTO report_sections/i.test(c.sql))).toBe(false);
+  });
+
+  it('dirty section and its children are untouched, but the timestamp is still credited', async () => {
+    const db = fakeReportDb({
+      report_sections: [
+        { report_id: 'r1', section: 'crew', updated_at: '2026-07-01T00:00:00Z', _dirty: 1 },
+      ],
+      report_crew: [{ id: 'keep', report_id: 'r1', trade: 'keep-trade' }],
+    });
+    const result = await applySections(db as unknown as Db, [
+      sectionRow({
+        section: 'crew',
+        payload: {
+          rows: [
+            { id: 'c1', trade: 'electrical', headcount: 3, hours: 8, is_carried_forward: false },
+          ],
+        },
+        updated_at: '2026-07-09T00:00:00Z',
+      }),
+    ]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-09T00:00:00Z']);
+    expect(db.report_crew).toHaveLength(1);
+    expect(db.report_crew[0]).toMatchObject({ trade: 'keep-trade' });
+    expect(db.calls.some((c) => /^DELETE FROM report_crew/i.test(c.sql))).toBe(false);
+  });
+
+  it('unknown section kind is hardSkipped', async () => {
+    const db = fakeReportDb();
+    const result = await applySections(db as unknown as Db, [
+      sectionRow({ section: 'not_a_real_kind' }),
+    ]);
+    expect(result.hardSkipped).toBe(1);
+    expect(result.applied).toBe(0);
+  });
+
+  it('non-string section updated_at is hardSkipped', async () => {
+    const db = fakeReportDb();
+    const result = await applySections(db as unknown as Db, [sectionRow({ updated_at: 12345 })]);
+    expect(result.hardSkipped).toBe(1);
+  });
+
+  it('unparseable payload is hardSkipped; other rows still commit', async () => {
+    const db = fakeReportDb();
+    const result = await applySections(db as unknown as Db, [
+      sectionRow({ report_id: 'r1', section: 'general_notes', payload: '{not json' }),
+      sectionRow({ report_id: 'r2', section: 'general_notes', payload: { text: 'ok' } }),
+    ]);
+    expect(result.hardSkipped).toBe(1);
+    expect(result.applied).toBe(1);
+    expect(db.report_sections.get('r2:general_notes')).toBeDefined();
   });
 });
