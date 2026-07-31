@@ -80,8 +80,11 @@ Gates are unrunnable more often than you'd expect, and each failure mode looks
 different:
 
 - **`node_modules/` empty** (fresh container): `verify` dies at `tsc` with
-  `Cannot find module 'react'` and `expo/tsconfig.base not found`. That is the
-  environment, not the code. Either `npm ci` first or report **NOT RUN**.
+  `Cannot find module 'react'` and `expo/tsconfig.base not found` — the
+  environment, not the code. **Run `npm ci` first.** It takes a couple of minutes
+  and converts two second-hand gate results into real ones; on the validated run
+  it also made the coverage table available, which Pass E depends on. Report
+  **NOT RUN** only if the install itself fails.
 - **`../jobsight-backend` absent**: `check:parity` cannot run. Never infer
   parity from the committed snapshot — that is the thing being checked.
 
@@ -155,6 +158,42 @@ Audit the guards themselves, not the code they guard:
 
 **Report a widened allowlist as its own finding**, separate from whatever it
 lets through.
+
+**Then audit each guard's *mechanism*, not just its allowlist.** This is where
+the findings actually are: the 2026-07-30 full run found every allowlist honest
+and four mechanisms broken. Ask of each guard:
+
+- **What can its detector not see?** `platformSplit.test.ts`'s regex requires
+  `from ` or `require(` immediately before the specifier, so a bare side-effect
+  import — `import 'expo-sqlite/localStorage/install';` — is invisible. That form
+  is already used in this repo (`src/supabase/client.ts:12`). Dynamic `import()`
+  is unmatched too.
+- **Can the assertion be satisfied by something that isn't the code?**
+  `maestroSelectors.test.ts` asserts `toContain(prefix)` over a whole file, so a
+  *prose comment* mentioning the prefix satisfies it while the template that
+  builds the testID gets renamed. Confirm each prefix's occurrence is the
+  template, not documentation.
+- **Audit the generators, not only their output.** `scripts/gen-server-columns.mjs`
+  builds each table from `CREATE TABLE` plus `add column`, minus `drop column`.
+  It has no handler for `ALTER TABLE … RENAME COLUMN`, so a backend rename
+  regenerates a byte-identical snapshot and the parity gate passes on precisely
+  the cross-repo drift it exists to catch. Ask of any generator: which forms of
+  its input can it not represent?
+- **Is the pin falsifiable?** A `coverageThreshold` entry on a file with zero
+  functions and zero branches reports 100/100/100/100 unconditionally — the
+  number is decoration. Check whether the logic that pin stands in for is even in
+  the denominator; `!src/**/*.native.ts` removes a great deal of it.
+- **Does the guard prove it scanned anything?** `maestroSelectors.test.ts:97`
+  asserts it found at least one flow — "guards against the whole suite passing
+  vacuously if `.maestro` moves". A guard without that assertion passes having
+  read zero bytes as soon as its scan root moves.
+
+**These five examples were live defects when written, not hypotheticals** —
+they are tracked as issues #14 and #15. They are here to show the *shapes*, not
+to mark them settled: check whether each is still true, and hunt for new
+instances of the same shapes. If an example has been fixed, the value is in the
+shape it taught, so keep looking for the next one rather than deleting the
+bullet.
 
 ### Pass B — Layering and boundaries
 
@@ -349,7 +388,18 @@ review loses its audience:
 - **The `deps` CI job's `continue-on-error: true`.** Documented as deliberately
   non-blocking at `.github/workflows/ci.yml:135-136`.
 - **`react-native-webview`, `react-native-signature-canvas`, `expo-dev-client`
-  in `dependencies` with no import sites.** Staged for later milestones.
+  in `dependencies` with no import sites.** Staged for later milestones. All
+  three also resolve on web (verified in `node_modules` on 2026-07-30:
+  `react-native-webview` ships a platform-unsupported fallback, `expo-dev-client`
+  reaches `expo-dev-menu`'s `ExpoDevMenu.web.js`), so none is a
+  `NATIVE_ONLY_MODULES` candidate either.
+- **The pull-path primitives having no callers.** `conflict.ts`, `cursors.ts`,
+  `paginate.ts` — plus `authLink.ts`, `createProject.ts`, `inviteMember.ts` —
+  each carry a header naming the future consumer, each have tests, and the sync
+  three carry their own coverage pins. Deliberate staging, not dead code. (Their
+  unreachability *does* make Pass C checks vacuous — see Evidence discipline.)
+- **The photo pipeline being unimplemented.** M5. The three photo mutation kinds
+  throw `'photo kinds are M5'` and `rpcMap.test.ts` asserts the throw.
 
 ## Evidence discipline
 
@@ -368,9 +418,43 @@ Before reporting anything:
    carry justifying comments; so do several apparent violations.
 4. **Do not propose architecture.** "This would be cleaner as X" is not a
    finding. Defects, drift, and gaps are.
+5. **Distinguish cleared from vacuous.** A check that passes because the code it
+   examines has no callers yet has cleared nothing. On the validated run several
+   Pass C checks were vacuous rather than clean — the pull-path primitives
+   (`conflict.ts`, `cursors.ts`, `paginate.ts`) are unreachable today, so
+   "every pulled row flows through `resolveItem`" and "no cursor advances before
+   a durable write" were unverifiable, not verified. Reporting those as clean
+   implies coverage that does not exist. Say which it was.
 
 Ten verified findings beat sixty speculative ones. Report an empty section
 plainly rather than filling it.
+
+## Merging the passes
+
+You dispatched six agents; the merge is yours, and it is not clerical work.
+
+- **Verify every CRITICAL and HIGH at source before publishing.** Open the file
+  and confirm the claim yourself. Subagents write confidently about things they
+  half-checked. On the validated run every HIGH survived — but only because each
+  was re-read, and one needed its framing corrected (a "silently implemented open
+  decision" was really two authoritative docs contradicting each other, with the
+  same schema consequence). State in the report which findings you verified
+  yourself and which rest on a pass's own evidence.
+- **Dedupe across passes.** Overlap is expected and is corroboration, not noise —
+  the same defect surfacing in two passes independently is worth more than a
+  single report of it. Merge into one finding and name both sources.
+- **Arbitrate severity; passes disagree.** On the validated run the same
+  milestone-labels-in-UI-copy finding came back MEDIUM from one pass and LOW from
+  another, while `worklog-reviewer` rates internal labels HIGH. **The repo's own
+  rubric wins**: defer to `.claude/agents/worklog-reviewer.md`, then to the PRD's
+  acceptance criteria, before your own judgement.
+- **Rank, don't concatenate.** Six lists stapled together is not a report. Lead
+  with what would cost the most to discover in production, and be willing to
+  promote: a finding a pass called HIGH may be CRITICAL once you see it causes
+  silent, unrecoverable data loss.
+- **Expect roughly this shape.** The validated run produced 38 raw findings → 35
+  after dedupe, across ~940k subagent tokens. A run returning three findings has
+  probably gone shallow; one returning eighty has stopped verifying.
 
 ## Output
 
@@ -383,16 +467,33 @@ the SHA), declined (say why), or filed as a GitHub issue (see
 `docs/superpowers/reviews/YYYY-MM-DD-repo-review.md` (date from `date +%F`),
 alongside the existing reviews. Do not create a second reviews directory.
 
+**Filing: one issue per CRITICAL/HIGH, grouped issues for the rest.** A run
+produces tens of findings; thirty-five issues is a tracker nobody reads. On the
+validated run, five issues covered everything worth tracking — each CRITICAL and
+HIGH on its own (they have distinct owners and distinct fixes), and the smaller
+guard defects grouped into one issue because they share a root cause and would be
+fixed together. Group by *what a single fix would touch*, never by severity
+alone. Every issue needs the failure scenario, not just the location, and a
+"don't fix it by loosening the assertion" note wherever a guard is involved.
+
+**Findings that survive only in the report are lost.** The scratchpad dies with
+the container and the chat summary scrolls away — if it is worth reporting, it is
+worth filing before the session ends.
+
 An unresolved report committed as a to-do list rots — "35 untested modules" is
 wrong within weeks and reads as current to whoever finds it next. A report that
 records what was *decided* ages correctly, which is why
 `2026-07-19-phase4-dynamic-review.md` is still worth reading.
 
-```markdown
+````markdown
 # Repo review — YYYY-MM-DD (<commit sha>)
 
+Raw finding count → count after dedupe.
+
 ## Gate results
-verify / check:web / check:parity — pass, fail, or NOT RUN with the reason.
+verify / check:web / check:parity — pass, fail, or NOT RUN **with the reason**.
+Then one line on what the NOT RUN gates leave unverified (a missing
+`check:parity` means nothing server-side was checked at all).
 
 ## Findings
 ### CRITICAL   (invariant violated, data loss, secret exposure, broken build)
@@ -401,14 +502,22 @@ verify / check:web / check:parity — pass, fail, or NOT RUN with the reason.
 ### LOW        (drift, dead code, doc divergence)
 
 For each: one-line summary · `file:line` · concrete failure scenario · why a
-per-diff review could not have caught it.
+per-diff review could not have caught it. Mark deduped findings with the passes
+that reported them.
 
 ## Test gaps
 Untested modules ranked by blast radius, with a suggested first test for the top few.
 
 ## Coverage of this review
-Which passes ran, which areas were read shallowly, what was not examined.
-```
+- Which passes ran, and which gates backed them.
+- **Which findings you verified at source yourself**, and which rest on a pass's
+  own evidence.
+- **What was vacuous rather than clean** — checks that passed only because the
+  code has no callers yet.
+- What was not examined at all.
+````
 
-That last section is not optional. A whole-repo review that does not state its
-own blind spots reads as exhaustive when it is not.
+The last section is not optional, and the vacuous line is the part reviewers
+skip. A whole-repo review that does not state its own blind spots reads as
+exhaustive when it is not — and "clean" claimed over unreachable code is the
+most misleading thing such a report can say.
