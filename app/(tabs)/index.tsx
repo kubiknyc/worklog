@@ -7,7 +7,7 @@
  * the local row first (PRD §11.7), so a same-day double-create can't happen.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +23,7 @@ import {
 import { useRepository } from '../../src/data';
 import { computeReportDate } from '../../src/data/reportDate';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
+import { useRefreshOnFocusAndSync } from '../../src/hooks/useRefreshOnFocusAndSync';
 import { useActiveProject } from '../../src/project';
 import { useTheme } from '../../src/theme';
 
@@ -51,13 +52,10 @@ export default function TodayScreen() {
   const { data, loading, error, reload } = useAsyncData(load, [activeProjectId]);
 
   // Returning from the report screen (status/edits may have changed)
-  // refreshes the report row. The sync status pill re-subscribes to
-  // statusHub on its own; it no longer needs a manual refresh() kick here.
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  // refreshes the report row, and a completed engine pull re-reads the repo —
+  // on a fresh install Today mounts before the first tier-1 pull lands, so
+  // without the pull half this screen shows "No project yet" forever (#25).
+  useRefreshOnFocusAndSync(reload);
 
   const startReport = useCallback(async () => {
     if (!data?.project || !data.reportDate || starting) return;
