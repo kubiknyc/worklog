@@ -423,9 +423,15 @@ describe('tier 1', () => {
     // MEMBERSHIP diff that reports a total wipe, which floor (b) refuses.
     const { client } = fakeClient({ tables: tier1Tables() });
 
-    await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
 
     expect(mockEvictProjects).not.toHaveBeenCalled();
+    // Refused LOUDLY — the premise is a suspected server-side membership
+    // regression, and the tier-1 replace already committed.
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBe('tier1 membership: refusing eviction — all memberships vanished');
+    // Tier 2 still runs: the members snapshot itself passed floor (a).
+    expect(metaValue(db, 'pull_rotation_v1')).toBeDefined();
   });
 
   it('evicts lost projects and fires ONE membership incident per project', async () => {
@@ -488,6 +494,60 @@ describe('eviction intent', () => {
     );
     expect(metaValue(db, 'pull_evict_pending')).toBeUndefined();
     expect(outcome.committed).toBe(true);
+  });
+
+  it('keeps the key when the DRAIN throws, and MERGES the fresh evicted set into it rather than overwriting', async () => {
+    mockApplyReferenceSnapshot.mockResolvedValue(
+      diff({ beforeProjectIds: ['p1', 'p2'], afterProjectIds: ['p1'] }),
+    );
+    const db = fakeDb({ sync_meta: [{ key: 'pull_evict_pending', value: '["p9"]' }] });
+    const written: unknown[] = [];
+    mockEvictProjects
+      .mockImplementationOnce(async () => {
+        throw new Error('drain boom');
+      })
+      .mockImplementationOnce(async () => {
+        written.push(metaValue(db, 'pull_evict_pending'));
+      });
+    const { client } = fakeClient({ tables: tier1Tables() });
+
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    // p9 survived the failed drain and rode along with the fresh p2 — no
+    // membership diff will ever rediscover p9, so overwriting would strand it.
+    expect(mockEvictProjects.mock.calls[1]![1]).toEqual(['p9', 'p2']);
+    expect(written[0]).toBe(JSON.stringify(['p9', 'p2']));
+    // One call covered EVERYTHING the key held, so the key is cleared.
+    expect(metaValue(db, 'pull_evict_pending')).toBeUndefined();
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toContain('drain boom');
+  });
+
+  it('keeps the key for the next run when the drain throws and no fresh eviction follows', async () => {
+    tier1(['p1']);
+    const db = fakeDb({ sync_meta: [{ key: 'pull_evict_pending', value: '["p9"]' }] });
+    mockEvictProjects.mockRejectedValue(new Error('drain boom'));
+    const { client } = fakeClient({ tables: tier1Tables() });
+
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    expect(metaValue(db, 'pull_evict_pending')).toBe('["p9"]');
+    expect(outcome.ok).toBe(false);
+  });
+
+  it('keeps the key when the NORMAL-path eviction throws after the intent was written', async () => {
+    mockApplyReferenceSnapshot.mockResolvedValue(
+      diff({ beforeProjectIds: ['p1', 'p2'], afterProjectIds: ['p1'] }),
+    );
+    const db = fakeDb();
+    mockEvictProjects.mockRejectedValue(new Error('evict boom'));
+    const { client } = fakeClient({ tables: tier1Tables() });
+
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    expect(metaValue(db, 'pull_evict_pending')).toBe(JSON.stringify(['p2']));
+    expect(outcome.ok).toBe(false);
+    expect(outcome.committed).toBe(false);
   });
 
   it('treats an unparseable pending key as absent and deletes it', async () => {

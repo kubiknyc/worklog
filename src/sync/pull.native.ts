@@ -271,6 +271,12 @@ export function createPuller(client: PullClient, db: Db): Puller {
       const meta = await readMeta(db);
 
       // --- 1. Drain a crashed run's eviction intent ------------------------
+      // Ids still persisted in EVICT_PENDING_KEY after this step. A FAILED
+      // drain leaves them there: those projects already left `project_members`
+      // in an earlier run, so no future membership diff will ever rediscover
+      // them — the key is their only record, and step 3 must MERGE into it
+      // rather than overwrite it.
+      let stillPending: readonly string[] = [];
       if (meta.evictPendingCorrupt) {
         await deleteMeta(db, EVICT_PENDING_KEY);
       } else if (meta.evictPending.length > 0) {
@@ -279,6 +285,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           await deleteMeta(db, EVICT_PENDING_KEY);
           committed = true;
         } catch (err) {
+          stillPending = meta.evictPending;
           failWith('evict drain', err);
         }
       }
@@ -348,13 +355,25 @@ export function createPuller(client: PullClient, db: Db): Puller {
 
       const evicted = diffMembership(membership.beforeProjectIds, membership.afterProjectIds);
       // Floor (b): a wholesale membership wipe is refused unless the device
-      // genuinely had no membership before.
+      // genuinely had no membership before. Refused LOUDLY, like floors (a)
+      // and (c): the floor's own premise is a SUSPECTED server-side membership
+      // regression, and the Tier-1 replace has already committed, so a silent
+      // `ok: true` would report a clean run over exactly the state that
+      // warrants attention. Tier 2 still proceeds — the members snapshot
+      // itself passed floor (a).
       const floorBPasses =
         membership.afterProjectIds.length > 0 || membership.beforeProjectIds.length === 0;
-      if (evicted.length > 0 && floorBPasses) {
+      if (evicted.length > 0 && !floorBPasses) {
+        refuse('tier1 membership: refusing eviction — all memberships vanished');
+      } else if (evicted.length > 0) {
+        // MERGE, never overwrite: an un-drained set from a failed step-1 drain
+        // would otherwise be clobbered and its half-evicted subtrees stranded
+        // permanently. The key is deleted only after ONE `evictProjects` call
+        // has covered everything the key holds.
+        const toEvict = [...new Set([...stillPending, ...evicted])];
         try {
-          await setMeta(db, EVICT_PENDING_KEY, JSON.stringify(evicted));
-          await evictProjects(db, evicted, onEvicted);
+          await setMeta(db, EVICT_PENDING_KEY, JSON.stringify(toEvict));
+          await evictProjects(db, toEvict, onEvicted);
           await deleteMeta(db, EVICT_PENDING_KEY);
           committed = true;
         } catch (err) {
