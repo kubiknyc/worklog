@@ -268,10 +268,22 @@ The invariants live in `worklog-reviewer`; what this pass adds is *completeness*
 - **Failure paths.** For each network call: timeout, 409, 403, 5xx, and offline
   mid-drain. Look for a path that drops a queued mutation on the floor, or
   advances a cursor before the write is durable.
-- **OTA shape compatibility.** Any SQLite schema or mutation-payload shape that
-  changed without a both-shapes read path is a device-bricking bug for a user
-  offline across the update. Compare `src/db/schema.ts` migrations against the
-  payload builders.
+- **OTA shape compatibility.** A device offline for days holds rows *and* queued
+  mutations written by code that no longer exists. Compatibility can come from
+  **either** a migration/backfill that converts the old data before anything
+  reads it, **or** a reader that handles both shapes — flag only when neither
+  exists. Check the ordering too: a migration that runs after the first dependent
+  read is not compatibility. On the validated run `MIGRATIONS[2]`
+  (`ADD COLUMN revision … DEFAULT 0`, applied in the same transaction as the
+  `PRAGMA user_version` stamp) *was* the both-shapes path, correctly — do not
+  report a properly-migrated change.
+
+  **Queued mutation payloads are the harder case.** A SQLite migration rewrites
+  table rows; it does not touch payloads already serialized into the queue unless
+  it explicitly rewrites them. So for a payload shape change, look for an explicit
+  queue rewrite in the migration *or* a push handler that reads both shapes.
+  Absent both, that is the device-bricking case — and per `CLAUDE.md` it ships as
+  a store build, never an OTA.
 - **Purity.** `src/sync/` and most of `src/db/` are IO-free by design
   (`statusHub.ts` is the one sanctioned stateful exception). Flag any import of
   a platform API into a pure module.
@@ -360,7 +372,16 @@ Coverage percentage is the input, not the finding.
 ## Known non-findings
 
 Do not report these. They are settled, and re-reporting them each run is how a
-review loses its audience:
+review loses its audience.
+
+**But they are adjudications, not permanent immunity.** Each was decided against
+the repo as it stood on the date given, and a dependency bump, a new caller, or a
+deleted test can invalidate the *basis* while the entry still says "don't
+report". Before suppressing one, re-check the specific claim it rests on — it is
+a grep or a single file read, not a re-investigation. If the basis no longer
+holds, it is a finding again, and the entry here needs updating. Entries with no
+stated basis (settled design decisions, deliberate repo conventions) need no
+re-check.
 
 - **Missing `CONTEXT.md` or `docs/adr/`.** `docs/agents/domain.md` says
   explicitly to proceed silently — they are created lazily by `/domain-modeling`.
@@ -452,9 +473,12 @@ You dispatched six agents; the merge is yours, and it is not clerical work.
   with what would cost the most to discover in production, and be willing to
   promote: a finding a pass called HIGH may be CRITICAL once you see it causes
   silent, unrecoverable data loss.
-- **Expect roughly this shape.** The validated run produced 38 raw findings → 35
-  after dedupe, across ~940k subagent tokens. A run returning three findings has
-  probably gone shallow; one returning eighty has stopped verifying.
+- **Judge the run by its evidence, not its count.** For scale context only: the
+  2026-07-30 run produced 38 raw findings → 35 after dedupe, across ~940k
+  subagent tokens. That is history, not a target. Three well-evidenced findings
+  on a clean repo is a good run; eighty is only a problem if they are unverified.
+  Never pad toward a number, and never trim to one — the quality bar is whether
+  each finding survived the evidence rules, which is the opposite of a quota.
 
 ## Output
 
@@ -501,9 +525,11 @@ Then one line on what the NOT RUN gates leave unverified (a missing
 ### MEDIUM     (gap that will cause a defect under a plausible change)
 ### LOW        (drift, dead code, doc divergence)
 
-For each: one-line summary · `file:line` · concrete failure scenario · why a
-per-diff review could not have caught it. Mark deduped findings with the passes
-that reported them.
+For each: one-line summary · `file:line` · concrete failure scenario · **what
+made this a whole-repo find** — either why a per-diff review structurally could
+not have caught it, or, when the defect *was* diff-visible, which guard should
+have caught it and didn't. That missing guard is itself a finding; file it too.
+Mark deduped findings with the passes that reported them.
 
 ## Test gaps
 Untested modules ranked by blast radius, with a suggested first test for the top few.
