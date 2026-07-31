@@ -527,6 +527,20 @@ describe('applyReports', () => {
     expect(result.applied).toBe(0);
   });
 
+  it('report row missing project_id (NOT NULL locally) is hardSkipped; sibling rows still commit', async () => {
+    const db = fakeReportDb();
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({ report: reportRow({ id: 'r-bad', project_id: null }) }),
+      reportBundle({ report: reportRow({ id: 'r-bad-2', report_date: undefined }) }),
+      reportBundle({ report: reportRow({ id: 'r-good' }) }),
+    ]);
+    expect(result.hardSkipped).toBe(2);
+    expect(result.applied).toBe(1);
+    expect(db.daily_reports.get('r-good')).toBeDefined();
+    expect(db.daily_reports.get('r-bad')).toBeUndefined();
+    expect(db.daily_reports.get('r-bad-2')).toBeUndefined();
+  });
+
   it('weather rides the same tx on clean weather (no local weather row)', async () => {
     const db = fakeReportDb();
     const result = await applyReports(db as unknown as Db, [
@@ -588,6 +602,96 @@ describe('applyReports', () => {
       weather_source: 'auto',
       auto_condition: 'sunny',
     });
+  });
+
+  it('report no-op (identical updated_at, clean) + clean CHANGED weather: weather still applies, bundle counted', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-01T10:00:00Z', _dirty: 0 }],
+      report_weather: [
+        {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'rain',
+          updated_at: '2026-07-01T09:00:00Z',
+          _dirty: 0,
+        },
+      ],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'draft' }), // identical updated_at ⇒ report is a no-op
+        weather: {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'sunny',
+          auto_temp_f: 72,
+          updated_at: '2026-07-01T11:00:00Z', // fresher weather, distinct from the report no-op
+        },
+      }),
+    ]);
+    expect(result.applied).toBe(1); // weather-only change still counts
+    expect(db.calls.some((c) => /^INSERT INTO daily_reports/i.test(c.sql))).toBe(false);
+    expect(db.calls.some((c) => /^UPDATE daily_reports SET status/i.test(c.sql))).toBe(false);
+    expect(db.report_weather.get('r1')).toMatchObject({
+      auto_condition: 'sunny',
+      auto_temp_f: 72,
+      updated_at: '2026-07-01T11:00:00Z',
+    });
+  });
+
+  it('report no-op + dirty weather: weather untouched, applied stays 0', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'draft', updated_at: '2026-07-01T10:00:00Z', _dirty: 0 }],
+      report_weather: [
+        { report_id: 'r1', weather_source: 'manual', override_condition: 'rain', _dirty: 1 },
+      ],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'draft' }),
+        weather: {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'sunny',
+          auto_temp_f: 72,
+        },
+      }),
+    ]);
+    expect(result.applied).toBe(0);
+    expect(db.report_weather.get('r1')).toMatchObject({
+      weather_source: 'manual',
+      override_condition: 'rain',
+      _dirty: 1,
+    });
+  });
+
+  it('identical clean weather re-delivery (same updated_at) is its own no-op — not counted in applied', async () => {
+    const db = fakeReportDb({
+      report_weather: [
+        {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'sunny',
+          auto_temp_f: 72,
+          updated_at: '2026-07-01T09:00:00Z',
+          _dirty: 0,
+        },
+      ],
+    });
+    const result = await applyReports(db as unknown as Db, [
+      reportBundle({
+        report: reportRow({ id: 'r1', status: 'submitted' }), // report itself still changes
+        weather: {
+          report_id: 'r1',
+          weather_source: 'auto',
+          auto_condition: 'sunny',
+          auto_temp_f: 72,
+          updated_at: '2026-07-01T09:00:00Z', // identical — weather write is a no-op
+        },
+      }),
+    ]);
+    expect(result.applied).toBe(1); // credited to the report insert, not double-counted for weather
+    expect(db.calls.filter((c) => /^INSERT INTO report_weather/i.test(c.sql))).toHaveLength(0);
   });
 });
 
@@ -695,6 +799,17 @@ describe('applySections', () => {
     expect(result.hardSkipped).toBe(1);
   });
 
+  it('non-string section report_id is hardSkipped; sibling row still commits', async () => {
+    const db = fakeReportDb();
+    const result = await applySections(db as unknown as Db, [
+      sectionRow({ report_id: 12345 }),
+      sectionRow({ report_id: 'r-good' }),
+    ]);
+    expect(result.hardSkipped).toBe(1);
+    expect(result.applied).toBe(1);
+    expect(db.report_sections.get('r-good:general_notes')).toBeDefined();
+  });
+
   it('unparseable payload is hardSkipped; other rows still commit', async () => {
     const db = fakeReportDb();
     const result = await applySections(db as unknown as Db, [
@@ -704,5 +819,14 @@ describe('applySections', () => {
     expect(result.hardSkipped).toBe(1);
     expect(result.applied).toBe(1);
     expect(db.report_sections.get('r2:general_notes')).toBeDefined();
+  });
+
+  it('updated_by round-trips through applySections into the written row', async () => {
+    const db = fakeReportDb();
+    const result = await applySections(db as unknown as Db, [
+      sectionRow({ updated_by: 'user-42' }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(db.report_sections.get('r1:general_notes')).toMatchObject({ updated_by: 'user-42' });
   });
 });

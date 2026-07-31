@@ -169,6 +169,7 @@ export interface PulledSection {
   readonly is_complete: unknown;
   /** Non-string ⇒ hardSkipped (same malformed-row rule as reports/photos). */
   readonly updated_at: unknown;
+  readonly updated_by?: unknown;
 }
 
 /** Coerces a raw `daily_reports` pull row onto `DOMAIN_COLUMNS.daily_reports`. */
@@ -220,27 +221,37 @@ interface LocalReportRow {
 }
 
 /**
- * Weather ride-along, run INSIDE the caller's report transaction. Gated by
- * the WEATHER row's OWN `_dirty` (gate 1, independent of the parent report's
+ * Weather ride-along, run INSIDE the caller's report transaction — for EVERY
+ * non-hardSkipped bundle carrying `weather !== null`, independent of whether
+ * the parent report row itself was a no-op: a re-delivered report with an
+ * unchanged `updated_at` can still carry freshly-changed weather (e.g. during
+ * a frozen-cursor re-delivery), and it must still apply. Gated ONLY by the
+ * WEATHER row's own `_dirty` (gate 1, independent of the parent report's
  * dirty state): clean (or no local row) → upsert server verbatim over
- * `DOMAIN_COLUMNS.report_weather`, `_dirty` untouched; dirty → untouched
- * while the parent report still applies. Caller only invokes this when
- * `bundle.weather !== null` — no server row fetched is NOT deletion
- * authority (weather has no deletion path anywhere in this plan).
+ * `DOMAIN_COLUMNS.report_weather`, `_dirty` untouched; dirty → untouched.
+ * Caller only invokes this when `bundle.weather !== null` — no server row
+ * fetched is NOT deletion authority (weather has no deletion path anywhere in
+ * this plan). A clean row with an identical `updated_at` is its own no-op
+ * (mirrors the reports/sections no-op rule) so an identical re-delivery
+ * doesn't count as a write. Returns whether it actually wrote, so the caller
+ * can fold it into `applied`.
  */
 async function applyWeatherRideAlong(
   db: Db,
   reportId: string,
   rawWeather: Record<string, unknown>,
-): Promise<void> {
-  const localWeather = await first<{ _dirty: number }>(
+): Promise<boolean> {
+  const localWeather = await first<{ updated_at: string | null; _dirty: number }>(
     db,
-    `SELECT _dirty FROM report_weather WHERE report_id = ?`,
+    `SELECT updated_at, _dirty FROM report_weather WHERE report_id = ?`,
     [reportId],
   );
-  if (localWeather !== null && localWeather._dirty === 1) return;
+  if (localWeather !== null && localWeather._dirty === 1) return false;
 
   const weather = coerceWeatherRow(rawWeather, reportId);
+  const updatedAt = weather.updated_at as string | null;
+  if (localWeather !== null && localWeather.updated_at === updatedAt) return false;
+
   const cols = DOMAIN_COLUMNS.report_weather;
   const values = cols.map((c) => weather[c] ?? null) as BindValue[];
   const placeholders = cols.map(() => '?').join(', ');
@@ -255,22 +266,29 @@ async function applyWeatherRideAlong(
      ON CONFLICT (report_id) DO UPDATE SET ${updateSet}`,
     values,
   );
+  return true;
 }
 
 /**
  * Reports pull applier (06-sync-mappings.md §B, invariant 8 — the DIRTY
  * SHIELD): per bundle, coerce the raw record via `DOMAIN_COLUMNS.daily_reports`
- * (a row missing a string `id`, `status`, or `updated_at` ⇒ hardSkipped); read
- * the local row's `status`/`updated_at`/`_dirty`; FIRST the no-op rule (see
+ * (a row missing a string `id`, `status`, `updated_at`, `project_id`, or
+ * `report_date` ⇒ hardSkipped — the last two are NOT NULL locally
+ * (schema.ts), so an unvalidated row would otherwise abort the whole batch on
+ * INSERT instead of hard-skipping just itself); read the local row's
+ * `status`/`updated_at`/`_dirty`; FIRST the no-op rule (see
  * `ApplyResult.applied`): a clean local row with an identical `updated_at`
- * skips entirely (cursorKeys credited, `applied` unchanged). Else
- * `resolveReport(local, server, dirty)`: clean → server verbatim (`_dirty =
- * 0`), upsert, counts in `applied`; dirty → the ONLY possible change is
- * `status`, so write (and count in `applied`) ONLY when `server.status !==
+ * makes the REPORT half of this bundle a no-op (cursorKeys credited,
+ * `applied` unchanged for the report). Else `resolveReport(local, server,
+ * dirty)`: clean → server verbatim (`_dirty = 0`), upsert; dirty → the ONLY
+ * possible change is `status`, so write ONLY when `server.status !==
  * local.status` — same status means nothing changes, and a frozen-cursor
  * re-delivery of dirty rows must not keep bumping `applied` (the timestamp is
  * still credited to `cursorKeys` either way — shield-pass). Weather rides the
- * same tx (see `applyWeatherRideAlong`) whenever the row isn't a no-op.
+ * same tx (see `applyWeatherRideAlong`) for EVERY non-hardSkipped bundle
+ * carrying `weather !== null`, independent of the report no-op verdict — a
+ * frozen-cursor re-delivery can still carry freshly-changed weather. The
+ * bundle counts once in `applied` iff the report wrote OR the weather wrote.
  *
  * One tx per CALL, not per row (matches `applyReferenceSnapshot`'s pattern).
  */
@@ -288,7 +306,15 @@ export async function applyReports(
       const id = server.id as string | null;
       const status = server.status as string | null;
       const updatedAt = server.updated_at as string | null;
-      if (id === null || status === null || updatedAt === null) {
+      const projectId = server.project_id as string | null;
+      const reportDate = server.report_date as string | null;
+      if (
+        id === null ||
+        status === null ||
+        updatedAt === null ||
+        projectId === null ||
+        reportDate === null
+      ) {
         hardSkipped++;
         continue;
       }
@@ -299,44 +325,49 @@ export async function applyReports(
         [id],
       );
       const localDirty = local !== null && local._dirty === 1;
+      const reportNoOp = local !== null && !localDirty && local.updated_at === updatedAt;
 
-      if (local !== null && !localDirty && local.updated_at === updatedAt) {
-        cursorKeys.push(updatedAt);
-        continue;
-      }
+      let reportApplied = false;
 
-      const resolved = resolveReport<ReportLike>(
-        local === null ? null : { status: local.status },
-        { status },
-        localDirty,
-      );
-
-      if (resolved.dirty === 0) {
-        const cols = DOMAIN_COLUMNS.daily_reports;
-        const values = cols.map((c) => server[c] ?? null) as BindValue[];
-        const placeholders = cols.map(() => '?').join(', ');
-        const updateSet = cols
-          .filter((c) => c !== 'id')
-          .map((c) => `${c} = excluded.${c}`)
-          .join(', ');
-        await run(
-          db,
-          `INSERT INTO daily_reports (${cols.join(', ')}, _dirty)
-           VALUES (${placeholders}, 0)
-           ON CONFLICT (id) DO UPDATE SET ${updateSet}, _dirty = 0`,
-          values,
+      if (!reportNoOp) {
+        const resolved = resolveReport<ReportLike>(
+          local === null ? null : { status: local.status },
+          { status },
+          localDirty,
         );
-        applied++;
-      } else if (local !== null && local.status !== status) {
-        await run(db, `UPDATE daily_reports SET status = ? WHERE id = ?`, [status, id]);
-        applied++;
+
+        if (resolved.dirty === 0) {
+          const cols = DOMAIN_COLUMNS.daily_reports;
+          const values = cols.map((c) => server[c] ?? null) as BindValue[];
+          const placeholders = cols.map(() => '?').join(', ');
+          const updateSet = cols
+            .filter((c) => c !== 'id')
+            .map((c) => `${c} = excluded.${c}`)
+            .join(', ');
+          await run(
+            db,
+            `INSERT INTO daily_reports (${cols.join(', ')}, _dirty)
+             VALUES (${placeholders}, 0)
+             ON CONFLICT (id) DO UPDATE SET ${updateSet}, _dirty = 0`,
+            values,
+          );
+          reportApplied = true;
+        } else if (local !== null && local.status !== status) {
+          await run(db, `UPDATE daily_reports SET status = ? WHERE id = ?`, [status, id]);
+          reportApplied = true;
+        }
       }
 
       cursorKeys.push(updatedAt);
 
+      // Weather rides along for EVERY non-hardSkipped bundle with weather,
+      // independent of whether the report itself was a no-op (Finding 3).
+      let weatherApplied = false;
       if (bundle.weather !== null) {
-        await applyWeatherRideAlong(db, id, bundle.weather);
+        weatherApplied = await applyWeatherRideAlong(db, id, bundle.weather);
       }
+
+      if (reportApplied || weatherApplied) applied++;
     }
   });
 
@@ -368,7 +399,10 @@ function tryParsePayload(
 
 /**
  * Sections pull applier: per row, `parseSectionKind(row.section)` — null ⇒
- * hardSkipped; non-string `updated_at` ⇒ hardSkipped; unparseable payload ⇒
+ * hardSkipped; non-string `report_id` ⇒ hardSkipped (it arrives as `unknown`
+ * off server JSON despite the `PulledSection` type saying `string` — a
+ * malformed value here must not reach the `(report_id, section)` composite
+ * key); non-string `updated_at` ⇒ hardSkipped; unparseable payload ⇒
  * hardSkipped. Then the no-op rule FIRST (clean `(report_id, section)` row,
  * identical `updated_at` → skip, cursorKeys credited, `applied` unchanged);
  * else the section's OWN `_dirty` (gate 2 — children are shielded by the
@@ -388,6 +422,10 @@ export async function applySections(db: Db, rows: readonly PulledSection[]): Pro
     for (const row of rows) {
       const kind = parseSectionKind(row.section);
       if (kind === null) {
+        hardSkipped++;
+        continue;
+      }
+      if (typeof row.report_id !== 'string') {
         hardSkipped++;
         continue;
       }
@@ -420,7 +458,7 @@ export async function applySections(db: Db, rows: readonly PulledSection[]): Pro
         continue;
       }
 
-      const updatedBy = str((row as unknown as Record<string, unknown>).updated_by ?? null);
+      const updatedBy = str(row.updated_by);
       await run(
         db,
         `INSERT INTO report_sections (report_id, section, payload, is_complete, updated_at, updated_by, _dirty)
