@@ -30,10 +30,13 @@ defects that only exist in the aggregate:
 - documentation that describes code that no longer exists
 - an invariant honored in 9 places and violated in the 10th
 
-Every finding you report must be one a reviewer looking at a single commit
-**could not** have found. If a finding would have been caught by
-`worklog-reviewer` on the commit that introduced it, it still counts — but say
-so, because that means a guard is missing.
+The bar is **whole-repo value**, not literal invisibility to a diff reviewer.
+Most findings will be ones a single-commit reviewer structurally could not have
+found. Some will be defects that *were* visible in one commit and shipped
+anyway — those still count, and the guard that should have stopped them is a
+second finding worth filing alongside. What does not belong here is a defect an
+ordinary diff review would routinely catch and that no guard was ever meant to
+prevent: that is `worklog-reviewer`'s job, on the next PR.
 
 ## Step 0 — facts before opinions
 
@@ -43,7 +46,7 @@ while the actual checks are unrun is guessing.
 ```bash
 # Test for entries, not for the directory: a fresh container has an empty
 # node_modules/, where plain `ls node_modules` still exits 0.
-[ -n "$(ls -A node_modules 2>/dev/null)" ] || echo "DEPS ABSENT — gates cannot run"
+[ -n "$(ls -A node_modules 2>/dev/null)" ] || echo "DEPS ABSENT — run npm ci first"
 
 npm run verify; echo "verify=$?"   # typecheck + format:check + lint + test
 
