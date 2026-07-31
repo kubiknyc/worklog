@@ -9,7 +9,11 @@ import { AppState } from 'react-native';
 
 import { createSyncEngine } from './engine.native';
 import { createEngineCore } from './engineCore';
-import type { EngineCore } from './engineCore';
+import type { EngineCore, EngineDeps } from './engineCore';
+import { createPuller } from './pull.native';
+import { first, run as runSql } from '../db/rows.native';
+import { newMutation } from './mutationQueue';
+import type { Mutation, MutationPayload } from './types';
 import type { SyncState } from './engineApi';
 import type { Db } from '../db/rows.native';
 
@@ -32,6 +36,15 @@ jest.mock('./push.native', () => ({
   createPusher: jest.fn(() => jest.fn()),
 }));
 
+jest.mock('./pull.native', () => ({
+  createPuller: jest.fn(() => jest.fn()),
+}));
+
+jest.mock('../db/rows.native', () => ({
+  first: jest.fn(),
+  run: jest.fn(),
+}));
+
 jest.mock('./engineCore', () => ({
   createEngineCore: jest.fn(),
 }));
@@ -41,6 +54,16 @@ jest.mock('../lib/observability.native', () => ({
 }));
 
 const mockCreateEngineCore = createEngineCore as jest.MockedFunction<typeof createEngineCore>;
+const mockCreatePuller = createPuller as jest.MockedFunction<typeof createPuller>;
+const mockFirst = first as jest.MockedFunction<typeof first>;
+const mockRun = runSql as jest.MockedFunction<typeof runSql>;
+
+/** The deps object the shell handed to `createEngineCore` on the last build. */
+function lastCoreDeps(): EngineDeps {
+  const call = mockCreateEngineCore.mock.calls.at(-1);
+  if (!call) throw new Error('createEngineCore was never called');
+  return call[0];
+}
 
 /**
  * Not imported by name (`@react-native-community/netinfo`) anywhere in this
@@ -121,6 +144,42 @@ function setupHarness(initialState: SyncState = IDLE): Harness {
 }
 
 const FAKE_DB = {} as Db;
+const SESSION_USER_ID = 'user-1';
+
+function sectionPayload(reportId: string): MutationPayload {
+  return {
+    kind: 'update_section',
+    data: { reportId, section: 'crew', content: {}, isComplete: false },
+  };
+}
+
+function photoPayload(reportId: string, projectId: string): MutationPayload {
+  return {
+    kind: 'add_photo',
+    data: {
+      photoId: 'ph1',
+      reportId,
+      projectId,
+      storagePath: `${projectId}/${reportId}/ph1.jpg`,
+      localUri: 'file://x',
+      width: 10,
+      height: 10,
+      capturedAt: null,
+      exifDateTimeOriginal: null,
+      gpsLat: null,
+      gpsLng: null,
+      gpsAccuracy: null,
+      source: 'camera',
+      tradeTag: null,
+      locationTag: null,
+      caption: null,
+    },
+  };
+}
+
+function mutationOf(payload: MutationPayload): Mutation {
+  return newMutation('c1', payload, '2026-07-30T00:00:00Z');
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -134,7 +193,7 @@ afterEach(() => {
 describe('createSyncEngine — start()', () => {
   test('subscribes to NetInfo + AppState and kicks exactly one run (no NetInfo-initial double-run)', async () => {
     const h = setupHarness();
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -145,7 +204,7 @@ describe('createSyncEngine — start()', () => {
 
   test('offline→online NetInfo edge triggers a run', async () => {
     const h = setupHarness();
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -160,7 +219,7 @@ describe('createSyncEngine — start()', () => {
 
   test('AppState active triggers a run', async () => {
     const h = setupHarness();
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -177,7 +236,7 @@ describe('createSyncEngine — backoff ladder', () => {
   test('a failing cycle (arm 1: server error while online) schedules exactly one timer at 30s, then 2m, then 10m', async () => {
     const h = setupHarness();
     h.core.getState.mockReturnValue(makeState({ pending: 1, lastError: 'boom', online: true }));
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -206,7 +265,7 @@ describe('createSyncEngine — backoff ladder', () => {
   test('arm 2: offline with NetInfo still reporting connected (captive portal) schedules a timer', async () => {
     const h = setupHarness();
     h.core.getState.mockReturnValue(makeState({ pending: 1, lastError: null, online: false }));
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start(); // NetInfo fires isConnected: true on subscribe
     await Promise.resolve();
@@ -216,7 +275,7 @@ describe('createSyncEngine — backoff ladder', () => {
 
   test('a clean cycle resets the ladder and schedules no timer', async () => {
     setupHarness();
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -227,7 +286,7 @@ describe('createSyncEngine — backoff ladder', () => {
   test('an earlier trigger (foreground) supersedes a pending backoff timer', async () => {
     const h = setupHarness();
     h.core.getState.mockReturnValue(makeState({ pending: 1, lastError: 'boom', online: true }));
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -246,7 +305,7 @@ describe('createSyncEngine — stop()', () => {
   test('clears NetInfo/AppState subscriptions and any pending timer', async () => {
     const h = setupHarness();
     h.core.getState.mockReturnValue(makeState({ pending: 1, lastError: 'boom', online: true }));
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start();
     await Promise.resolve();
@@ -269,7 +328,7 @@ describe('createSyncEngine — stop()', () => {
           resolveRun = resolve;
         }),
     );
-    const engine = createSyncEngine(FAKE_DB);
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
 
     engine.start(); // kicks a run that never resolves until we say so
     await Promise.resolve();
@@ -280,5 +339,138 @@ describe('createSyncEngine — stop()', () => {
     await Promise.resolve();
 
     expect(jest.getTimerCount()).toBe(0); // no zombie backoff timer re-armed
+  });
+});
+
+describe('createSyncEngine — pull wiring', () => {
+  test('builds a puller over the shared client + db and hands it to the core with the session user', () => {
+    setupHarness();
+    const puller = jest.fn();
+    mockCreatePuller.mockReturnValue(puller);
+
+    createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    expect(mockCreatePuller).toHaveBeenCalledTimes(1);
+    expect(mockCreatePuller.mock.calls[0]![1]).toBe(FAKE_DB);
+    expect(lastCoreDeps().pull).toBe(puller);
+    expect(lastCoreDeps().sessionUserId).toBe(SESSION_USER_ID);
+  });
+
+  test('a null sessionUserId still builds a working push-only engine (pull left unarmed)', async () => {
+    const h = setupHarness();
+
+    const engine = createSyncEngine(FAKE_DB, null);
+    engine.start();
+    await Promise.resolve();
+
+    expect(lastCoreDeps().sessionUserId).toBeNull();
+    expect(h.core.run).toHaveBeenCalledTimes(1); // pushes still drain
+  });
+});
+
+describe('createSyncEngine — 403-evict sweep-due flag', () => {
+  test('an evicted incident whose payload carries no projectId resolves it via daily_reports and writes the flag', async () => {
+    setupHarness();
+    mockFirst.mockResolvedValue({ project_id: 'proj-9' });
+    createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    lastCoreDeps().onIncident('evicted', mutationOf(sectionPayload('r1')), { status: 403 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockFirst).toHaveBeenCalledWith(FAKE_DB, expect.stringContaining('daily_reports'), [
+      'r1',
+    ]);
+    expect(mockRun).toHaveBeenCalledWith(
+      FAKE_DB,
+      expect.stringContaining('sync_meta'),
+      expect.arrayContaining(['pull_sweep_due:proj-9']),
+    );
+  });
+
+  test('a payload carrying projectId writes the flag without touching daily_reports', async () => {
+    setupHarness();
+    createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    lastCoreDeps().onIncident('evicted', mutationOf(photoPayload('r1', 'proj-2')), {
+      status: 403,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockFirst).not.toHaveBeenCalled();
+    expect(mockRun).toHaveBeenCalledWith(
+      FAKE_DB,
+      expect.any(String),
+      expect.arrayContaining(['pull_sweep_due:proj-2']),
+    );
+  });
+
+  test('a missing local report row writes nothing and never throws', async () => {
+    setupHarness();
+    mockFirst.mockResolvedValue(undefined);
+    createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    lastCoreDeps().onIncident('evicted', mutationOf(sectionPayload('gone')), { status: 403 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  test('a throwing lookup is swallowed (fire-and-forget, no unhandled rejection)', async () => {
+    setupHarness();
+    mockFirst.mockRejectedValue(new Error('db closed'));
+    createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    expect(() =>
+      lastCoreDeps().onIncident('evicted', mutationOf(sectionPayload('r1')), { status: 403 }),
+    ).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  test('a "parked" incident is reported but arms no sweep flag', async () => {
+    setupHarness();
+    createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    lastCoreDeps().onIncident('parked', mutationOf(photoPayload('r1', 'proj-2')), {
+      status: 500,
+    });
+    await Promise.resolve();
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('createSyncEngine — backoff arm 2 with an empty queue', () => {
+  test('an offline-classified pull failure (online:false, pending:0) still arms the ladder while NetInfo reports connected', async () => {
+    const h = setupHarness();
+    h.core.getState.mockReturnValue(makeState({ pending: 0, lastError: null, online: false }));
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    engine.start(); // NetInfo fires isConnected: true on subscribe
+    await Promise.resolve();
+
+    expect(jest.getTimerCount()).toBe(1);
+  });
+
+  test('no timer when NetInfo itself reports disconnected (deliberate radio quiet)', async () => {
+    const h = setupHarness();
+    h.core.getState.mockReturnValue(makeState({ pending: 0, lastError: null, online: false }));
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    engine.start();
+    await Promise.resolve();
+    h.netInfoListener({ isConnected: false });
+    jest.advanceTimersByTime(30_000);
+    await Promise.resolve();
+
+    // The NetInfo-disconnected edge fires no trigger; the run that resolves
+    // after it re-evaluates the arms and finds neither holds.
+    await Promise.resolve();
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

@@ -6,7 +6,13 @@
 import { supabaseRepository } from './supabaseRepo';
 import type { PlatformRepoBundle } from './types';
 
-export async function createPlatformRepository(): Promise<PlatformRepoBundle> {
+/**
+ * `_sessionUserId` is ignored here — it only arms the native engine's pull
+ * phase. The param exists so both platform files stay call-compatible.
+ */
+export async function createPlatformRepository(
+  _sessionUserId: string | null,
+): Promise<PlatformRepoBundle> {
   // No queue on web (writes are synchronous RPCs) — no engine to attach.
   return { repo: supabaseRepository, engine: null };
 }

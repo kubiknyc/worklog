@@ -12,8 +12,11 @@ export interface SyncState {
   readonly parked: number;
   readonly lastError: string | null;
   /**
-   * Bumped after every successful pull. Screens subscribe to this to refetch
-   * when a background sync lands new server data (see useRefreshOnFocusAndSync).
+   * Bumped after every pull that landed local changes (NOT every pull that
+   * succeeded — several `ok: false` pull states are persistent by design, and
+   * gating on `ok` would freeze refetch app-wide). Screens subscribe to this to
+   * refetch when a background sync lands new server data (see
+   * useRefreshOnFocusAndSync). Monotone across every publish, like `reparents`.
    */
   readonly completedPulls: number;
   /**

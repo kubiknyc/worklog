@@ -19,12 +19,15 @@
  *      failure while NetInfo believes we're connected. No NetInfo edge will
  *      ever fire for this (we never went offline), so this arm is the only
  *      thing that retries a stuck queue.
- *   2. `pending > 0 && !state.online && netInfoSaysConnected` — a transport
- *      failure the ENGINE detected (captive portal / dead DNS: the cycle
- *      published `online: false` because a push attempt actually failed at
- *      the network level) while NetInfo still reports the interface as
- *      connected. No NetInfo edge fires here either, by construction — NetInfo
- *      never left the connected state.
+ *   2. `!state.online && netInfoSaysConnected` — a transport failure the ENGINE
+ *      detected (captive portal / dead DNS: the cycle published
+ *      `online: false` because a push attempt, or the pull phase, actually
+ *      failed at the network level) while NetInfo still reports the interface
+ *      as connected. No NetInfo edge fires here either, by construction —
+ *      NetInfo never left the connected state. Deliberately NOT gated on
+ *      `pending > 0`: an offline-classified pull failure ends the cycle
+ *      `online: false` with an empty queue, and without this arm nothing would
+ *      retry it until the next enqueue or NetInfo flap.
  *
  * A clean cycle (neither arm holds) resets the ladder to its first rung. Any
  * earlier trigger — a NetInfo reconnect edge, an AppState foreground, the
@@ -36,11 +39,13 @@ import type { NetInfoState } from '@react-native-community/netinfo';
 import { AppState } from 'react-native';
 import type { AppStateStatus } from 'react-native';
 
-import type { Db } from '../db/rows.native';
+import { first, run as runSql, type Db } from '../db/rows.native';
 import { reportSyncIncident } from '../lib/observability.native';
 import { supabase } from '../supabase/client';
 import { createEngineCore } from './engineCore';
 import type { SyncEngineApi } from './engineApi';
+import { createPuller } from './pull.native';
+import type { PullClient } from './pull.native';
 import { createPusher } from './push.native';
 import { clearDirty, createMutationStore, deleteLocalReport } from './store.native';
 import type { Mutation } from './types';
@@ -67,15 +72,10 @@ function errorDetailOf(error: unknown): ErrorDetail {
   };
 }
 
-function onIncident(kind: 'parked' | 'evicted', m: Mutation, error: unknown): void {
-  reportSyncIncident(kind, {
-    kind: m.payload.kind,
-    attempts: m.attempts,
-    ...errorDetailOf(error),
-  });
-}
+/** `sync_meta` key prefix the puller reads to decide a per-project id sweep is due. */
+const SWEEP_DUE_PREFIX = 'pull_sweep_due:';
 
-export function createSyncEngine(db: Db): SyncEngineApi {
+export function createSyncEngine(db: Db, sessionUserId: string | null): SyncEngineApi {
   const store = createMutationStore(db);
   // The single documented cast site: `supabase.rpc`'s builders are
   // PromiseLike (not Promise) and its generated overloads key off literal
@@ -87,10 +87,66 @@ export function createSyncEngine(db: Db): SyncEngineApi {
   // the same cast covers that mismatch too; the payload's `null` still passes
   // through to Postgres unmodified.
   const push = createPusher(async (fn, args) => await supabase.rpc(fn as never, args as never), db);
+  // Sibling of the cast above, same reason: `PullClient` is the structural
+  // slice of the PostgREST builder surface the puller uses (see
+  // `pull.native.ts`), and supabase-js satisfies it structurally but not
+  // nominally — its generated `from()` overloads key off literal table-name
+  // strings the puller's runtime-chosen table names can't satisfy.
+  const pull = createPuller(supabase as unknown as PullClient, db);
+
+  /**
+   * A 403 eviction means the server refused a write we believed we owned — our
+   * local view of that project is stale, so flag it for a full id sweep on the
+   * next pull. Fire-and-forget: an incident report must never block or fail the
+   * drain.
+   *
+   * NOTE: `engineCore.discardParked`'s create_report cascade-failure path also
+   * fires `onIncident('evicted', …)` with a real Mutation, so it arms a
+   * sweep-due flag too. That is harmless by design — the sweep is exactly what
+   * reconciles the half-discarded local subtree it leaves behind.
+   */
+  async function armSweepDue(m: Mutation): Promise<void> {
+    try {
+      const { data } = m.payload;
+      // Only create_report/add_photo carry projectId; every other kind is
+      // resolved through its report (which may already be gone locally).
+      const projectId =
+        'projectId' in data
+          ? data.projectId
+          : ((
+              await first<{ project_id: string }>(
+                db,
+                `SELECT project_id FROM daily_reports WHERE id = ?`,
+                [data.reportId],
+              )
+            )?.project_id ?? null);
+      if (projectId === null) return;
+      await runSql(
+        db,
+        `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+           ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        [`${SWEEP_DUE_PREFIX}${projectId}`, new Date().toISOString()],
+      );
+    } catch {
+      // Best-effort: a missed flag costs staleness until the project's next
+      // scheduled sweep, never correctness.
+    }
+  }
+
+  function onIncident(kind: 'parked' | 'evicted', m: Mutation, error: unknown): void {
+    reportSyncIncident(kind, {
+      kind: m.payload.kind,
+      attempts: m.attempts,
+      ...errorDetailOf(error),
+    });
+    if (kind === 'evicted') void armSweepDue(m);
+  }
 
   const core = createEngineCore({
     store,
     push,
+    pull,
+    sessionUserId,
     clearDirty: (target) => clearDirty(db, target),
     onIncident,
     isOnline: () => netInfoConnected,
@@ -130,7 +186,11 @@ export function createSyncEngine(db: Db): SyncEngineApi {
     clearBackoffTimer();
     const state = core.getState();
     const serverFailureWhileOnline = state.pending > 0 && state.lastError !== null && state.online;
-    const transportFailureBehindNetInfo = state.pending > 0 && !state.online && netInfoConnected;
+    // No `pending > 0` conjunct: an offline-classified PULL failure ends the
+    // cycle `online: false` with an EMPTY queue, and nothing else would ever
+    // retry it (no enqueue coming, no NetInfo edge — NetInfo never left
+    // connected).
+    const transportFailureBehindNetInfo = !state.online && netInfoConnected;
 
     if (!serverFailureWhileOnline && !transportFailureBehindNetInfo) {
       consecutiveNonCleanCycles = 0;

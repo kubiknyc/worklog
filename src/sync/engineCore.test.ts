@@ -2,6 +2,7 @@ import type { SyncState } from './engineApi';
 import { createEngineCore } from './engineCore';
 import type { EngineDeps } from './engineCore';
 import { newMutation, RETRY_CEILING, rowTargetOf } from './mutationQueue';
+import type { PullOutcome } from './pullCore';
 import type { PushOutcome, RowTarget } from './mutationQueue';
 import type { Mutation, MutationPayload, MutationStore } from './types';
 
@@ -123,7 +124,13 @@ interface Harness {
   readonly core: ReturnType<typeof createEngineCore>;
 }
 
-function harness(rows: readonly Mutation[], pushImpl: EngineDeps['push']): Harness {
+type PullDeps = Pick<EngineDeps, 'pull' | 'sessionUserId'>;
+
+function harness(
+  rows: readonly Mutation[],
+  pushImpl: EngineDeps['push'],
+  pullDeps: Partial<PullDeps> = {},
+): Harness {
   const store = new FakeStore(rows);
   const clearDirty = jest.fn(async (_target: RowTarget) => {});
   const onIncident = jest.fn();
@@ -137,6 +144,7 @@ function harness(rows: readonly Mutation[], pushImpl: EngineDeps['push']): Harne
     onIncident,
     isOnline,
     deleteLocalReport,
+    ...pullDeps,
   });
   return { store, clearDirty, onIncident, deleteLocalReport, isOnline, push, core };
 }
@@ -755,5 +763,233 @@ describe('createEngineCore: retryParked', () => {
 
     await expect(core.retryParked()).resolves.toBeUndefined();
     expect(push).toHaveBeenCalledTimes(1); // run() still executed and drained the pending row
+  });
+});
+
+describe('createEngineCore: pull phase', () => {
+  const SESSION = 'user-1';
+
+  function outcome(o: Partial<PullOutcome> = {}): PullOutcome {
+    return { ok: true, committed: false, offline: false, error: null, ...o };
+  }
+
+  it('runs the pull once after a settled drain, with the session user', async () => {
+    const pull = jest.fn(async () => outcome());
+    const m1 = mutation(sectionPayload('r1'));
+    const { core } = harness([m1], async () => ({ ok: true }), {
+      pull,
+      sessionUserId: SESSION,
+    });
+
+    await core.run();
+
+    expect(pull).toHaveBeenCalledTimes(1);
+    expect(pull).toHaveBeenCalledWith({ sessionUserId: SESSION });
+  });
+
+  it('skips the pull when the drain stopped offline mid-queue (online:false AND pending>0)', async () => {
+    const pull = jest.fn(async () => outcome());
+    const publishes: SyncState[] = [];
+    const m1 = mutation(sectionPayload('r1'));
+    const m2 = mutation(sectionPayload('r2'));
+    const offlineErr = { name: 'TypeError', message: 'Network request failed' };
+    const { core } = harness([m1, m2], async () => ({ ok: false, error: offlineErr }), {
+      pull,
+      sessionUserId: SESSION,
+    });
+    core.subscribe((s) => publishes.push(s));
+
+    await core.run();
+
+    expect(pull).not.toHaveBeenCalled();
+    expect(core.getState()).toMatchObject({ online: false, pending: 2 });
+    expect(publishes).toHaveLength(2); // a skipped pull publishes nothing at all
+  });
+
+  it('skips the pull when no pull dep is wired', async () => {
+    const publishes: SyncState[] = [];
+    const { core } = harness([], async () => ({ ok: true }), { sessionUserId: SESSION });
+    core.subscribe((s) => publishes.push(s));
+
+    await core.run();
+
+    expect(publishes).toHaveLength(2);
+  });
+
+  it('skips the pull when sessionUserId is null (unarmed until a session exists)', async () => {
+    const pull = jest.fn(async () => outcome());
+    const { core } = harness([], async () => ({ ok: true }), { pull, sessionUserId: null });
+
+    await core.run();
+
+    expect(pull).not.toHaveBeenCalled();
+  });
+
+  it('still pulls when the cycle ends online:false with an EMPTY queue (NetInfo pessimism is not a starve)', async () => {
+    const pull = jest.fn(async () => outcome());
+    const { core, isOnline } = harness([], async () => ({ ok: true }), {
+      pull,
+      sessionUserId: SESSION,
+    });
+    isOnline.mockReturnValue(false);
+
+    await core.run();
+
+    expect(pull).toHaveBeenCalledTimes(1);
+  });
+
+  it('an ok pull republishes online:true, overriding NetInfo pessimism', async () => {
+    const pull = jest.fn(async () => outcome({ ok: true }));
+    const { core, isOnline } = harness([], async () => ({ ok: true }), {
+      pull,
+      sessionUserId: SESSION,
+    });
+    isOnline.mockReturnValue(false);
+
+    await core.run();
+
+    expect(core.getState()).toMatchObject({ online: true, syncing: false });
+  });
+
+  it('an enqueue DURING the pull re-drains and then re-pulls', async () => {
+    const store = new FakeStore([]);
+    const push = jest.fn(async (_m: Mutation) => ({ ok: true }) as PushOutcome);
+    let core!: ReturnType<typeof createEngineCore>;
+    const late = mutation(sectionPayload('r-late'));
+    const pull = jest.fn(async () => {
+      if (pull.mock.calls.length === 1) {
+        await store.enqueue(late);
+        void core.run(); // marks the in-flight cycle dirty
+      }
+      return outcome();
+    });
+    core = createEngineCore({
+      store,
+      push,
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+      pull,
+      sessionUserId: SESSION,
+    });
+
+    await core.run();
+
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push.mock.calls[0]![0]!.clientId).toBe(late.clientId);
+    expect(pull).toHaveBeenCalledTimes(2); // re-drained, then re-pulled
+  });
+
+  it('a reparent abort re-drains BEFORE any pull (loop structure, not a guard)', async () => {
+    const loserId = 'r1';
+    const winnerId = 'r-winner';
+    const create = mutation(createReportPayload(loserId));
+    const section = mutation(sectionPayload(loserId));
+    const store = new FakeStore([create, section]);
+    const calls: string[] = [];
+    const push = jest.fn(async (m: Mutation): Promise<PushOutcome> => {
+      if (m.clientId === create.clientId) {
+        calls.push('push:create+reparent-abort');
+        const i = store.rows.findIndex((r) => r.clientId === section.clientId);
+        if (i !== -1) store.rows[i] = { ...store.rows[i]!, payload: sectionPayload(winnerId) };
+        return { ok: true, reparentedTo: winnerId };
+      }
+      calls.push('push:re-drain');
+      return { ok: true };
+    });
+    const core = createEngineCore({
+      store,
+      push,
+      clearDirty: jest.fn(async () => {}),
+      onIncident: jest.fn(),
+      isOnline: () => true,
+      deleteLocalReport: jest.fn(async () => {}),
+      pull: jest.fn(async () => {
+        calls.push('pull');
+        return outcome();
+      }),
+      sessionUserId: SESSION,
+    });
+
+    await core.run();
+
+    expect(calls).toEqual(['push:create+reparent-abort', 'push:re-drain', 'pull']);
+  });
+
+  it('completedPulls bumps on a committed pull even when the outcome is not ok', async () => {
+    const pull = jest.fn(async () => outcome({ ok: false, committed: true, error: 'one feed' }));
+    const { core } = harness([], async () => ({ ok: true }), { pull, sessionUserId: SESSION });
+
+    await core.run();
+
+    expect(core.getState().completedPulls).toBe(1);
+    expect(core.getState().lastError).toBe('one feed');
+  });
+
+  it('completedPulls does NOT bump for a clean pull that wrote nothing', async () => {
+    const pull = jest.fn(async () => outcome({ ok: true, committed: false }));
+    const { core } = harness([], async () => ({ ok: true }), { pull, sessionUserId: SESSION });
+
+    await core.run();
+
+    expect(core.getState().completedPulls).toBe(0);
+  });
+
+  it('completedPulls is monotone across cycles — never reset by a later empty pull', async () => {
+    const pull = jest
+      .fn<Promise<PullOutcome>, []>()
+      .mockResolvedValueOnce(outcome({ committed: true }))
+      .mockResolvedValue(outcome({ committed: false }));
+    const { core } = harness([], async () => ({ ok: true }), { pull, sessionUserId: SESSION });
+
+    await core.run();
+    expect(core.getState().completedPulls).toBe(1);
+
+    await core.run();
+    expect(core.getState().completedPulls).toBe(1);
+
+    // Every publish of a later cycle carries the counter forward too.
+    const publishes: SyncState[] = [];
+    core.subscribe((s) => publishes.push(s));
+    await core.run();
+    expect(publishes.every((s) => s.completedPulls === 1)).toBe(true);
+  });
+
+  it('a push failure is not masked by a later pull error (push always wins)', async () => {
+    const m1 = mutation(sectionPayload('r1'));
+    const pull = jest.fn(async () => outcome({ ok: false, error: 'pull blew up' }));
+    const { core } = harness([m1], async () => ({ ok: false, error: { status: 500 } }), {
+      pull,
+      sessionUserId: SESSION,
+    });
+
+    await core.run();
+
+    expect(core.getState().lastError).not.toBe('pull blew up');
+    expect(core.getState().lastError).toBeTruthy();
+  });
+
+  it('an offline pull publishes online:false with lastError:null (never-alarm)', async () => {
+    const pull = jest.fn(async () => outcome({ ok: false, offline: true, error: 'net down' }));
+    const { core } = harness([], async () => ({ ok: true }), { pull, sessionUserId: SESSION });
+
+    await core.run();
+
+    expect(core.getState()).toMatchObject({ online: false, lastError: null, syncing: false });
+  });
+
+  it('a throwing pull dep does not reject run() and still publishes the cycle end-state', async () => {
+    const pull = jest.fn(async () => {
+      throw new Error('puller exploded');
+    });
+    const { core } = harness([], async () => ({ ok: true }), { pull, sessionUserId: SESSION });
+
+    await expect(core.run()).resolves.toBeUndefined();
+    expect(core.getState()).toMatchObject({
+      syncing: false,
+      lastError: 'puller exploded',
+      completedPulls: 0,
+    });
   });
 });

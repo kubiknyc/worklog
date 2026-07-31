@@ -18,6 +18,9 @@ import { IDLE_SYNC_STATE } from './engineApi';
 import type { SyncEngineApi, SyncState } from './engineApi';
 import { applyOutcome, orderForDrain, otherMutationTargetsRow, rowTargetOf } from './mutationQueue';
 import type { PushOutcome, RowTarget } from './mutationQueue';
+// Type-only, and `pullCore.ts` is itself pure (no `.native` suffix, no IO) —
+// unlike the Pusher alias below, importing this drags nothing into the graph.
+import type { PullOutcome } from './pullCore';
 import type { Mutation, MutationPayload, MutationStore } from './types';
 
 export interface EngineDeps {
@@ -37,6 +40,19 @@ export interface EngineDeps {
    * existing local row, so keeping the local subtree would strand it.
    */
   readonly deleteLocalReport: (reportId: string) => Promise<void>;
+  /**
+   * The pull phase, run once after every settled drain (Task 9's
+   * `createPuller`). Optional: web has no puller, and `engine.native` leaves it
+   * unset in no-session builds. Never rejects by contract — the cycle guards it
+   * anyway (`run()` never rejecting is absolute).
+   */
+  readonly pull?: (input: { readonly sessionUserId: string }) => Promise<PullOutcome>;
+  /**
+   * The signed-in user, threaded from `RepositoryProvider`'s `useAuth()`. Null
+   * signed-out: the engine still drains queued pushes, but the pull stays
+   * unarmed until the provider re-keys on a real session.
+   */
+  readonly sessionUserId?: string | null;
 }
 
 export type EngineCore = Omit<SyncEngineApi, 'start' | 'stop'>;
@@ -80,6 +96,9 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
 
   let state: SyncState = IDLE_SYNC_STATE;
   let reparentsCount = 0;
+  // Monotone, exactly like `reparentsCount` — screens diff it to decide when to
+  // refetch, so it must never roll back (see `pullOnce`).
+  let completedPulls = 0;
   let cyclePromise: Promise<void> | null = null;
   let dirty = false;
   const listeners = new Set<(s: SyncState) => void>();
@@ -114,7 +133,7 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
         parked: startCounts.parked,
         lastError: state.lastError,
         reparents: reparentsCount,
-        completedPulls: 0,
+        completedPulls,
       });
 
       // Cross-cycle skip rule: a PARKED mutation for report R blocks every
@@ -232,7 +251,66 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
       parked: endCounts.parked,
       lastError,
       reparents: reparentsCount,
-      completedPulls: 0,
+      completedPulls,
+    });
+  }
+
+  /**
+   * The pull phase, run once per settled drain. Publishes NOTHING when it
+   * skips, so a pull-less build's state stream is byte-identical to M3a's.
+   *
+   * Skip rules:
+   *  - no `pull` dep / no `sessionUserId` — the pull is simply unarmed.
+   *  - the cycle just ended `online: false` AND `pending > 0` — the drain
+   *    provably starved offline mid-queue this cycle, so the link is known bad
+   *    and a pull would only burn radio. The `pending > 0` conjunct matters:
+   *    `runOnce` publishes `online: isOnline()` unconditionally, so
+   *    `online: false` with an EMPTY queue is NetInfo pessimism, not a proven
+   *    dead link (`stoppedOffline` is unreachable on an empty queue). With
+   *    nothing queued the pull always runs and is its own probe — cheap,
+   *    because the orchestrator short-circuits on the first offline-classified
+   *    failure.
+   *
+   * No `dirty` guard here, deliberately: the cycle loop can only reach this
+   * with `dirty === false`, so a reparent abort is always re-drained BEFORE any
+   * pull — a pull can never observe a half-rewritten loser id. A guard would be
+   * unreachable dead code.
+   */
+  async function pullOnce(): Promise<void> {
+    const { pull, sessionUserId } = deps;
+    if (!pull || !sessionUserId) return;
+    if (!state.online && state.pending > 0) return;
+
+    publish({ ...state, syncing: true });
+
+    let outcome: PullOutcome;
+    try {
+      outcome = await pull({ sessionUserId });
+    } catch (err: unknown) {
+      // `createPuller` never rejects by contract; this keeps `run()`'s
+      // never-rejects guarantee independent of that contract holding.
+      outcome = { ok: false, committed: false, offline: false, error: errorMessage(err) };
+    }
+
+    // Bumped IFF local rows actually changed — NOT on `ok`. The counter is the
+    // screens' refetch signal, so one indefinitely-stuck feed must not freeze
+    // refetch while every other feed lands fresh rows.
+    if (outcome.committed) completedPulls += 1;
+
+    publish({
+      ...state,
+      syncing: false,
+      // A successful pull PROVES the link, overriding NetInfo pessimism for
+      // this publish; the next cycle's start-publish reverts to `isOnline()`.
+      online: outcome.ok ? true : outcome.offline ? false : state.online,
+      // Offline never-alarm; otherwise the push phase's error always wins and a
+      // pull error only lands when the drain was clean.
+      lastError: outcome.ok
+        ? state.lastError
+        : outcome.offline
+          ? null
+          : (state.lastError ?? outcome.error),
+      completedPulls,
     });
   }
 
@@ -246,8 +324,14 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
     cyclePromise = (async () => {
       try {
         do {
-          dirty = false;
-          await runOnce();
+          // Drain to a settled queue first...
+          do {
+            dirty = false;
+            await runOnce();
+          } while (dirty);
+          // ...then pull exactly once against that settled state.
+          await pullOnce();
+          // An enqueue DURING the pull re-drains, and then re-pulls.
         } while (dirty);
       } finally {
         cyclePromise = null;

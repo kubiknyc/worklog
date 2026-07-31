@@ -163,7 +163,16 @@ export async function seedReferenceMirror(db: Db): Promise<void> {
   }
 }
 
-export async function createPlatformRepository(): Promise<PlatformRepoBundle> {
+/**
+ * `sessionUserId` is the signed-in user from `RepositoryProvider`'s
+ * `useAuth()` — nullable because the provider mounts at the app root and runs
+ * signed-out too. With null the engine still drains queued pushes; only the
+ * pull phase stays unarmed. The provider re-keys the whole bundle on a userId
+ * change, so signing in rebuilds and arms it.
+ */
+export async function createPlatformRepository(
+  sessionUserId: string | null,
+): Promise<PlatformRepoBundle> {
   const db = await openDb();
   // Guard against a different account inheriting the previous user's cache
   // before any read or write can touch it.
@@ -171,7 +180,7 @@ export async function createPlatformRepository(): Promise<PlatformRepoBundle> {
   const mutations = createMutationStore(db);
   // Best-effort refresh of the reference mirror (swallowed on failure).
   await seedReferenceMirror(db);
-  const engine = createSyncEngine(db);
+  const engine = createSyncEngine(db, sessionUserId);
   // The nudge kicks the engine after every enqueued write, so a new mutation
   // drains promptly instead of waiting for the next backoff/NetInfo/AppState
   // trigger. The engine is returned, NOT attached/started here — that happens

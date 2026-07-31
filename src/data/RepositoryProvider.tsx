@@ -105,7 +105,8 @@ export function RepositoryProvider({ children, repository }: Props) {
     // Gate children while the switch reconciles ownership, so the previous
     // user's repository is never readable during the rebuild.
     setResolved(null);
-    createPlatformRepository()
+    // userId arms the engine's pull phase (null signed-out → push-only).
+    createPlatformRepository(userId)
       .then(({ repo, engine }) => {
         if (!active) return; // superseded build: never attach/start its engine late
         engineRef.current = engine;
