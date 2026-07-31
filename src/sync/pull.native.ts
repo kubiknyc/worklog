@@ -22,6 +22,15 @@
  * 5. Tier-2 feeds, active project first then the rotation pick.
  * 6. Per-project id sweeps behind floor (c).
  * 7. Rotation write-back.
+ *
+ * CANCELLATION: `createPuller`'s optional third argument is a cancellation
+ * predicate (default: never cancelled). The orchestrator consults it at the top
+ * of every phase and immediately BEFORE every write — applier call, cursor
+ * write, `sync_meta` write — and abandons the rest of the run the first time it
+ * reads true, resolving `{ ok: false, offline: false, error: 'cancelled' }` with
+ * whatever was already committed. The shell (`engine.native.ts`) wires it to its
+ * `stopped` flag so a sign-out mid-pull can never write the departing user's
+ * fetched rows into the next user's freshly wiped mirror.
  */
 import { all, first, run } from '../db/rows.native';
 import type { Db } from '../db/rows.native';
@@ -216,7 +225,11 @@ function stringIds(rows: readonly Raw[]): readonly string[] {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-export function createPuller(client: PullClient, db: Db): Puller {
+export function createPuller(
+  client: PullClient,
+  db: Db,
+  isCancelled: () => boolean = () => false,
+): Puller {
   const cursors = createCursorStore(db);
 
   return async function pull({ sessionUserId }): Promise<PullOutcome> {
@@ -224,6 +237,24 @@ export function createPuller(client: PullClient, db: Db): Puller {
     let committed = false;
     let offline = false;
     let error: string | null = null;
+    let cancelled = false;
+
+    /**
+     * Latch the cancellation predicate. Once true, no further write of ANY
+     * kind may be issued — the mirror this run was fetched for no longer
+     * belongs to the session that is now installed.
+     */
+    function checkCancelled(): boolean {
+      if (cancelled) return true;
+      if (!isCancelled()) return false;
+      cancelled = true;
+      return true;
+    }
+
+    /** The abandoned-run outcome: whatever already committed, nothing more. */
+    function cancelledOutcome(): PullOutcome {
+      return { ok: false, committed, offline: false, error: 'cancelled' };
+    }
 
     /** Record a thrown failure; the first offline-classified one arms the short-circuit. */
     function failWith(label: string, err: unknown): void {
@@ -264,10 +295,13 @@ export function createPuller(client: PullClient, db: Db): Puller {
         return;
       }
       const next = nextCursor(cursor, applied.cursorKeys);
-      if (next !== null) await cursors.set(scope, next);
+      if (next === null) return;
+      if (checkCancelled()) return;
+      await cursors.set(scope, next);
     }
 
     try {
+      if (checkCancelled()) return cancelledOutcome();
       const meta = await readMeta(db);
 
       // --- 1. Drain a crashed run's eviction intent ------------------------
@@ -277,6 +311,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
       // them — the key is their only record, and step 3 must MERGE into it
       // rather than overwrite it.
       let stillPending: readonly string[] = [];
+      if (checkCancelled()) return cancelledOutcome();
       if (meta.evictPendingCorrupt) {
         await deleteMeta(db, EVICT_PENDING_KEY);
       } else if (meta.evictPending.length > 0) {
@@ -291,6 +326,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
       }
 
       // --- 2. Tier-1 fetch -------------------------------------------------
+      if (checkCancelled()) return cancelledOutcome();
       let projects: RawWithId[];
       let profiles: RawWithId[];
       let members: Raw[];
@@ -325,6 +361,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
       }
 
       // --- 3. Tier-1 floors, replace, eviction -----------------------------
+      if (checkCancelled()) return cancelledOutcome();
       // Floor (a): an empty snapshot against a non-empty local table is a
       // grant/RLS regression, not a deletion — refuse the whole replace.
       const floorTables: readonly (readonly [string, readonly unknown[]])[] = [
@@ -340,6 +377,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
       }
 
       let membership;
+      if (checkCancelled()) return cancelledOutcome();
       try {
         membership = await applyReferenceSnapshot(db, sessionUserId, {
           projects,
@@ -371,6 +409,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
         // permanently. The key is deleted only after ONE `evictProjects` call
         // has covered everything the key holds.
         const toEvict = [...new Set([...stillPending, ...evicted])];
+        if (checkCancelled()) return cancelledOutcome();
         try {
           await setMeta(db, EVICT_PENDING_KEY, JSON.stringify(toEvict));
           await evictProjects(db, toEvict, onEvicted);
@@ -382,6 +421,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
       }
 
       // --- 4. Plan ---------------------------------------------------------
+      if (checkCancelled()) return cancelledOutcome();
       const nowIso = new Date().toISOString();
       const plan = planPullRun({
         activeProjectId: meta.activeProjectId,
@@ -403,21 +443,23 @@ export function createPuller(client: PullClient, db: Db): Puller {
       }
 
       for (const projectId of targets) {
-        if (offline) break;
+        if (offline || checkCancelled()) break;
         await pullReports(projectId);
-        if (offline) break;
+        if (offline || checkCancelled()) break;
         await pullSections(projectId);
-        if (offline) break;
+        if (offline || checkCancelled()) break;
         await pullPhotos(projectId);
-        if (offline) break;
+        if (offline || checkCancelled()) break;
         await pullAmendments(projectId);
       }
+      if (checkCancelled()) return cancelledOutcome();
 
       // --- 6. Sweeps -------------------------------------------------------
       for (const projectId of plan.sweepProjects) {
-        if (offline) break;
+        if (offline || checkCancelled()) break;
         await runSweep(projectId, nowIso);
       }
+      if (checkCancelled()) return cancelledOutcome();
 
       // --- 7. Rotation write-back ------------------------------------------
       try {
@@ -431,12 +473,13 @@ export function createPuller(client: PullClient, db: Db): Puller {
       failWith('pull', err);
     }
 
-    return { ok, committed, offline, error };
+    return cancelled ? cancelledOutcome() : { ok, committed, offline, error };
 
     // -- feeds ------------------------------------------------------------
 
     async function pullReports(projectId: string): Promise<void> {
       const scope = SCOPES.reports(projectId);
+      if (checkCancelled()) return;
       try {
         const cursor = await cursors.get(scope);
         const rows = await selectAllKeyset<Raw>(
@@ -468,6 +511,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           report,
           weather: weatherByReport.get(String(report.id)) ?? null,
         }));
+        if (checkCancelled()) return;
         await settleFeed(scope, cursor, await applyReports(db, bundles));
       } catch (err) {
         failWith(scope, err);
@@ -476,6 +520,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
 
     async function pullSections(projectId: string): Promise<void> {
       const scope = SCOPES.sections(projectId);
+      if (checkCancelled()) return;
       try {
         const cursor = await cursors.get(scope);
         const rows = await selectAllKeyset3<Raw>(
@@ -493,6 +538,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           overlapFloor(cursor),
         );
         const stripped = rows.map(stripEmbed) as unknown as PulledSection[];
+        if (checkCancelled()) return;
         await settleFeed(scope, cursor, await applySections(db, stripped));
       } catch (err) {
         failWith(scope, err);
@@ -501,6 +547,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
 
     async function pullPhotos(projectId: string): Promise<void> {
       const scope = SCOPES.photos(projectId);
+      if (checkCancelled()) return;
       try {
         const cursor = await cursors.get(scope);
         const rows = await selectAllKeyset<Raw>(
@@ -513,6 +560,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           (r) => ({ primary: String(r.updated_at), tiebreak: String(r.id) }),
           overlapFloor(cursor),
         );
+        if (checkCancelled()) return;
         await settleFeed(scope, cursor, await applyPhotos(db, rows));
       } catch (err) {
         failWith(scope, err);
@@ -521,6 +569,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
 
     async function pullAmendments(projectId: string): Promise<void> {
       const scope = SCOPES.amendments(projectId);
+      if (checkCancelled()) return;
       try {
         const cursor = await cursors.get(scope);
         const rows = await selectAllKeyset<Raw>(
@@ -560,6 +609,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           amendment,
           changes: changesByAmendment.get(String(amendment.id)) ?? [],
         }));
+        if (checkCancelled()) return;
         await settleFeed(scope, cursor, await applyAmendments(db, bundles));
       } catch (err) {
         failWith(scope, err);
@@ -569,6 +619,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
     // -- sweeps -------------------------------------------------------------
 
     async function runSweep(projectId: string, stampIso: string): Promise<void> {
+      if (checkCancelled()) return;
       try {
         const serverReports = await selectAllById<RawWithId>(() =>
           client.from<RawWithId>('daily_reports').select('id').eq('project_id', projectId),
@@ -599,6 +650,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           return;
         }
 
+        if (checkCancelled()) return;
         const deleted = await sweepProject(
           db,
           projectId,
@@ -606,6 +658,7 @@ export function createPuller(client: PullClient, db: Db): Puller {
           stringIds(serverPhotos),
         );
         if (deleted > 0) committed = true;
+        if (checkCancelled()) return;
         await setMeta(db, `${SWEEP_LAST_PREFIX}${projectId}`, stampIso);
         await deleteMeta(db, `${SWEEP_DUE_PREFIX}${projectId}`);
       } catch (err) {

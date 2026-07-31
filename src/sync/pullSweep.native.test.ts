@@ -218,6 +218,29 @@ describe('evictProjects', () => {
     expect(onEvicted).toHaveBeenCalledWith('p1');
   });
 
+  it('deletes a corrupt-payload queue row instead of throwing, and still evicts the valid one', async () => {
+    const corrupt: Row = { client_id: 'busted', kind: 'update_section', payload: '{not json' };
+    const survivorRow = mutationRow('r2:crew', 'r2');
+    const db = fakeDb({
+      daily_reports: [
+        { id: 'r1', project_id: 'p1', _dirty: 0 },
+        { id: 'r2', project_id: 'p2', _dirty: 0 },
+      ],
+      sync_mutations: [corrupt, mutationRow('r1:crew', 'r1'), survivorRow],
+    });
+    const onEvicted = jest.fn();
+
+    // An unguarded JSON.parse would throw here — and the orchestrator retries
+    // the persisted evict intent every run, so it would throw forever.
+    await expect(evictProjects(db as unknown as Db, ['p1'], onEvicted)).resolves.toBeUndefined();
+
+    // Both the corrupt row and the evicted project's row are gone; the
+    // surviving project's row is untouched and byte-identical.
+    expect(db.tables.sync_mutations).toEqual([survivorRow]);
+    expect(db.tables.daily_reports).toEqual([{ id: 'r2', project_id: 'p2', _dirty: 0 }]);
+    expect(onEvicted).toHaveBeenCalledWith('p1');
+  });
+
   it('does not open an outer transaction — deleteLocalReport is the only tx boundary', async () => {
     const db = fakeDb({
       daily_reports: [

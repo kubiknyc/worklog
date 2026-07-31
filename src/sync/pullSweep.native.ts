@@ -51,13 +51,26 @@ interface QueuedMutationRow {
  * the payload column. `create_report` is included on purpose here (unlike
  * reparent's re-home, which preserves it): membership is gone, so the create
  * would 403-evict on push anyway — dropping it now just skips that round trip.
+ *
+ * An UNPARSEABLE payload is DELETED rather than rethrown. A throw here would
+ * fail `evictProjects`, and the orchestrator retries the persisted
+ * `pull_evict_pending` intent at the start of EVERY run — so one corrupt row
+ * would make eviction, and with it every future pull's `ok`, fail forever.
+ * Deleting it follows the same reasoning as the parked-create decision above:
+ * membership is gone and the row could only 403-evict on push anyway.
  */
 async function evictQueueForReport(db: Db, reportId: string): Promise<void> {
   const rows = await all<QueuedMutationRow>(db, `SELECT * FROM sync_mutations`);
   for (const row of rows) {
-    const payload = JSON.parse(row.payload) as MutationPayload;
-    const data = payload.data as unknown as Readonly<Record<string, unknown>>;
-    if (data.reportId !== reportId) continue;
+    let matches: boolean;
+    try {
+      const payload = JSON.parse(row.payload) as MutationPayload;
+      const data = payload.data as unknown as Readonly<Record<string, unknown>>;
+      matches = data.reportId === reportId;
+    } catch {
+      matches = true; // corrupt payload — unpushable, drop it
+    }
+    if (!matches) continue;
     await run(db, `DELETE FROM sync_mutations WHERE client_id = ?`, [row.client_id]);
   }
 }

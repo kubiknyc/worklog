@@ -15,10 +15,15 @@
  * after every self-triggered run resolves, `scheduleBackoff` inspects
  * `core.getState()` and arms exactly one `setTimeout` when either arm holds:
  *
- *   1. `pending > 0 && lastError !== null && online` — a real server-side
- *      failure while NetInfo believes we're connected. No NetInfo edge will
- *      ever fire for this (we never went offline), so this arm is the only
- *      thing that retries a stuck queue.
+ *   1. `lastError !== null && online` — a real server-side failure while
+ *      NetInfo believes we're connected. No NetInfo edge will ever fire for
+ *      this (we never went offline), so this arm is the only thing that
+ *      retries a stuck queue. Deliberately NOT gated on `pending > 0`: a
+ *      non-offline PULL failure (an RLS/grant regression, a refused floor)
+ *      ends the cycle `online: true`, `pending: 0`, `lastError` set, and
+ *      without this arm nothing would retry it until the next enqueue,
+ *      foreground, or NetInfo edge. The ladder clamps at its last rung, so a
+ *      persistent failure degrades to a bounded slow poll rather than a spin.
  *   2. `!state.online && netInfoSaysConnected` — a transport failure the ENGINE
  *      detected (captive portal / dead DNS: the cycle published
  *      `online: false` because a push attempt, or the pull phase, actually
@@ -87,12 +92,24 @@ export function createSyncEngine(db: Db, sessionUserId: string | null): SyncEngi
   // the same cast covers that mismatch too; the payload's `null` still passes
   // through to Postgres unmodified.
   const push = createPusher(async (fn, args) => await supabase.rpc(fn as never, args as never), db);
-  // Sibling of the cast above, same reason: `PullClient` is the structural
+  // Set by stop(), cleared by start(). Two jobs, both about the async gap a
+  // sign-out opens:
+  //  - it guards wrappedRun: a cycle already in flight when stop() fires must
+  //    not re-arm the backoff timer on its resolve — that would leave a zombie
+  //    drain loop running after sign-out, or a second engine ticking alongside
+  //    a freshly started one after re-sign-in;
+  //  - it is the puller's cancellation predicate: an in-flight pull keeps
+  //    running after stop() returns, and without this it would commit the
+  //    departing user's fetched rows (Tier-1 snapshot, Tier-2 feeds, cursors)
+  //    into the next user's freshly wiped mirror. Declared HERE, above
+  //    `createPuller`, so the closure below reads an initialised binding.
+  let stopped = false;
+  // Sibling of the rpc cast above, same reason: `PullClient` is the structural
   // slice of the PostgREST builder surface the puller uses (see
   // `pull.native.ts`), and supabase-js satisfies it structurally but not
   // nominally — its generated `from()` overloads key off literal table-name
   // strings the puller's runtime-chosen table names can't satisfy.
-  const pull = createPuller(supabase as unknown as PullClient, db);
+  const pull = createPuller(supabase as unknown as PullClient, db, () => stopped);
 
   /**
    * A 403 eviction means the server refused a write we believed we owned — our
@@ -162,12 +179,6 @@ export function createSyncEngine(db: Db, sessionUserId: string | null): SyncEngi
   let backoffTimer: ReturnType<typeof setTimeout> | null = null;
   let netInfoUnsubscribe: (() => void) | null = null;
   let appStateSubscription: { remove(): void } | null = null;
-  // Set by stop(), cleared by start(). Guards the async gap in wrappedRun: a
-  // cycle already in flight when stop() fires must not re-arm the backoff
-  // timer on its resolve — that would leave a zombie drain loop running after
-  // sign-out, or a second engine ticking alongside a freshly started one after
-  // re-sign-in.
-  let stopped = false;
 
   function clearBackoffTimer(): void {
     if (backoffTimer !== null) {
@@ -185,7 +196,10 @@ export function createSyncEngine(db: Db, sessionUserId: string | null): SyncEngi
   function scheduleBackoff(): void {
     clearBackoffTimer();
     const state = core.getState();
-    const serverFailureWhileOnline = state.pending > 0 && state.lastError !== null && state.online;
+    // No `pending > 0` conjunct (see module doc, arm 1): a non-offline pull
+    // failure leaves an EMPTY queue with `lastError` set, and no other trigger
+    // would ever come back to it.
+    const serverFailureWhileOnline = state.lastError !== null && state.online;
     // No `pending > 0` conjunct: an offline-classified PULL failure ends the
     // cycle `online: false` with an EMPTY queue, and nothing else would ever
     // retry it (no enqueue coming, no NetInfo edge — NetInfo never left

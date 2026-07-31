@@ -1073,3 +1073,136 @@ describe('rotation and outcome', () => {
     expect(mockApplyReports).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cancellation
+// ---------------------------------------------------------------------------
+
+/**
+ * The account-switch seam: `engine.native.ts` wires `isCancelled` to its
+ * `stopped` flag, so a signed-out user's still-running pull must not commit a
+ * single row into the next user's freshly wiped mirror.
+ */
+describe('cancellation', () => {
+  /** Wrap the fake client so a chosen table's request flips the predicate. */
+  function cancelOn(client: unknown, table: string, flip: () => void) {
+    const inner = client as { from(t: string): unknown };
+    return {
+      from(t: string) {
+        if (t === table) flip();
+        return inner.from(t);
+      },
+    } as never;
+  }
+
+  it('cancelling after the tier-1 fetch prevents the replace and everything after it', async () => {
+    tier1(['p1']);
+    let cancelled = false;
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+    // Flipped while the LAST tier-1 request is in flight: the fetch completes,
+    // the phase-3 check catches it before a single write.
+    const wrapped = cancelOn(client, 'report_member_prefs', () => {
+      cancelled = true;
+    });
+
+    const outcome = await createPuller(
+      wrapped,
+      db as unknown as Db,
+      () => cancelled,
+    )({
+      sessionUserId: USER,
+    });
+
+    expect(outcome).toEqual({ ok: false, committed: false, offline: false, error: 'cancelled' });
+    expect(mockApplyReferenceSnapshot).not.toHaveBeenCalled();
+    expect(mockEvictProjects).not.toHaveBeenCalled();
+    expect(mockApplyReports).not.toHaveBeenCalled();
+    expect(mockApplySections).not.toHaveBeenCalled();
+    expect(mockApplyPhotos).not.toHaveBeenCalled();
+    expect(mockApplyAmendments).not.toHaveBeenCalled();
+    expect(mockSweepProject).not.toHaveBeenCalled();
+    expect(db.tables.sync_cursors).toEqual([]);
+    // No rotation write-back either — the meta write is behind the same check.
+    expect(metaValue(db, 'pull_rotation_v1')).toBeUndefined();
+  });
+
+  it('cancelling during the tier-1 replace stops tier 2 while reporting what already committed', async () => {
+    let cancelled = false;
+    mockApplyReferenceSnapshot.mockImplementation(async () => {
+      cancelled = true; // the account switch lands as the snapshot commits
+      return diff({ beforeProjectIds: ['p1'], afterProjectIds: ['p1'], changed: true });
+    });
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+
+    const outcome = await createPuller(
+      client,
+      db as unknown as Db,
+      () => cancelled,
+    )({
+      sessionUserId: USER,
+    });
+
+    expect(outcome).toEqual({ ok: false, committed: true, offline: false, error: 'cancelled' });
+    expect(mockApplyReports).not.toHaveBeenCalled();
+    expect(db.tables.sync_cursors).toEqual([]);
+    expect(metaValue(db, 'pull_rotation_v1')).toBeUndefined();
+  });
+
+  it('cancelling mid-tier-2 freezes the remaining feeds and their cursors', async () => {
+    tier1(['p1']);
+    let cancelled = false;
+    mockApplyReports.mockImplementation(async () => {
+      cancelled = true;
+      return result({ applied: 1, cursorKeys: ['2026-07-02T00:00:00Z'] });
+    });
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+
+    const outcome = await createPuller(
+      client,
+      db as unknown as Db,
+      () => cancelled,
+    )({
+      sessionUserId: USER,
+    });
+
+    expect(outcome).toEqual({ ok: false, committed: true, offline: false, error: 'cancelled' });
+    // The reports cursor is NOT advanced — a cursor write after cancellation
+    // would credit the departing user's fetch. Re-delivery is idempotent.
+    expect(cursorValue(db, SCOPES.reports('p1'))).toBeUndefined();
+    expect(mockApplySections).not.toHaveBeenCalled();
+    expect(mockApplyPhotos).not.toHaveBeenCalled();
+    expect(mockApplyAmendments).not.toHaveBeenCalled();
+  });
+
+  it('an already-cancelled predicate writes nothing at all and never touches the network', async () => {
+    tier1(['p1']);
+    const db = tier2Db();
+    const { client, calls } = fakeClient({ tables: tier2Tables() });
+
+    const outcome = await createPuller(
+      client,
+      db as unknown as Db,
+      () => true,
+    )({
+      sessionUserId: USER,
+    });
+
+    expect(outcome).toEqual({ ok: false, committed: false, offline: false, error: 'cancelled' });
+    expect(calls).toEqual([]);
+    expect(mockApplyReferenceSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('omitting the predicate leaves the puller uncancellable (default seam)', async () => {
+    tier1(['p1']);
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    expect(outcome.error).not.toBe('cancelled');
+    expect(mockApplyReferenceSnapshot).toHaveBeenCalled();
+  });
+});

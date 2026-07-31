@@ -356,6 +356,49 @@ describe('createSyncEngine — pull wiring', () => {
     expect(lastCoreDeps().sessionUserId).toBe(SESSION_USER_ID);
   });
 
+  test('hands the puller a cancellation predicate that tracks stop()/start()', () => {
+    setupHarness();
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
+    const isCancelled = mockCreatePuller.mock.calls[0]![2]!;
+
+    expect(isCancelled()).toBe(false);
+    engine.start();
+    expect(isCancelled()).toBe(false);
+    engine.stop();
+    expect(isCancelled()).toBe(true);
+    engine.start();
+    expect(isCancelled()).toBe(false);
+  });
+
+  test('stop() during an in-flight cycle flips the predicate the running pull is consulting', async () => {
+    const h = setupHarness();
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
+    const isCancelled = mockCreatePuller.mock.calls[0]![2]!;
+
+    let observedMidRun: boolean | null = null;
+    let finishRun: () => void = () => {};
+    h.core.run.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRun = () => {
+            // What the puller's own phase check would read at this instant.
+            observedMidRun = isCancelled();
+            resolve();
+          };
+        }),
+    );
+
+    engine.start();
+    await Promise.resolve();
+    expect(isCancelled()).toBe(false); // pull is free to write while running
+
+    engine.stop(); // sign-out lands mid-cycle
+    finishRun();
+    await Promise.resolve();
+
+    expect(observedMidRun).toBe(true); // every remaining phase abandons its writes
+  });
+
   test('a null sessionUserId still builds a working push-only engine (pull left unarmed)', async () => {
     const h = setupHarness();
 
@@ -442,6 +485,37 @@ describe('createSyncEngine — 403-evict sweep-due flag', () => {
     await Promise.resolve();
 
     expect(mockRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('createSyncEngine — backoff arm 1 with an empty queue', () => {
+  test('a non-offline server failure (online:true, pending:0, lastError set) still arms the ladder', async () => {
+    const h = setupHarness();
+    // The RLS/grant/floor class: the pull refused, the queue is empty, and no
+    // enqueue or NetInfo edge is ever coming back to it.
+    h.core.getState.mockReturnValue(makeState({ pending: 0, lastError: 'boom', online: true }));
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    engine.start();
+    await Promise.resolve();
+
+    expect(jest.getTimerCount()).toBe(1);
+
+    jest.advanceTimersByTime(30_000);
+    await Promise.resolve();
+    expect(h.core.run).toHaveBeenCalledTimes(2); // the ladder actually retries it
+  });
+
+  test('a clean cycle with an empty queue still schedules nothing', async () => {
+    const h = setupHarness();
+    h.core.getState.mockReturnValue(makeState({ pending: 0, lastError: null, online: true }));
+    const engine = createSyncEngine(FAKE_DB, SESSION_USER_ID);
+
+    engine.start();
+    await Promise.resolve();
+
+    expect(jest.getTimerCount()).toBe(0);
+    expect(h.core.run).toHaveBeenCalledTimes(1);
   });
 });
 
