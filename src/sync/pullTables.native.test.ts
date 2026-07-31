@@ -956,7 +956,17 @@ describe('applyPhotos', () => {
     expect(result.hardSkipped).toBe(0);
     expect(result.heldBack).toBe(0);
     expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.txCount).toBe(1);
     expect(db.report_photos.get('ph1')).toMatchObject({ _pending: 0, _dirty: 0 });
+
+    // Assert against the emitted SQL text, not just the fake's recorded row —
+    // the fake unconditionally stamps _pending/_dirty on a fresh INSERT, so a
+    // regression that dropped the literal `, 0, 0` from the INSERT VALUES
+    // would still pass the assertion above.
+    const insertCall = db.calls.find((c) => /^INSERT INTO report_photos/i.test(c.sql));
+    expect(insertCall).toBeDefined();
+    expect(insertCall!.sql).toMatch(/\(\s*[\s\S]*?_pending,\s*_dirty\s*\)/);
+    expect(insertCall!.sql).toMatch(/VALUES\s*\([\s\S]*?,\s*0,\s*0\s*\)/);
   });
 
   it('upsert leaves _pending/_dirty/local_uri/local_thumb_uri untouched on an existing row', async () => {
@@ -983,6 +993,19 @@ describe('applyPhotos', () => {
       local_uri: 'file:///cache/ph1.jpg',
       local_thumb_uri: 'file:///cache/ph1-thumb.jpg',
     });
+
+    // The fake unconditionally restores prior._pending/_dirty/local_uri/
+    // local_thumb_uri on an existing row regardless of what the applier's SQL
+    // actually says — so assert directly on the emitted SET clause too: a
+    // regression to `SET ... _pending = excluded._pending` would still pass
+    // the assertions above but must fail this one.
+    const insertCall = db.calls.find((c) => /^INSERT INTO report_photos/i.test(c.sql));
+    expect(insertCall).toBeDefined();
+    const setClause = insertCall!.sql.split(/DO UPDATE SET/i)[1] ?? '';
+    expect(setClause).not.toMatch(/_pending/);
+    expect(setClause).not.toMatch(/_dirty/);
+    expect(setClause).not.toMatch(/local_uri/);
+    expect(setClause).not.toMatch(/local_thumb_uri/);
   });
 
   it('tombstone hard-deletes a clean local row', async () => {
