@@ -1,4 +1,11 @@
-import { isServerNewer, mergeItem, resolveItem, type MergeableItem } from './conflict';
+import {
+  isServerNewer,
+  mergeItem,
+  resolveItem,
+  resolveReport,
+  type MergeableItem,
+  type ReportLike,
+} from './conflict';
 
 /** Stand-in for a generic synced row (e.g. a `report_sections` row keyed by
  * the Task 4 composite id `${reportId}:${section}`) — content is opaque to
@@ -77,5 +84,82 @@ describe('resolveItem (H2 — dirty flag must clear when the server wins)', () =
     const r = resolveItem(null, server, true);
     expect(r.item).toBe(server);
     expect(r.dirty).toBe(0);
+  });
+});
+
+/** Stand-in for `daily_reports` — deliberately carries a timestamp-shaped field
+ * so tests can prove `resolveReport` ignores it (unlike `resolveItem`'s LWW). */
+interface TestReport extends ReportLike {
+  readonly updated_at: string;
+  readonly content: string;
+}
+
+describe('resolveReport (absolute dirty shield — status is server-governed)', () => {
+  const localReport: TestReport = {
+    status: 'draft',
+    updated_at: '2026-06-28T10:00:00Z',
+    content: 'local content',
+  };
+  const serverNewer: TestReport = {
+    status: 'submitted',
+    updated_at: '2026-06-28T11:00:00Z',
+    content: 'server content',
+  };
+  const serverOlder: TestReport = {
+    status: 'submitted',
+    updated_at: '2026-06-28T09:00:00Z',
+    content: 'server content',
+  };
+
+  it('takes the server row and clears dirty when there is no local row', () => {
+    const r = resolveReport(null, serverNewer, true);
+    expect(r.item).toBe(serverNewer);
+    expect(r.dirty).toBe(0);
+  });
+
+  it('takes the server row verbatim and clears dirty when local is clean, server newer', () => {
+    const r = resolveReport(localReport, serverNewer, false);
+    expect(r.item).toBe(serverNewer);
+    expect(r.dirty).toBe(0);
+  });
+
+  it('takes the server row verbatim and clears dirty when local is clean, server older', () => {
+    // Timestamps must not matter for clean rows: an offline device's local
+    // updated_at is meaningless, so even an "older" server row wins verbatim.
+    const r = resolveReport(localReport, serverOlder, false);
+    expect(r.item).toBe(serverOlder);
+    expect(r.dirty).toBe(0);
+  });
+
+  it('shields local content but adopts server status when dirty, server newer', () => {
+    const r = resolveReport(localReport, serverNewer, true);
+    expect(r.dirty).toBe(1);
+    expect(r.item).toEqual({
+      status: 'submitted',
+      updated_at: '2026-06-28T10:00:00Z',
+      content: 'local content',
+    });
+  });
+
+  it('shields local content but adopts server status when dirty, server older', () => {
+    // Again: timestamp ordering must not matter for the dirty-shield branch.
+    const r = resolveReport(localReport, serverOlder, true);
+    expect(r.dirty).toBe(1);
+    expect(r.item).toEqual({
+      status: 'submitted',
+      updated_at: '2026-06-28T10:00:00Z',
+      content: 'local content',
+    });
+  });
+
+  it('adopts server status even when local and server statuses already match, dirty', () => {
+    const sameStatusServer: TestReport = { ...serverNewer, status: localReport.status };
+    const r = resolveReport(localReport, sameStatusServer, true);
+    expect(r.dirty).toBe(1);
+    expect(r.item).toEqual({
+      status: 'draft',
+      updated_at: '2026-06-28T10:00:00Z',
+      content: 'local content',
+    });
   });
 });

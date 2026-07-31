@@ -78,3 +78,35 @@ export function resolveItem<T extends MergeableItem>(
   const dirty: 0 | 1 = merged === server ? 0 : 1;
   return { item: merged, dirty };
 }
+
+/** Minimal shape `resolveReport` needs — a row with a server-governed `status`. */
+export interface ReportLike {
+  readonly status: string;
+}
+
+export interface ResolvedReport<T extends ReportLike> {
+  readonly item: T;
+  /** 1 only when the local row's content survived, shielded, and still needs pushing. */
+  readonly dirty: 0 | 1;
+}
+
+/**
+ * Resolve a pulled `daily_reports` row against the local row: the absolute
+ * dirty shield (06-sync-mappings.md §B, invariant 8), deliberately NOT the
+ * generic `resolveItem` LWW above.
+ *
+ * Report lifecycle is RPC-governed, so `status` is always adopted from the
+ * server. Content, however, is either taken wholesale from the server (clean
+ * rows — an offline device's local `updated_at` is meaningless, so no
+ * timestamp comparison happens) or shielded wholesale from the local row
+ * (dirty rows — the queued mutation still owns the content and will
+ * re-assert it on the next push).
+ */
+export function resolveReport<T extends ReportLike>(
+  local: T | null,
+  server: T,
+  localDirty: boolean,
+): ResolvedReport<T> {
+  if (!local || !localDirty) return { item: server, dirty: 0 };
+  return { item: { ...local, status: server.status }, dirty: 1 };
+}
