@@ -122,6 +122,10 @@ function fakeDb(seed: Seed = {}) {
     runAsync,
     async withTransactionAsync(fn: () => Promise<void>): Promise<void> {
       txCount++;
+      // A marker recorded in the SAME `calls` log used for real statements, so
+      // ordering assertions can locate a `deleteLocalReport` tx boundary
+      // relative to the plain `run`/`all` statements pullSweep itself issues.
+      calls.push({ sql: '__TX_BOUNDARY__', params: [] });
       await fn();
     },
   };
@@ -224,6 +228,39 @@ describe('evictProjects', () => {
     await evictProjects(db as unknown as Db, ['p1'], jest.fn());
     // One deleteLocalReport call per report — no extra outer tx wrapping the loop.
     expect(db.txCount).toBe(2);
+  });
+
+  it("spares a surviving project's queue row: evicting p1 deletes only the evicted report's mutation, leaving p2's untouched and byte-identical", async () => {
+    const survivorRow = mutationRow('r2:crew', 'r2');
+    const db = fakeDb({
+      daily_reports: [
+        { id: 'r1', project_id: 'p1', _dirty: 0 },
+        { id: 'r2', project_id: 'p2', _dirty: 0 },
+      ],
+      sync_mutations: [mutationRow('r1:crew', 'r1'), survivorRow],
+    });
+    await evictProjects(db as unknown as Db, ['p1'], jest.fn());
+
+    expect(db.tables.sync_mutations).toEqual([survivorRow]); // byte-identical survivor, evicted row gone
+  });
+
+  it("deletes a report's queue rows before opening that report's deleteLocalReport tx", async () => {
+    const db = fakeDb({
+      daily_reports: [{ id: 'r1', project_id: 'p1', _dirty: 0 }],
+      sync_mutations: [mutationRow('r1:crew', 'r1')],
+    });
+    await evictProjects(db as unknown as Db, ['p1'], jest.fn());
+
+    const queueDeleteIndex = db.calls.findIndex(
+      (c) =>
+        /^DELETE FROM sync_mutations WHERE client_id = \?$/i.test(c.sql.trim()) &&
+        c.params[0] === 'r1:crew',
+    );
+    const txBoundaryIndex = db.calls.findIndex((c) => c.sql === '__TX_BOUNDARY__');
+
+    expect(queueDeleteIndex).toBeGreaterThanOrEqual(0);
+    expect(txBoundaryIndex).toBeGreaterThanOrEqual(0);
+    expect(queueDeleteIndex).toBeLessThan(txBoundaryIndex);
   });
 });
 

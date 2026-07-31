@@ -19,11 +19,15 @@
  * (store.native.ts) opens its own tx per call; wrapping this loop around it
  * would nest transactions and deadlock the serialized tx queue
  * (db/rows.native.ts). Every other step here is a plain `run`/`all` statement.
- * This makes both functions idempotent and resumable: a crash mid-eviction
- * leaves a partially-evicted project (some reports gone, some cursors/meta
- * still present) that the next call — same diff, membership still gone —
- * finishes; re-running against rows already gone is a no-op by construction
- * (nothing matches the WHERE clause).
+ * This makes both functions idempotent: re-running against rows already gone
+ * is a no-op by construction (nothing matches the WHERE clause). It does NOT
+ * make them self-resuming on its own — a crash mid-eviction does not "finish
+ * on the next call" via a fresh membership diff, because the Tier-1 replace
+ * that produced that diff already committed, so the next run's diff is empty
+ * and `evictProjects` is never re-called for that project. RESUMPTION is the
+ * caller's obligation: the orchestrator (Task 9) persists the evicted-project
+ * id set to `sync_meta` BEFORE calling `evictProjects` and drains it at the
+ * start of every pull, so a crash mid-eviction is finished on the next run.
  */
 import { all, run } from '../db/rows.native';
 import type { Db } from '../db/rows.native';
