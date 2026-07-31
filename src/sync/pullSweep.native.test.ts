@@ -271,11 +271,33 @@ describe('sweepProject', () => {
       report_amendments: [{ id: 'am1', report_id: 'r1' }],
       report_amendment_changes: [{ id: 'ac1', amendment_id: 'am1' }],
     });
-    await sweepProject(db as unknown as Db, 'p1', [], []);
+    const deleted = await sweepProject(db as unknown as Db, 'p1', [], []);
 
     expect(db.tables.daily_reports).toHaveLength(0);
     expect(db.tables.report_amendments).toHaveLength(0);
     expect(db.tables.report_amendment_changes).toHaveLength(0); // cascaded away with the parent
+    expect(deleted).toBe(1);
+  });
+
+  it('returns the total rows deleted (reports + photos) so the caller can fold it into `committed`', async () => {
+    const db = fakeDb({
+      daily_reports: [
+        { id: 'r1', project_id: 'p1', _dirty: 0 },
+        { id: 'r2', project_id: 'p1', _dirty: 0 },
+      ],
+      // Parented off a report that is not in daily_reports, so it is NOT
+      // cascaded away by deleteLocalReport and is deleted by the photo pass.
+      report_photos: [{ id: 'ph1', project_id: 'p1', report_id: 'r-gone', _dirty: 0, _pending: 0 }],
+    });
+    expect(await sweepProject(db as unknown as Db, 'p1', [], [])).toBe(3);
+  });
+
+  it('returns 0 when nothing was deleted — a no-op sweep must not report a commit', async () => {
+    const db = fakeDb({
+      daily_reports: [{ id: 'r1', project_id: 'p1', _dirty: 0 }],
+      report_photos: [{ id: 'ph1', project_id: 'p1', report_id: 'r1', _dirty: 0, _pending: 0 }],
+    });
+    expect(await sweepProject(db as unknown as Db, 'p1', ['r1'], ['ph1'])).toBe(0);
   });
 
   it('keeps a dirty report even when absent from the server id list', async () => {

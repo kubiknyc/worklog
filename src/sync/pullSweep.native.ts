@@ -109,13 +109,18 @@ export async function evictProjects(
  * settled photo absent from the server list is a plain row DELETE — sections
  * and amendments cascade with their parent report and are never swept here
  * directly (doc 06 §B).
+ *
+ * Returns the number of rows this sweep actually deleted (reports + photos) —
+ * the orchestrator (Task 9) folds it into `PullOutcome.committed`, which must
+ * be true only when local state genuinely changed.
  */
 export async function sweepProject(
   db: Db,
   projectId: string,
   serverReportIds: readonly string[],
   serverPhotoIds: readonly string[],
-): Promise<void> {
+): Promise<number> {
+  let deleted = 0;
   const serverReportSet = new Set(serverReportIds);
   const localReports = await all<{ id: string }>(
     db,
@@ -125,6 +130,7 @@ export async function sweepProject(
   for (const { id } of localReports) {
     if (!serverReportSet.has(id)) {
       await deleteLocalReport(db, id);
+      deleted++;
     }
   }
 
@@ -136,7 +142,10 @@ export async function sweepProject(
   );
   for (const { id } of localPhotos) {
     if (!serverPhotoSet.has(id)) {
-      await run(db, `DELETE FROM report_photos WHERE id = ?`, [id]);
+      const result = await run(db, `DELETE FROM report_photos WHERE id = ?`, [id]);
+      deleted += result.changes;
     }
   }
+
+  return deleted;
 }
