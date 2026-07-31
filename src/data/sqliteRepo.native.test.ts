@@ -18,6 +18,7 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
     report_work_performed: [],
     report_delays: [],
     report_safety_observations: [],
+    sync_meta: [],
   };
 
   async function runAsync(sql: string, params: readonly unknown[] = []): Promise<void> {
@@ -88,6 +89,14 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
       const [reportId] = params as string[];
       const dr = tables.daily_reports.find((r) => r.id === reportId);
       if (dr) dr.has_delay = tables.report_delays.some((r) => r.report_id === reportId) ? 1 : 0;
+    } else if (/INSERT INTO sync_meta/i.test(sql)) {
+      // The real statement inlines the key literal (`'active_project_id'`)
+      // and parameterizes only the value — mirror that here.
+      const key = 'active_project_id';
+      const [value] = params as string[];
+      const existing = tables.sync_meta.find((r) => r.key === key);
+      if (existing) existing.value = value;
+      else tables.sync_meta.push({ key, value });
     } else if (/UPDATE daily_reports[\s\S]*has_incident/i.test(sql)) {
       const [reportId] = params as string[];
       const dr = tables.daily_reports.find((r) => r.id === reportId);
@@ -357,5 +366,28 @@ describe('sqliteRepo updateSection', () => {
     expect(m.status).toBe('pending');
     expect(m.payload.data.content.entries).toEqual(['second']);
     expect(mutations.kinds.every((k) => k === 'coalesce')).toBe(true);
+  });
+});
+
+describe('sqliteRepo setActiveProject', () => {
+  it('upserts sync_meta.active_project_id and nudges', async () => {
+    const db = fakeDb();
+    const nudge = jest.fn();
+    const repo = createSqliteRepo(db as never, fakeMutations(), nudge);
+
+    await repo.setActiveProject('p1');
+
+    expect(db.tables.sync_meta).toEqual([{ key: 'active_project_id', value: 'p1' }]);
+    expect(nudge).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates the existing row in place on a later call (ON CONFLICT upsert)', async () => {
+    const db = fakeDb();
+    const repo = createSqliteRepo(db as never, fakeMutations());
+
+    await repo.setActiveProject('p1');
+    await repo.setActiveProject('p2');
+
+    expect(db.tables.sync_meta).toEqual([{ key: 'active_project_id', value: 'p2' }]);
   });
 });

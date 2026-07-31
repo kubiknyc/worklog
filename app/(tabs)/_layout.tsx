@@ -14,6 +14,7 @@ import { Redirect, Tabs } from 'expo-router';
 import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { useAuth } from '../../src/auth';
+import { useActiveProjectSync } from '../../src/hooks/useActiveProjectSync';
 import { FIXED_COLORS, useTheme } from '../../src/theme';
 
 type RaisedCameraButtonProps = {
@@ -39,6 +40,11 @@ function RaisedCameraButton({ onPress }: RaisedCameraButtonProps) {
 export default function TabsLayout() {
   const { status } = useAuth();
   const { colors, fonts } = useTheme();
+  // Task 11 bridge: keeps sync_meta.active_project_id in step with whichever
+  // project the user is looking at, so the pull orchestrator's per-report
+  // pull scopes to it. Mounted once here (Jest ignores `app/`, so this call
+  // is untested by design — useActiveProjectSync.ts carries the coverage).
+  useActiveProjectSync();
 
   if (status === 'loading') return null;
   if (status === 'signedOut') return <Redirect href="/(auth)/login" />;

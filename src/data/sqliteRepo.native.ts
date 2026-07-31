@@ -250,6 +250,15 @@ export function createSqliteRepo(
       });
       nudge();
     },
+
+    async setActiveProject(projectId: string): Promise<void> {
+      await db.runAsync(
+        `INSERT INTO sync_meta (key, value) VALUES ('active_project_id', ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        [projectId],
+      );
+      nudge();
+    },
   };
 }
 

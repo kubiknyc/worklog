@@ -69,6 +69,7 @@ function makeRepo(overrides: Partial<Repository> = {}): Repository {
     listMutations: notImplemented,
     createReport: notImplemented,
     updateSection: notImplemented,
+    setActiveProject: notImplemented,
     ...overrides,
   } as Repository;
 }

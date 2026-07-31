@@ -47,3 +47,10 @@ describe('SupabaseRepository.updateSection', () => {
     });
   });
 });
+
+describe('SupabaseRepository.setActiveProject', () => {
+  it('is a no-op on web — online-only, no local pull cursor to bias', async () => {
+    await expect(supabaseRepository.setActiveProject('p1')).resolves.toBeUndefined();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+});

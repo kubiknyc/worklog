@@ -171,6 +171,10 @@ class SupabaseRepository implements Repository {
     });
     if (error) fail('updateSection', error);
   }
+
+  async setActiveProject(): Promise<void> {
+    // Online-only build: no local pull cursor to bias, so nothing to record.
+  }
 }
 
 export const supabaseRepository: Repository = new SupabaseRepository();

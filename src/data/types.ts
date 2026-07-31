@@ -122,4 +122,12 @@ export interface Repository {
     content: Json,
     isComplete: boolean,
   ): Promise<void>;
+  /**
+   * Record which project the user is currently looking at (Task 11's
+   * active-project bridge, `sync_meta.active_project_id`) so the pull
+   * orchestrator (`pull.native.ts`) can scope its per-report pull to it.
+   * Native upserts + nudges the engine; web is online-only and has no local
+   * pull cursor to bias, so it's a no-op.
+   */
+  setActiveProject(projectId: string): Promise<void>;
 }

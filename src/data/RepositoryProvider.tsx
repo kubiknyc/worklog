@@ -36,11 +36,20 @@ import { supabaseRepository } from './supabaseRepo';
 export interface SyncActions {
   retrySync(): Promise<void>;
   discardSync(clientId: string): Promise<number>;
+  /**
+   * True once this provider instance has fallen back to the online-only
+   * Supabase repository (device DB open failed). REACT STATE, not just the
+   * module-level `didFallBackToOnlineOnly()` flag below — the banner needs to
+   * re-render the moment the fallback catch fires, and a plain module
+   * variable can't trigger that.
+   */
+  readonly degraded: boolean;
 }
 
 const noopSyncActions: SyncActions = {
   retrySync: () => Promise.resolve(),
   discardSync: () => Promise.resolve(0),
+  degraded: false,
 };
 
 const SyncActionsContext = createContext<SyncActions>(noopSyncActions);
@@ -95,6 +104,10 @@ export function RepositoryProvider({ children, repository }: Props) {
   // identity as the repo/engine is rebuilt across account switches.
   const engineRef = useRef<SyncEngineApi | null>(null);
   const detachRef = useRef<(() => void) | null>(null);
+  // React-state mirror of `fellBackToOnlineOnly` (module-level, below) — the
+  // banner's `degraded` row must re-render the instant the fallback catch
+  // fires, which a plain module variable can't do.
+  const [degraded, setDegraded] = useState(false);
 
   useEffect(() => {
     // Override (tests/explicit) and web (online-only, RLS-enforced, no local
@@ -117,6 +130,7 @@ export function RepositoryProvider({ children, repository }: Props) {
           detachRef.current = syncStatusHub.attachEngine(engine);
           engine.start();
         }
+        setDegraded(false);
         setResolved(repo);
       })
       .catch((error: unknown) => {
@@ -133,6 +147,7 @@ export function RepositoryProvider({ children, repository }: Props) {
           engineRef.current = null;
           // Never leave a counter over a queue nothing will write to or drain.
           syncStatusHub.setCounter(null);
+          setDegraded(true);
           setResolved(supabaseRepository);
         }
       });
@@ -155,8 +170,9 @@ export function RepositoryProvider({ children, repository }: Props) {
     () => ({
       retrySync: () => engineRef.current?.retryParked() ?? Promise.resolve(),
       discardSync: (clientId) => engineRef.current?.discardParked(clientId) ?? Promise.resolve(0),
+      degraded,
     }),
-    [],
+    [degraded],
   );
 
   if (!resolved) return <HydrationGate />;
