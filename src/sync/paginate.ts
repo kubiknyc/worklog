@@ -148,3 +148,77 @@ export async function selectAllKeyset<T>(
   }
   return out;
 }
+
+/** A triple keyset position: column names, or the values of one row. */
+export interface TripleKey {
+  readonly primary: string;
+  readonly second: string;
+  readonly third: string;
+}
+
+/**
+ * PostgREST `.or()` filter selecting rows strictly AFTER the triple key
+ * `(primary, second, third)` in ascending `(primaryCol, secondCol, thirdCol)`
+ * order:
+ *
+ *   primaryCol > primary
+ *   OR (primaryCol = primary AND secondCol > second)
+ *   OR (primaryCol = primary AND secondCol = second AND thirdCol > third)
+ *
+ * With a unique `(second, third)` — or unique `third` alone — this is a
+ * strict total order, so paging with it can neither skip nor repeat a row
+ * that existed when the scan started. Mirrors `keysetAfter` one column wider,
+ * for tables whose natural pull order needs a middle tiebreak (e.g.
+ * `updated_at, report_id, section`) before the final unique column.
+ */
+export function keysetAfter3(cols: TripleKey, vals: TripleKey): string {
+  const p = quoteOrValue(vals.primary);
+  const s = quoteOrValue(vals.second);
+  const t = quoteOrValue(vals.third);
+  return (
+    `${cols.primary}.gt.${p},` +
+    `and(${cols.primary}.eq.${p},${cols.second}.gt.${s}),` +
+    `and(${cols.primary}.eq.${p},${cols.second}.eq.${s},${cols.third}.gt.${t})`
+  );
+}
+
+/**
+ * Fetch every row of a query, keyset-paginated on a triple
+ * `(columns.primary, columns.second, columns.third)` key — e.g.
+ * `(updated_at, report_id, section)` for a section pull whose rows aren't
+ * uniquely ordered by `(updated_at, report_id)` alone. `keyOf` extracts the
+ * key values from a row.
+ *
+ * Mirrors `selectAllKeyset`'s protocol exactly, one column wider: `floor`
+ * (when given) is an inclusive lower bound on the primary column applied to
+ * EVERY page; the first page has only that filter, later pages add the
+ * strict triple keyset from the last row seen. Same error contract: throws
+ * rather than returning a partial set.
+ */
+export async function selectAllKeyset3<T>(
+  make: () => KeysetPageQuery<T>,
+  columns: TripleKey,
+  keyOf: (row: T) => TripleKey,
+  floor?: string | null,
+): Promise<T[]> {
+  const out: T[] = [];
+  let last: TripleKey | null = null;
+  for (;;) {
+    let q = make();
+    if (floor != null) q = q.gte(columns.primary, floor);
+    if (last !== null) {
+      q = q.or(keysetAfter3(columns, last));
+    }
+    const { data, error } = await q
+      .order(columns.primary, { ascending: true })
+      .order(columns.second, { ascending: true })
+      .order(columns.third, { ascending: true })
+      .limit(PAGE_SIZE);
+    if (error) throw error;
+    const batch = data ?? [];
+    out.push(...batch);
+    if (batch.length < PAGE_SIZE) break; // short page ⇒ nothing after it
+    last = keyOf(batch[batch.length - 1]);
+  }
+  return out;
+}
