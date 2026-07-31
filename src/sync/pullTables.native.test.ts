@@ -4,8 +4,19 @@
  * `runAsync`/`getAllAsync` call and counts `withTransactionAsync` entries so
  * tests can assert the whole replace happens inside ONE transaction.
  */
-import { applyReferenceSnapshot, applyReports, applySections } from './pullTables.native';
-import type { ReferenceSnapshot, PulledReportBundle, PulledSection } from './pullTables.native';
+import {
+  applyReferenceSnapshot,
+  applyReports,
+  applySections,
+  applyPhotos,
+  applyAmendments,
+} from './pullTables.native';
+import type {
+  ReferenceSnapshot,
+  PulledReportBundle,
+  PulledSection,
+  PulledAmendment,
+} from './pullTables.native';
 import type { Db } from '../db/rows.native';
 
 type Row = Record<string, unknown>;
@@ -300,6 +311,9 @@ function fakeReportDb(
     report_weather?: readonly Row[];
     report_sections?: readonly Row[];
     report_crew?: readonly Row[];
+    report_photos?: readonly Row[];
+    report_amendments?: readonly Row[];
+    report_amendment_changes?: readonly Row[];
   } = {},
 ) {
   const daily_reports = new Map<string, Row>();
@@ -311,6 +325,13 @@ function fakeReportDb(
     report_sections.set(`${r.report_id}:${r.section}`, { ...r }),
   );
   let report_crew: Row[] = (seed.report_crew ?? []).map((r) => ({ ...r }));
+  const report_photos = new Map<string, Row>();
+  (seed.report_photos ?? []).forEach((r) => report_photos.set(`${r.id}`, { ...r }));
+  const report_amendments = new Map<string, Row>();
+  (seed.report_amendments ?? []).forEach((r) => report_amendments.set(`${r.id}`, { ...r }));
+  let report_amendment_changes: Row[] = (seed.report_amendment_changes ?? []).map((r) => ({
+    ...r,
+  }));
 
   const calls: { sql: string; params: readonly unknown[] }[] = [];
   let txCount = 0;
@@ -325,13 +346,31 @@ function fakeReportDb(
     if (table === 'daily_reports') row = daily_reports.get(`${params[0]}`);
     else if (table === 'report_weather') row = report_weather.get(`${params[0]}`);
     else if (table === 'report_sections') row = report_sections.get(`${params[0]}:${params[1]}`);
+    else if (table === 'report_photos') row = report_photos.get(`${params[0]}`);
+    else if (table === 'report_amendments') row = report_amendments.get(`${params[0]}`);
     if (!row) return null;
     const out: Row = {};
     for (const c of cols) out[c] = row[c] ?? null;
     return out as unknown as T;
   }
 
-  async function getAllAsync<T>(): Promise<T[]> {
+  async function getAllAsync<T>(sql: string, params: readonly unknown[] = []): Promise<T[]> {
+    calls.push({ sql, params });
+    const m = sql.match(/SELECT (.+?) FROM (\w+) WHERE (.+)/is);
+    if (m) {
+      const [, colsRaw, table] = m;
+      if (table === 'report_amendment_changes') {
+        const [amendmentId] = params as string[];
+        const cols = colsRaw.split(',').map((c) => c.trim());
+        return report_amendment_changes
+          .filter((r) => r.amendment_id === amendmentId)
+          .map((r) => {
+            const out: Row = {};
+            for (const c of cols) out[c] = r[c] ?? null;
+            return out;
+          }) as unknown as T[];
+      }
+    }
     return [] as T[];
   }
 
@@ -349,6 +388,26 @@ function fakeReportDb(
     }
     if (/^UPDATE daily_reports\s+SET has_delay/i.test(sql)) return { changes: 0 };
     if (/^UPDATE daily_reports\s+SET has_incident/i.test(sql)) return { changes: 0 };
+
+    const delById = sql.match(/^DELETE FROM report_photos WHERE id = \?/i);
+    if (delById) {
+      const [id] = params as string[];
+      const existed = report_photos.has(`${id}`);
+      report_photos.delete(`${id}`);
+      return { changes: existed ? 1 : 0 };
+    }
+
+    const delByAmendment = sql.match(
+      /^DELETE FROM report_amendment_changes WHERE amendment_id = \?/i,
+    );
+    if (delByAmendment) {
+      const [amendmentId] = params as string[];
+      const before = report_amendment_changes.length;
+      report_amendment_changes = report_amendment_changes.filter(
+        (r) => r.amendment_id !== amendmentId,
+      );
+      return { changes: before - report_amendment_changes.length };
+    }
 
     const del = sql.match(/^DELETE FROM (\w+) WHERE report_id = \?/i);
     if (del) {
@@ -377,6 +436,29 @@ function fakeReportDb(
         report_sections.set(`${row.report_id}:${row.section}`, row);
       } else if (table === 'report_crew') {
         report_crew.push(row);
+      } else if (table === 'report_photos') {
+        // Mirrors SQLite's ON CONFLICT DO UPDATE SET semantics: the local-only
+        // columns (_pending/_dirty/local_uri/local_thumb_uri) are outside the
+        // applier's SET list, so an existing row keeps them untouched; only a
+        // brand-new row gets the literal 0/0/null/null the applier inserts.
+        const prior = report_photos.get(`${row.id}`);
+        if (prior) {
+          const merged: Row = { ...prior, ...row };
+          merged._pending = prior._pending;
+          merged._dirty = prior._dirty;
+          merged.local_uri = prior.local_uri;
+          merged.local_thumb_uri = prior.local_thumb_uri;
+          report_photos.set(`${row.id}`, merged);
+        } else {
+          row._pending = 0;
+          row._dirty = 0;
+          report_photos.set(`${row.id}`, row);
+        }
+      } else if (table === 'report_amendments') {
+        row._dirty = 0;
+        report_amendments.set(`${row.id}`, row);
+      } else if (table === 'report_amendment_changes') {
+        report_amendment_changes.push(row);
       }
       return { changes: 1 };
     }
@@ -388,8 +470,13 @@ function fakeReportDb(
     daily_reports,
     report_weather,
     report_sections,
+    report_photos,
+    report_amendments,
     get report_crew(): readonly Row[] {
       return report_crew;
+    },
+    get report_amendment_changes(): readonly Row[] {
+      return report_amendment_changes;
     },
     calls,
     get txCount(): number {
@@ -828,5 +915,325 @@ describe('applySections', () => {
     ]);
     expect(result.applied).toBe(1);
     expect(db.report_sections.get('r1:general_notes')).toMatchObject({ updated_by: 'user-42' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyPhotos / applyAmendments — tombstone hold-back + amendment backfill
+// ---------------------------------------------------------------------------
+
+function photoRow(overrides: Row = {}): Record<string, unknown> {
+  return {
+    id: 'ph1',
+    report_id: 'r1',
+    project_id: 'p1',
+    storage_path: 'photos/ph1.jpg',
+    trade_tag: null,
+    location_tag: null,
+    caption: null,
+    source: 'camera',
+    captured_at: null,
+    exif_datetime_original: null,
+    added_at: null,
+    gps_lat: null,
+    gps_lng: null,
+    gps_accuracy: null,
+    width: null,
+    height: null,
+    created_by: 'u1',
+    created_at: '2026-07-01T00:00:00Z',
+    updated_at: '2026-07-01T10:00:00Z',
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+describe('applyPhotos', () => {
+  it('new server photo row inserts with _pending = 0, _dirty = 0', async () => {
+    const db = fakeReportDb();
+    const result = await applyPhotos(db as unknown as Db, [photoRow()]);
+    expect(result.applied).toBe(1);
+    expect(result.hardSkipped).toBe(0);
+    expect(result.heldBack).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.report_photos.get('ph1')).toMatchObject({ _pending: 0, _dirty: 0 });
+  });
+
+  it('upsert leaves _pending/_dirty/local_uri/local_thumb_uri untouched on an existing row', async () => {
+    const db = fakeReportDb({
+      report_photos: [
+        {
+          id: 'ph1',
+          updated_at: '2026-07-01T00:00:00Z',
+          _dirty: 0,
+          _pending: 0,
+          local_uri: 'file:///cache/ph1.jpg',
+          local_thumb_uri: 'file:///cache/ph1-thumb.jpg',
+        },
+      ],
+    });
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ caption: 'updated caption' }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(db.report_photos.get('ph1')).toMatchObject({
+      caption: 'updated caption',
+      _pending: 0,
+      _dirty: 0,
+      local_uri: 'file:///cache/ph1.jpg',
+      local_thumb_uri: 'file:///cache/ph1-thumb.jpg',
+    });
+  });
+
+  it('tombstone hard-deletes a clean local row', async () => {
+    const db = fakeReportDb({
+      report_photos: [{ id: 'ph1', updated_at: '2026-07-01T00:00:00Z', _dirty: 0, _pending: 0 }],
+    });
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ deleted_at: '2026-07-02T00:00:00Z', updated_at: '2026-07-02T00:00:00Z' }),
+    ]);
+    expect(result.applied).toBe(1);
+    expect(result.heldBack).toBe(0);
+    expect(db.report_photos.get('ph1')).toBeUndefined();
+  });
+
+  it('re-delivered settled tombstone with no local row is a no-op, cursor still credited', async () => {
+    const db = fakeReportDb();
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ deleted_at: '2026-07-02T00:00:00Z', updated_at: '2026-07-02T00:00:00Z' }),
+    ]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-02T00:00:00Z']);
+  });
+
+  it('tombstone + local _pending = 1: row survives AND heldBack > 0 (feed cursor frozen)', async () => {
+    const db = fakeReportDb({
+      report_photos: [{ id: 'ph1', updated_at: '2026-07-01T00:00:00Z', _dirty: 0, _pending: 1 }],
+    });
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ deleted_at: '2026-07-02T00:00:00Z', updated_at: '2026-07-02T00:00:00Z' }),
+    ]);
+    expect(result.heldBack).toBe(1);
+    expect(result.cursorKeys).toEqual([]);
+    expect(result.applied).toBe(0);
+    expect(db.report_photos.get('ph1')).toBeDefined();
+  });
+
+  it('tombstone + local _dirty = 1: row survives AND heldBack > 0 (feed cursor frozen)', async () => {
+    const db = fakeReportDb({
+      report_photos: [{ id: 'ph1', updated_at: '2026-07-01T00:00:00Z', _dirty: 1, _pending: 0 }],
+    });
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ deleted_at: '2026-07-02T00:00:00Z', updated_at: '2026-07-02T00:00:00Z' }),
+    ]);
+    expect(result.heldBack).toBe(1);
+    expect(result.applied).toBe(0);
+    expect(db.report_photos.get('ph1')).toBeDefined();
+  });
+
+  it('non-tombstone + _dirty = 1: row survives, heldBack === 0, timestamp IS in cursorKeys (plain shield still credits)', async () => {
+    const db = fakeReportDb({
+      report_photos: [{ id: 'ph1', updated_at: '2026-07-01T00:00:00Z', _dirty: 1, _pending: 0 }],
+    });
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ caption: 'server edit', updated_at: '2026-07-02T00:00:00Z' }),
+    ]);
+    expect(result.heldBack).toBe(0);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-02T00:00:00Z']);
+    expect(db.report_photos.get('ph1')).toMatchObject({ updated_at: '2026-07-01T00:00:00Z' });
+  });
+
+  it('non-tombstone + _pending = 1: row survives, heldBack === 0, timestamp credited', async () => {
+    const db = fakeReportDb({
+      report_photos: [{ id: 'ph1', updated_at: '2026-07-01T00:00:00Z', _dirty: 0, _pending: 1 }],
+    });
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ caption: 'server edit', updated_at: '2026-07-02T00:00:00Z' }),
+    ]);
+    expect(result.heldBack).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-02T00:00:00Z']);
+    expect(db.report_photos.get('ph1')).toMatchObject({ updated_at: '2026-07-01T00:00:00Z' });
+  });
+
+  it('no-op rule: identical re-delivered clean photo (same updated_at) is skipped, applied unchanged', async () => {
+    const db = fakeReportDb({
+      report_photos: [{ id: 'ph1', updated_at: '2026-07-01T10:00:00Z', _dirty: 0, _pending: 0 }],
+    });
+    const result = await applyPhotos(db as unknown as Db, [photoRow()]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.calls.some((c) => /^INSERT INTO report_photos/i.test(c.sql))).toBe(false);
+  });
+
+  it('malformed photo row (no id/updated_at) is hardSkipped; sibling rows still commit', async () => {
+    const db = fakeReportDb();
+    const result = await applyPhotos(db as unknown as Db, [
+      photoRow({ id: null }),
+      photoRow({ id: 'ph-bad2', updated_at: undefined }),
+      photoRow({ id: 'ph-bad3', report_id: null }),
+      photoRow({ id: 'ph-bad4', project_id: null }),
+      photoRow({ id: 'ph-bad5', storage_path: null }),
+      photoRow({ id: 'ph-good' }),
+    ]);
+    expect(result.hardSkipped).toBe(5);
+    expect(result.applied).toBe(1);
+    expect(db.report_photos.get('ph-good')).toBeDefined();
+  });
+});
+
+function amendmentRow(overrides: Row = {}): Record<string, unknown> {
+  return {
+    id: 'am1',
+    report_id: 'r1',
+    amendment_number: 3,
+    reason: 'correction',
+    created_by: 'u1',
+    created_at: '2026-07-01T10:00:00Z',
+    signature_id: null,
+    ...overrides,
+  };
+}
+
+function changeRow(overrides: Row = {}): Record<string, unknown> {
+  return {
+    id: 'ch1',
+    section: 'general_notes',
+    before_payload: { text: 'before' },
+    after_payload: { text: 'after' },
+    ...overrides,
+  };
+}
+
+function amendmentBundle(overrides: Partial<PulledAmendment> = {}): PulledAmendment {
+  return { amendment: amendmentRow(), changes: [changeRow()], ...overrides };
+}
+
+describe('applyAmendments', () => {
+  it('clean amendment upsert backfills NULL amendment_number and replaces changes in the same tx', async () => {
+    const db = fakeReportDb({
+      report_amendments: [
+        { id: 'am1', amendment_number: null, created_at: '2026-06-01T00:00:00Z', _dirty: 0 },
+      ],
+      report_amendment_changes: [
+        {
+          id: 'stale',
+          amendment_id: 'am1',
+          section: 'stale',
+          before_payload: '{}',
+          after_payload: '{}',
+        },
+      ],
+    });
+    const result = await applyAmendments(db as unknown as Db, [amendmentBundle()]);
+    expect(result.applied).toBe(1);
+    expect(result.heldBack).toBe(0);
+    expect(db.txCount).toBe(1);
+    expect(db.report_amendments.get('am1')).toMatchObject({ amendment_number: 3 });
+    expect(db.report_amendment_changes).toHaveLength(1);
+    expect(db.report_amendment_changes[0]).toMatchObject({ id: 'ch1', amendment_id: 'am1' });
+  });
+
+  it('dirty amendment is fully shielded (row + changes) with created_at in cursorKeys', async () => {
+    const db = fakeReportDb({
+      report_amendments: [
+        { id: 'am1', amendment_number: 1, created_at: '2026-06-01T00:00:00Z', _dirty: 1 },
+      ],
+      report_amendment_changes: [
+        {
+          id: 'keep',
+          amendment_id: 'am1',
+          section: 'kept',
+          before_payload: '{}',
+          after_payload: '{}',
+        },
+      ],
+    });
+    const result = await applyAmendments(db as unknown as Db, [
+      amendmentBundle({ amendment: amendmentRow({ amendment_number: 9 }) }),
+    ]);
+    expect(result.applied).toBe(0);
+    expect(result.heldBack).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.report_amendments.get('am1')).toMatchObject({ amendment_number: 1 });
+    expect(db.report_amendment_changes).toHaveLength(1);
+    expect(db.report_amendment_changes[0].id).toBe('keep');
+  });
+
+  it('floor (d): empty fetched changes but non-empty local changes → row + changes untouched, heldBack > 0; sibling still applies', async () => {
+    const db = fakeReportDb({
+      report_amendments: [
+        { id: 'am1', amendment_number: null, created_at: '2026-06-01T00:00:00Z', _dirty: 0 },
+      ],
+      report_amendment_changes: [
+        {
+          id: 'keep',
+          amendment_id: 'am1',
+          section: 'kept',
+          before_payload: '{}',
+          after_payload: '{}',
+        },
+      ],
+    });
+    const result = await applyAmendments(db as unknown as Db, [
+      amendmentBundle({ amendment: amendmentRow(), changes: [] }),
+      amendmentBundle({
+        amendment: amendmentRow({ id: 'am2', created_at: '2026-07-02T00:00:00Z' }),
+      }),
+    ]);
+    expect(result.heldBack).toBe(1);
+    expect(result.applied).toBe(1);
+    expect(db.report_amendments.get('am1')).toMatchObject({ amendment_number: null });
+    expect(db.report_amendment_changes.filter((r) => r.amendment_id === 'am1')).toHaveLength(1);
+    expect(db.report_amendments.get('am2')).toBeDefined();
+  });
+
+  it('clean amendment with empty fetched changes AND empty local changes applies normally (legitimate zero)', async () => {
+    const db = fakeReportDb({
+      report_amendments: [
+        { id: 'am1', amendment_number: null, created_at: '2026-06-01T00:00:00Z', _dirty: 0 },
+      ],
+    });
+    const result = await applyAmendments(db as unknown as Db, [
+      amendmentBundle({ amendment: amendmentRow(), changes: [] }),
+    ]);
+    expect(result.heldBack).toBe(0);
+    expect(result.applied).toBe(1);
+    expect(db.report_amendments.get('am1')).toMatchObject({ amendment_number: 3 });
+    expect(db.report_amendment_changes).toHaveLength(0);
+  });
+
+  it('no-op rule: identical created_at, non-null local number, equal change count → applied unchanged, credited', async () => {
+    const db = fakeReportDb({
+      report_amendments: [
+        { id: 'am1', amendment_number: 3, created_at: '2026-07-01T10:00:00Z', _dirty: 0 },
+      ],
+      report_amendment_changes: [
+        {
+          id: 'ch1',
+          amendment_id: 'am1',
+          section: 'general_notes',
+          before_payload: '{}',
+          after_payload: '{}',
+        },
+      ],
+    });
+    const result = await applyAmendments(db as unknown as Db, [amendmentBundle()]);
+    expect(result.applied).toBe(0);
+    expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
+    expect(db.calls.some((c) => /^INSERT INTO report_amendments/i.test(c.sql))).toBe(false);
+  });
+
+  it('malformed amendment row (no id/created_at/report_id) is hardSkipped; sibling still commits', async () => {
+    const db = fakeReportDb();
+    const result = await applyAmendments(db as unknown as Db, [
+      amendmentBundle({ amendment: amendmentRow({ id: null }) }),
+      amendmentBundle({ amendment: amendmentRow({ id: 'am-bad2', created_at: undefined }) }),
+      amendmentBundle({ amendment: amendmentRow({ id: 'am-bad3', report_id: null }) }),
+      amendmentBundle({ amendment: amendmentRow({ id: 'am-good' }) }),
+    ]);
+    expect(result.hardSkipped).toBe(3);
+    expect(result.applied).toBe(1);
+    expect(db.report_amendments.get('am-good')).toBeDefined();
   });
 });

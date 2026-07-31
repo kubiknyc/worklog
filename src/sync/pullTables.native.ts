@@ -16,6 +16,7 @@ import { resolveReport } from './conflict';
 import type { ReportLike } from './conflict';
 import { boolInt, num, parseSectionKind, str, explodeSection } from '../data/sectionExplode.native';
 import type { Json } from '../data/types';
+import { uuidv4 } from '../lib/uuid';
 
 export interface ReferenceSnapshot {
   readonly projects: readonly Record<string, unknown>[];
@@ -485,4 +486,293 @@ export async function applySections(db: Db, rows: readonly PulledSection[]): Pro
   });
 
   return { applied, cursorKeys, hardSkipped, heldBack: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Photos + amendments pull appliers (tombstone hold-back + number backfill)
+// ---------------------------------------------------------------------------
+
+/** Coerces a raw `report_photos` pull row onto `DOMAIN_COLUMNS.report_photos`. */
+function coercePhotoRow(raw: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: str(raw.id),
+    report_id: str(raw.report_id),
+    project_id: str(raw.project_id),
+    storage_path: str(raw.storage_path),
+    trade_tag: str(raw.trade_tag),
+    location_tag: str(raw.location_tag),
+    caption: str(raw.caption),
+    source: str(raw.source) ?? 'camera',
+    captured_at: str(raw.captured_at),
+    exif_datetime_original: str(raw.exif_datetime_original),
+    added_at: str(raw.added_at),
+    gps_lat: num(raw.gps_lat),
+    gps_lng: num(raw.gps_lng),
+    gps_accuracy: num(raw.gps_accuracy),
+    width: num(raw.width),
+    height: num(raw.height),
+    created_by: str(raw.created_by),
+    created_at: str(raw.created_at),
+    updated_at: str(raw.updated_at),
+    deleted_at: str(raw.deleted_at),
+  };
+}
+
+interface LocalPhotoRow {
+  readonly updated_at: string | null;
+  readonly _dirty: number;
+  readonly _pending: number;
+}
+
+/**
+ * Photos pull applier — tombstone hold-back (Global Constraints cursor rule):
+ * per row, coerce via `DOMAIN_COLUMNS.report_photos` (missing string `id`,
+ * `updated_at`, `report_id`, `project_id`, or `storage_path` — the local
+ * NOT-NULL-without-default columns — ⇒ hardSkipped). Local `_dirty = 1` OR
+ * `_pending = 1` shields the row: if the server row is a TOMBSTONE (non-null
+ * `deleted_at`), the row is left
+ * untouched and counted into `heldBack` (NOT cursorKeys — this FREEZES the
+ * feed cursor so the tombstone is re-delivered every pull until the pending
+ * push resolves and the shield lifts); otherwise it's a plain shield-pass —
+ * untouched, but the timestamp still credits `cursorKeys`. Clean rows: a
+ * TOMBSTONE hard-deletes the local row (row only, cached files are M5) —
+ * counted in `applied` ONLY when the DELETE actually affected a row (a
+ * settled tombstone re-delivered by the overlap window finds nothing local,
+ * so it's a no-op, though its timestamp is still credited); the no-op rule
+ * (identical `updated_at` on a clean row ⇒ skip, credited, not applied);
+ * otherwise upsert over `DOMAIN_COLUMNS.report_photos` — the SET list omits
+ * `_pending`/`_dirty`/`local_uri`/`local_thumb_uri` (they aren't in
+ * `DOMAIN_COLUMNS`), and a brand-new row is inserted with `_pending = 0,
+ * _dirty = 0`.
+ *
+ * One tx per CALL, not per row.
+ */
+export async function applyPhotos(
+  db: Db,
+  rows: readonly Record<string, unknown>[],
+): Promise<ApplyResult> {
+  let applied = 0;
+  const cursorKeys: string[] = [];
+  let hardSkipped = 0;
+  let heldBack = 0;
+
+  await tx(db, async () => {
+    for (const raw of rows) {
+      const server = coercePhotoRow(raw);
+      const id = server.id as string | null;
+      const updatedAt = server.updated_at as string | null;
+      const reportId = server.report_id as string | null;
+      const projectId = server.project_id as string | null;
+      const storagePath = server.storage_path as string | null;
+      if (
+        id === null ||
+        updatedAt === null ||
+        reportId === null ||
+        projectId === null ||
+        storagePath === null
+      ) {
+        hardSkipped++;
+        continue;
+      }
+
+      const local = await first<LocalPhotoRow>(
+        db,
+        `SELECT updated_at, _dirty, _pending FROM report_photos WHERE id = ?`,
+        [id],
+      );
+      const isTombstone = server.deleted_at !== null;
+      const isShielded = local !== null && (local._dirty === 1 || local._pending === 1);
+
+      if (isShielded) {
+        if (isTombstone) {
+          heldBack++;
+        } else {
+          cursorKeys.push(updatedAt);
+        }
+        continue;
+      }
+
+      if (isTombstone) {
+        const result = await run(db, `DELETE FROM report_photos WHERE id = ?`, [id]);
+        if (result.changes > 0) applied++;
+        cursorKeys.push(updatedAt);
+        continue;
+      }
+
+      if (local !== null && local.updated_at === updatedAt) {
+        cursorKeys.push(updatedAt);
+        continue;
+      }
+
+      const cols = DOMAIN_COLUMNS.report_photos;
+      const values = cols.map((c) => server[c] ?? null) as BindValue[];
+      const placeholders = cols.map(() => '?').join(', ');
+      const updateSet = cols
+        .filter((c) => c !== 'id')
+        .map((c) => `${c} = excluded.${c}`)
+        .join(', ');
+      await run(
+        db,
+        `INSERT INTO report_photos (${cols.join(', ')}, _pending, _dirty)
+         VALUES (${placeholders}, 0, 0)
+         ON CONFLICT (id) DO UPDATE SET ${updateSet}`,
+        values,
+      );
+      applied++;
+      cursorKeys.push(updatedAt);
+    }
+  });
+
+  return { applied, cursorKeys, hardSkipped, heldBack };
+}
+
+export interface PulledAmendment {
+  readonly amendment: Record<string, unknown>;
+  /** Fetched per amendment id, full-replaced locally. */
+  readonly changes: readonly Record<string, unknown>[];
+}
+
+/** Coerces a raw `report_amendments` pull row onto `DOMAIN_COLUMNS.report_amendments`. */
+function coerceAmendmentRow(raw: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: str(raw.id),
+    report_id: str(raw.report_id),
+    amendment_number: num(raw.amendment_number),
+    reason: str(raw.reason) ?? '',
+    created_by: str(raw.created_by),
+    created_at: str(raw.created_at),
+    signature_id: str(raw.signature_id),
+  };
+}
+
+/** Coerces a raw `report_amendment_changes` ride-along row onto `DOMAIN_COLUMNS.report_amendment_changes`. */
+function coerceAmendmentChangeRow(
+  raw: Record<string, unknown>,
+  amendmentId: string,
+): Record<string, unknown> {
+  return {
+    id: str(raw.id) ?? uuidv4(),
+    amendment_id: amendmentId,
+    section: str(raw.section) ?? '',
+    before_payload: jsonText(raw.before_payload) ?? '{}',
+    after_payload: jsonText(raw.after_payload) ?? '{}',
+  };
+}
+
+interface LocalAmendmentRow {
+  readonly amendment_number: number | null;
+  readonly created_at: string | null;
+  readonly _dirty: number;
+}
+
+/**
+ * Amendments pull applier — append-only feed, cursor timestamps from
+ * `created_at`. Per bundle: coerce the amendment via
+ * `DOMAIN_COLUMNS.report_amendments` (missing string `id`, `created_at`, or
+ * `report_id` — the local NOT-NULL columns — ⇒ hardSkipped). Local
+ * `_dirty = 1` shields the WHOLE bundle (row + its `report_amendment_changes`,
+ * gate 3 — changes have no `_dirty` of their own, they follow the parent):
+ * untouched, `created_at` into `cursorKeys`. Else, floor (d) FIRST (Global
+ * Constraints): the fetched `changes` array is empty while local
+ * `report_amendment_changes` for that amendment are non-empty ⇒ the
+ * 200+`[]` grant-regression class — amendment untouched, counted into
+ * `heldBack` (NOT `cursorKeys` — freezes the cursor so a later, non-empty
+ * delivery of the same amendment is retried instead of skipped). Then the
+ * no-op rule: identical `created_at` AND a non-null local `amendment_number`
+ * AND the fetched change count equals the local count ⇒ skip, credited, not
+ * applied (a legitimate empty-and-staying-empty amendment still needs to
+ * apply once to backfill `amendment_number`, so this check runs AFTER floor
+ * (d), not instead of it). Otherwise upsert the amendment over
+ * `DOMAIN_COLUMNS.report_amendments` (this backfills a local NULL
+ * `amendment_number` with the server-assigned integer) and full-replace its
+ * `report_amendment_changes` (`DELETE WHERE amendment_id = ?` + INSERT) in
+ * the same tx.
+ *
+ * One tx per CALL, not per row.
+ */
+export async function applyAmendments(
+  db: Db,
+  rows: readonly PulledAmendment[],
+): Promise<ApplyResult> {
+  let applied = 0;
+  const cursorKeys: string[] = [];
+  let hardSkipped = 0;
+  let heldBack = 0;
+
+  await tx(db, async () => {
+    for (const bundle of rows) {
+      const server = coerceAmendmentRow(bundle.amendment);
+      const id = server.id as string | null;
+      const createdAt = server.created_at as string | null;
+      const reportId = server.report_id as string | null;
+      if (id === null || createdAt === null || reportId === null) {
+        hardSkipped++;
+        continue;
+      }
+
+      const local = await first<LocalAmendmentRow>(
+        db,
+        `SELECT amendment_number, created_at, _dirty FROM report_amendments WHERE id = ?`,
+        [id],
+      );
+      if (local !== null && local._dirty === 1) {
+        cursorKeys.push(createdAt);
+        continue;
+      }
+
+      const localChanges = await all<{ id: string }>(
+        db,
+        `SELECT id FROM report_amendment_changes WHERE amendment_id = ?`,
+        [id],
+      );
+
+      if (bundle.changes.length === 0 && localChanges.length > 0) {
+        heldBack++;
+        continue;
+      }
+
+      const isNoOp =
+        local !== null &&
+        local.created_at === createdAt &&
+        local.amendment_number !== null &&
+        localChanges.length === bundle.changes.length;
+      if (isNoOp) {
+        cursorKeys.push(createdAt);
+        continue;
+      }
+
+      const cols = DOMAIN_COLUMNS.report_amendments;
+      const values = cols.map((c) => server[c] ?? null) as BindValue[];
+      const placeholders = cols.map(() => '?').join(', ');
+      const updateSet = cols
+        .filter((c) => c !== 'id')
+        .map((c) => `${c} = excluded.${c}`)
+        .join(', ');
+      await run(
+        db,
+        `INSERT INTO report_amendments (${cols.join(', ')}, _dirty)
+         VALUES (${placeholders}, 0)
+         ON CONFLICT (id) DO UPDATE SET ${updateSet}, _dirty = 0`,
+        values,
+      );
+
+      await run(db, `DELETE FROM report_amendment_changes WHERE amendment_id = ?`, [id]);
+      const changeCols = DOMAIN_COLUMNS.report_amendment_changes;
+      const changePlaceholders = changeCols.map(() => '?').join(', ');
+      for (const rawChange of bundle.changes) {
+        const change = coerceAmendmentChangeRow(rawChange, id);
+        const changeValues = changeCols.map((c) => change[c] ?? null) as BindValue[];
+        await run(
+          db,
+          `INSERT INTO report_amendment_changes (${changeCols.join(', ')}) VALUES (${changePlaceholders})`,
+          changeValues,
+        );
+      }
+
+      applied++;
+      cursorKeys.push(createdAt);
+    }
+  });
+
+  return { applied, cursorKeys, hardSkipped, heldBack };
 }
