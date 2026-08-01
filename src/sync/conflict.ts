@@ -101,12 +101,28 @@ export interface ResolvedReport<T extends ReportLike> {
  * timestamp comparison happens) or shielded wholesale from the local row
  * (dirty rows — the queued mutation still owns the content and will
  * re-assert it on the next push).
+ *
+ * One exception: when `lifecycleHeld` is true and a local row exists, the
+ * optimistic local status is the truth in flight — a submit/lock mutation's
+ * journey to the server is in progress. A pull adopting the server's stale
+ * status would regress the UI and then re-flip after the drain, creating
+ * visible flicker and a lie in between. The `lifecycleHeld` flag shields the
+ * local status from the pull until the queued mutation clears it.
  */
 export function resolveReport<T extends ReportLike>(
   local: T | null,
   server: T,
   localDirty: boolean,
+  lifecycleHeld = false,
 ): ResolvedReport<T> {
-  if (!local || !localDirty) return { item: server, dirty: 0 };
-  return { item: { ...local, status: server.status }, dirty: 1 };
+  if (!local) return { item: server, dirty: 0 };
+  if (!localDirty) {
+    return lifecycleHeld
+      ? { item: { ...server, status: local.status }, dirty: 0 }
+      : { item: server, dirty: 0 };
+  }
+  return {
+    item: { ...local, status: lifecycleHeld ? local.status : server.status },
+    dirty: 1,
+  };
 }
