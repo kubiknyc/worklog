@@ -68,6 +68,7 @@ import {
   applyReferenceSnapshot,
   applyReports,
   applySections,
+  heldStatusReportIds,
   type ApplyResult,
   type PulledAmendment,
   type PulledReportBundle,
@@ -512,7 +513,11 @@ export function createPuller(
           weather: weatherByReport.get(String(report.id)) ?? null,
         }));
         if (checkCancelled()) return;
-        await settleFeed(scope, cursor, await applyReports(db, bundles));
+        await settleFeed(
+          scope,
+          cursor,
+          await applyReports(db, bundles, await heldStatusReportIds(db)),
+        );
       } catch (err) {
         failWith(scope, err);
       }

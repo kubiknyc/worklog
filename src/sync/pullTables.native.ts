@@ -271,6 +271,23 @@ async function applyWeatherRideAlong(
 }
 
 /**
+ * Report ids with a PENDING submit/lock mutation — their optimistic local
+ * status outranks a pulled status until the drain acks. Parked lifecycle
+ * mutations are deliberately NOT held: a permanent rejection means the server
+ * status is the truth and the queue surface owns the user decision.
+ * Recognized by the lifecycleClientId namespace (mutationQueue.ts) — the
+ * payload never needs parsing.
+ */
+export async function heldStatusReportIds(db: Db): Promise<ReadonlySet<string>> {
+  const rows = await all<{ client_id: string }>(
+    db,
+    `SELECT client_id FROM sync_mutations WHERE status = 'pending' AND (client_id LIKE 'submit:%' OR client_id LIKE 'lock:%')`,
+    [],
+  );
+  return new Set(rows.map((r) => r.client_id.slice(r.client_id.indexOf(':') + 1)));
+}
+
+/**
  * Reports pull applier (06-sync-mappings.md §B, invariant 8 — the DIRTY
  * SHIELD): per bundle, coerce the raw record via `DOMAIN_COLUMNS.daily_reports`
  * (a row missing a string `id`, `status`, `updated_at`, `project_id`, or
@@ -296,6 +313,7 @@ async function applyWeatherRideAlong(
 export async function applyReports(
   db: Db,
   rows: readonly PulledReportBundle[],
+  heldStatusReportIds: ReadonlySet<string> = new Set(),
 ): Promise<ApplyResult> {
   let applied = 0;
   const cursorKeys: string[] = [];
@@ -327,6 +345,7 @@ export async function applyReports(
       );
       const localDirty = local !== null && local._dirty === 1;
       const reportNoOp = local !== null && !localDirty && local.updated_at === updatedAt;
+      const held = heldStatusReportIds.has(id);
 
       let reportApplied = false;
 
@@ -335,11 +354,16 @@ export async function applyReports(
           local === null ? null : { status: local.status },
           { status },
           localDirty,
+          held,
         );
 
         if (resolved.dirty === 0) {
           const cols = DOMAIN_COLUMNS.daily_reports;
-          const values = cols.map((c) => server[c] ?? null) as BindValue[];
+          const values = cols.map((c) =>
+            c === 'status'
+              ? (resolved.item.status as BindValue)
+              : ((server[c] ?? null) as BindValue),
+          );
           const placeholders = cols.map(() => '?').join(', ');
           const updateSet = cols
             .filter((c) => c !== 'id')
@@ -353,8 +377,11 @@ export async function applyReports(
             values,
           );
           reportApplied = true;
-        } else if (local !== null && local.status !== status) {
-          await run(db, `UPDATE daily_reports SET status = ? WHERE id = ?`, [status, id]);
+        } else if (local !== null && resolved.item.status !== local.status) {
+          await run(db, `UPDATE daily_reports SET status = ? WHERE id = ?`, [
+            resolved.item.status,
+            id,
+          ]);
           reportApplied = true;
         }
       }
