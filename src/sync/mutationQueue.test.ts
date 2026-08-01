@@ -500,6 +500,8 @@ describe('lifecycleClientId', () => {
     expect(lifecycleClientId('submit_report', 'r1')).toBe('submit:r1');
     expect(lifecycleClientId('lock_report', 'r1')).toBe('lock:r1');
     expect(lifecycleClientId('submit_report', 'r1')).not.toBe('r1');
-    expect(lifecycleClientId('submit_report', 'r1')).not.toBe(lifecycleClientId('lock_report', 'r1'));
+    expect(lifecycleClientId('submit_report', 'r1')).not.toBe(
+      lifecycleClientId('lock_report', 'r1'),
+    );
   });
 });

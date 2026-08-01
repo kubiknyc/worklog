@@ -149,10 +149,7 @@ export function newMutation(
  * `${reportId}:${section}` composite. Re-enqueue of the same action stays an
  * idempotent no-op by design.
  */
-export function lifecycleClientId(
-  kind: 'submit_report' | 'lock_report',
-  reportId: string,
-): string {
+export function lifecycleClientId(kind: 'submit_report' | 'lock_report', reportId: string): string {
   return kind === 'submit_report' ? `submit:${reportId}` : `lock:${reportId}`;
 }
 
