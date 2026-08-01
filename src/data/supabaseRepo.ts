@@ -8,7 +8,7 @@
  * client never holds direct INSERT/UPDATE on report tables.
  */
 import { uuidv4 } from '../lib/uuid';
-import { sectionWirePayload } from '../sync/rpcMap';
+import { base64ToByteaHex, sectionWirePayload } from '../sync/rpcMap';
 import type { Mutation } from '../sync/types';
 import { supabase } from '../supabase/client';
 import type {
@@ -19,6 +19,7 @@ import type {
   ReportSectionRow,
   Repository,
   SectionKind,
+  SubmitReportInput,
   WeatherRow,
 } from './types';
 
@@ -174,6 +175,24 @@ class SupabaseRepository implements Repository {
 
   async setActiveProject(): Promise<void> {
     // Online-only build: no local pull cursor to bias, so nothing to record.
+  }
+
+  async submitReport(reportId: string, input: SubmitReportInput): Promise<void> {
+    const { error } = await supabase.rpc('submit_report', {
+      p_report_id: reportId,
+      // The generated RPC arg type has p_signer_title as non-nullable
+      // `string`; our seam allows null (no title on file) — same narrow cast
+      // style as updateSection's p_payload, never loosening the seam type.
+      p_signer_title: input.signerTitle as never,
+      // Same bytea wire encoding as the native push handler (rpcMap.ts).
+      p_signature_png: base64ToByteaHex(input.signaturePngBase64),
+    });
+    if (error) fail('submitReport', error);
+  }
+
+  async lockReport(reportId: string): Promise<void> {
+    const { error } = await supabase.rpc('lock_report', { p_report_id: reportId });
+    if (error) fail('lockReport', error);
   }
 }
 

@@ -12,8 +12,9 @@
  */
 import { tx } from '../db/rows.native';
 import { uuidv4 } from '../lib/uuid';
-import { newMutation } from '../sync/mutationQueue';
+import { lifecycleClientId, newMutation } from '../sync/mutationQueue';
 import type { Mutation, MutationStore } from '../sync/types';
+import { canLock, canSubmit } from './lifecycleGuards';
 import { asRecord, explodeSection, num, str, type Db } from './sectionExplode.native';
 import { isRelationalSection } from './sectionContent';
 import type {
@@ -24,6 +25,7 @@ import type {
   ReportSectionRow,
   Repository,
   SectionKind,
+  SubmitReportInput,
   WeatherRow,
 } from './types';
 
@@ -257,6 +259,63 @@ export function createSqliteRepo(
          ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
         [projectId],
       );
+      nudge();
+    },
+
+    async submitReport(reportId: string, input: SubmitReportInput): Promise<void> {
+      const row = await db.getFirstAsync<DailyReportRow>(
+        'SELECT id, project_id, report_date, status FROM daily_reports WHERE id = ?',
+        [reportId],
+      );
+      if (!row) throw new Error('Report not found.');
+      if (!canSubmit(row.status)) throw new Error('Only a draft report can be submitted.');
+      // Optimistic status + queued mutation commit atomically (same rationale as
+      // createReport). No _dirty flip: content is untouched, and the pull-side
+      // hold (heldStatusReportIds) is what protects the status until the ack.
+      await tx(db, async () => {
+        await db.runAsync(
+          `UPDATE daily_reports SET status = 'submitted' WHERE id = ? AND status = 'draft'`,
+          [reportId],
+        );
+        await mutations.enqueue(
+          newMutation(
+            lifecycleClientId('submit_report', reportId),
+            {
+              kind: 'submit_report',
+              data: {
+                reportId,
+                signaturePngBase64: input.signaturePngBase64,
+                signerName: input.signerName,
+                signerTitle: input.signerTitle,
+              },
+            },
+            new Date().toISOString(),
+          ),
+        );
+      });
+      nudge();
+    },
+
+    async lockReport(reportId: string): Promise<void> {
+      const row = await db.getFirstAsync<DailyReportRow>(
+        'SELECT id, project_id, report_date, status FROM daily_reports WHERE id = ?',
+        [reportId],
+      );
+      if (!row) throw new Error('Report not found.');
+      if (!canLock(row.status)) throw new Error('Only a submitted report can be locked.');
+      await tx(db, async () => {
+        await db.runAsync(
+          `UPDATE daily_reports SET status = 'locked' WHERE id = ? AND status = 'submitted'`,
+          [reportId],
+        );
+        await mutations.enqueue(
+          newMutation(
+            lifecycleClientId('lock_report', reportId),
+            { kind: 'lock_report', data: { reportId } },
+            new Date().toISOString(),
+          ),
+        );
+      });
       nudge();
     },
   };

@@ -4,15 +4,18 @@
  * pin the web push path through the shared `sectionWirePayload` helper
  * (rpcMap.ts) so native and web can't drift on the condition/temp_f rename.
  */
-const mockRpc = jest.fn((..._args: unknown[]) => Promise.resolve({ data: null, error: null }));
+import { supabaseRepository } from './supabaseRepo';
+
+const mockRpc = jest.fn(
+  (..._args: unknown[]): Promise<{ data: null; error: { message: string } | null }> =>
+    Promise.resolve({ data: null, error: null }),
+);
 
 jest.mock('../supabase/client', () => ({
   supabase: {
     rpc: (...args: unknown[]) => mockRpc(...args),
   },
 }));
-
-import { supabaseRepository } from './supabaseRepo';
 
 beforeEach(() => {
   mockRpc.mockClear();
@@ -52,5 +55,53 @@ describe('SupabaseRepository.setActiveProject', () => {
   it('is a no-op on web — online-only, no local pull cursor to bias', async () => {
     await expect(supabaseRepository.setActiveProject('p1')).resolves.toBeUndefined();
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('SupabaseRepository.submitReport', () => {
+  it('calls submit_report with the hex-encoded signature', async () => {
+    await supabaseRepository.submitReport('report-1', {
+      signerName: 'Sam Super',
+      signerTitle: 'PM',
+      signaturePngBase64: 'UE5H',
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith('submit_report', {
+      p_report_id: 'report-1',
+      p_signer_title: 'PM',
+      p_signature_png: '\\x504e47',
+    });
+  });
+
+  it('surfaces an RPC error as the generic thrown message', async () => {
+    mockRpc.mockImplementationOnce(() =>
+      Promise.resolve({ data: null, error: { message: 'boom' } }),
+    );
+
+    await expect(
+      supabaseRepository.submitReport('report-1', {
+        signerName: 'Sam Super',
+        signerTitle: null,
+        signaturePngBase64: 'UE5H',
+      }),
+    ).rejects.toThrow('Unable to load data. Please try again.');
+  });
+});
+
+describe('SupabaseRepository.lockReport', () => {
+  it('calls lock_report with the report id', async () => {
+    await supabaseRepository.lockReport('report-1');
+
+    expect(mockRpc).toHaveBeenCalledWith('lock_report', { p_report_id: 'report-1' });
+  });
+
+  it('surfaces an RPC error as the generic thrown message', async () => {
+    mockRpc.mockImplementationOnce(() =>
+      Promise.resolve({ data: null, error: { message: 'boom' } }),
+    );
+
+    await expect(supabaseRepository.lockReport('report-1')).rejects.toThrow(
+      'Unable to load data. Please try again.',
+    );
   });
 });

@@ -106,6 +106,14 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
         )
           ? 1
           : 0;
+    } else if (/UPDATE daily_reports SET status = 'submitted'/i.test(sql)) {
+      const [reportId] = params as string[];
+      const dr = tables.daily_reports.find((r) => r.id === reportId && r.status === 'draft');
+      if (dr) dr.status = 'submitted';
+    } else if (/UPDATE daily_reports SET status = 'locked'/i.test(sql)) {
+      const [reportId] = params as string[];
+      const dr = tables.daily_reports.find((r) => r.id === reportId && r.status === 'submitted');
+      if (dr) dr.status = 'locked';
     }
   }
 
@@ -366,6 +374,87 @@ describe('sqliteRepo updateSection', () => {
     expect(m.status).toBe('pending');
     expect(m.payload.data.content.entries).toEqual(['second']);
     expect(mutations.kinds.every((k) => k === 'coalesce')).toBe(true);
+  });
+});
+
+describe('sqliteRepo submitReport', () => {
+  const input = { signerName: 'Sam Super', signerTitle: 'PM', signaturePngBase64: 'AAAA' };
+
+  it('optimistically flips status and enqueues a namespaced submit mutation atomically', async () => {
+    const db = fakeDb({
+      daily_reports: [{ id: 'r1', project_id: 'p1', report_date: '2026-07-19', status: 'draft' }],
+    });
+    const mutations = fakeMutations();
+    const repo = createSqliteRepo(db as never, mutations);
+
+    await repo.submitReport('r1', input);
+
+    expect(db.tables.daily_reports.find((r) => r.id === 'r1')?.status).toBe('submitted');
+    const queued = mutations.map.get('submit:r1') as {
+      payload: { kind: string; data: unknown };
+    };
+    expect(queued.payload).toEqual({
+      kind: 'submit_report',
+      data: {
+        reportId: 'r1',
+        signerName: 'Sam Super',
+        signerTitle: 'PM',
+        signaturePngBase64: 'AAAA',
+      },
+    });
+  });
+
+  it('refuses to submit a non-draft report and enqueues nothing', async () => {
+    const db = fakeDb({
+      daily_reports: [
+        { id: 'r1', project_id: 'p1', report_date: '2026-07-19', status: 'submitted' },
+      ],
+    });
+    const mutations = fakeMutations();
+    const repo = createSqliteRepo(db as never, mutations);
+
+    await expect(repo.submitReport('r1', input)).rejects.toThrow(
+      'Only a draft report can be submitted.',
+    );
+    expect([...mutations.map.keys()].filter((k) => k.startsWith('submit:'))).toHaveLength(0);
+  });
+
+  it('refuses to submit an unknown report', async () => {
+    const repo = createSqliteRepo(fakeDb() as never, fakeMutations());
+    await expect(repo.submitReport('missing', input)).rejects.toThrow('Report not found.');
+  });
+});
+
+describe('sqliteRepo lockReport', () => {
+  it('optimistically locks a submitted report and enqueues lock:<id>', async () => {
+    const db = fakeDb({
+      daily_reports: [
+        { id: 'r1', project_id: 'p1', report_date: '2026-07-19', status: 'submitted' },
+      ],
+    });
+    const mutations = fakeMutations();
+    const repo = createSqliteRepo(db as never, mutations);
+
+    await repo.lockReport('r1');
+
+    expect(db.tables.daily_reports.find((r) => r.id === 'r1')?.status).toBe('locked');
+    expect(mutations.map.has('lock:r1')).toBe(true);
+  });
+
+  it('refuses to lock a draft and enqueues nothing', async () => {
+    const db = fakeDb({
+      daily_reports: [{ id: 'r1', project_id: 'p1', report_date: '2026-07-19', status: 'draft' }],
+    });
+    const mutations = fakeMutations();
+    const repo = createSqliteRepo(db as never, mutations);
+
+    await expect(repo.lockReport('r1')).rejects.toThrow('Only a submitted report can be locked.');
+    expect(mutations.map.size).toBe(0);
+  });
+
+  it('refuses to lock an unknown report', async () => {
+    const repo = createSqliteRepo(fakeDb() as never, fakeMutations());
+    await expect(repo.lockReport('missing')).rejects.toThrow('Report not found.');
   });
 });
 
