@@ -698,6 +698,25 @@ describe('createEngineCore: discardParked', () => {
     expect(store.rows).toHaveLength(1); // the guard won — row survives
   });
 
+  it('status-guard lets a racing unpark survive a discard of a create_report', async () => {
+    const create = mutation(createReportPayload('r1'), { status: 'parked' });
+    const section = mutation(sectionPayload('r1'));
+    const { store, deleteLocalReport, core } = harness([create, section], async () => ({
+      ok: true,
+    }));
+    // Retry now unparked the whole queue and is mid-drain; the Sync screen still
+    // renders the stale parked snapshot, so Discard is still tappable. The
+    // create_report is in flight and the server may already have accepted it —
+    // cascading here would delete a report that exists remotely.
+    store.rows[0] = { ...store.rows[0]!, status: 'pending' };
+
+    const affected = await core.discardParked(create.clientId);
+
+    expect(affected).toBe(0);
+    expect(store.rows).toHaveLength(2); // the guard won — subtree survives
+    expect(deleteLocalReport).not.toHaveBeenCalled();
+  });
+
   it('discarding an unknown clientId is a no-op that still publishes a recount', async () => {
     const { core } = harness([], async () => ({ ok: true }));
     const publishes: unknown[] = [];

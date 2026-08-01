@@ -360,13 +360,31 @@ export function createEngineCore(deps: EngineDeps): EngineCore {
       const all = await store.all();
       const target = all.find((m) => m.clientId === clientId);
       if (target) {
-        if (target.payload.kind === 'create_report') {
-          // Unlike the `removeParked` branch below, this cascade is
-          // unconditional — no status guard. The server never saw this
-          // report at all, so every queued mutation for it (pending OR
-          // parked) is orphaned the moment the create_report itself is
-          // discarded; Task 8's UI must only ever offer this action for a
-          // PARKED create_report, but the engine doesn't re-check that here.
+        if (target.payload.kind === 'create_report' && target.status === 'parked') {
+          // Status guard, mirroring the `removeParked` branch below. The
+          // cascade's premise — "the server never saw this report at all", so
+          // every queued mutation for it is orphaned — holds ONLY while the
+          // create_report is still parked.
+          //
+          // `all` is a FRESH read, so a racing `retryParked` is visible here:
+          // it unparks the whole queue and then awaits a multi-second drain,
+          // during which the Sync screen still renders its stale parked
+          // snapshot and keeps Discard tappable. Without this guard that stale
+          // tap cascades against an IN-FLIGHT create_report the server may
+          // already have accepted — deleting the local report and its subtree
+          // while the push succeeds, leaving the report on the server and
+          // nowhere on the device.
+          //
+          // Residual window: this is read-then-act, not the sibling's atomic
+          // SQL guard, so a coalesce landing between `store.all()` and
+          // `removeMany` still slips through. That is microseconds inside one
+          // async function rather than multi-second UI staleness — narrowed,
+          // not eliminated.
+          //
+          // A non-parked create_report falls through to `removeParked`, whose
+          // SQL status guard deletes nothing and returns 0 — which fires the
+          // UI's existing GUARD_WIN_NOTICE, telling the user the row no longer
+          // needs attention instead of claiming the discard succeeded.
           const reportId = target.payload.data.reportId;
           const relatedIds = all
             .filter((m) => reportIdOf(m.payload) === reportId)
