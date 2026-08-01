@@ -70,13 +70,28 @@ type Props = {
   readonly rows: readonly Mutation[];
   /** Web has no local queue; an empty list there is normal, not "caught up". */
   readonly isWeb: boolean;
+  /**
+   * The provider fell back to the online-only repo (device DB open failed), so
+   * there is no queue for an empty list to mean anything about. Outranks
+   * `isWeb`: a degraded native device must never be told "Nothing queued",
+   * which reads as "everything is saved" over work that was never queued at
+   * all (#13, AC-O6).
+   */
+  readonly degraded?: boolean;
   readonly onRetry: () => void;
   /** Returns the affected-row count — 0 means a race already un-parked it. */
   readonly onDiscard: (clientId: string) => Promise<number>;
   readonly onNotice: (message: string) => void;
 };
 
-export function SyncQueueScreen({ rows, isWeb, onRetry, onDiscard, onNotice }: Props) {
+export function SyncQueueScreen({
+  rows,
+  isWeb,
+  degraded = false,
+  onRetry,
+  onDiscard,
+  onNotice,
+}: Props) {
   const { colors, fonts, sizes, spacing } = useTheme();
   const [confirmTarget, setConfirmTarget] = useState<Mutation | null>(null);
   const hasParked = rows.some((m) => m.status === 'parked');
@@ -105,7 +120,14 @@ export function SyncQueueScreen({ rows, isWeb, onRetry, onDiscard, onNotice }: P
       ) : null}
 
       {rows.length === 0 ? (
-        isWeb ? (
+        degraded ? (
+          <EmptyState
+            testID="sync-queue-empty-degraded"
+            icon="warning-outline"
+            title="This device can't save offline"
+            subtitle="Changes are sent straight to the cloud, so you'll need a connection to make them. Nothing is waiting on this device."
+          />
+        ) : isWeb ? (
           <View style={styles.centered}>
             <Text style={{ color: colors.muted, fontFamily: fonts.ui.regular }}>
               Sync runs automatically while online

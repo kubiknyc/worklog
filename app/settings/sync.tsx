@@ -13,7 +13,7 @@ import { useRefreshOnQueueChange } from '../../src/hooks/useRefreshOnQueueChange
 
 export default function SyncQueueRoute() {
   const repo = useRepository();
-  const { retrySync, discardSync } = useSyncActions();
+  const { retrySync, discardSync, degraded } = useSyncActions();
   const { show } = useToast();
   const { data, reload } = useAsyncData(() => repo.listMutations(), [repo]);
   // `handleRetry`'s own reload() only lands after the whole drain resolves, so
@@ -36,6 +36,7 @@ export default function SyncQueueRoute() {
     <SyncQueueScreen
       rows={data ?? []}
       isWeb={Platform.OS === 'web'}
+      degraded={degraded}
       onRetry={() => void handleRetry()}
       onDiscard={handleDiscard}
       onNotice={show}

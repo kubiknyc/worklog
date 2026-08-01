@@ -20,7 +20,7 @@ import {
   ReportStatusChip,
   useToast,
 } from '../../src/components';
-import { useRepository } from '../../src/data';
+import { useRepository, useSyncActions } from '../../src/data';
 import { computeReportDate } from '../../src/data/reportDate';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useRefreshOnFocusAndSync } from '../../src/hooks/useRefreshOnFocusAndSync';
@@ -39,6 +39,7 @@ export default function TodayScreen() {
   const { colors, fonts, spacing, sizes, radii } = useTheme();
   const repo = useRepository();
   const toast = useToast();
+  const { degraded } = useSyncActions();
   const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
@@ -64,11 +65,18 @@ export default function TodayScreen() {
       const row = await repo.createReport(data.project.id, data.reportDate);
       router.push(`/report/${row.id}`);
     } catch {
-      toast.show("Couldn't start the report. It'll retry when you're back online.");
+      // "It'll retry" is a promise only the queue can keep. In the degraded
+      // fallback there is no queue, so the same copy would be a lie about work
+      // that is simply gone (#13).
+      toast.show(
+        degraded
+          ? "Couldn't start the report. This device can't save offline right now — reconnect and try again."
+          : "Couldn't start the report. It'll retry when you're back online.",
+      );
     } finally {
       setStarting(false);
     }
-  }, [data?.project, data?.reportDate, repo, starting, toast]);
+  }, [data?.project, data?.reportDate, degraded, repo, starting, toast]);
 
   const openReport = useCallback((reportId: string) => {
     router.push(`/report/${reportId}`);

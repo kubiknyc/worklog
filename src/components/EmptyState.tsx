@@ -10,13 +10,15 @@ type Props = {
   readonly icon?: keyof typeof Ionicons.glyphMap;
   readonly title: string;
   readonly subtitle?: string;
+  /** Forwarded to the root view so E2E flows can key on a specific empty state. */
+  readonly testID?: string;
 };
 
-export function EmptyState({ icon = 'file-tray-outline', title, subtitle }: Props) {
+export function EmptyState({ icon = 'file-tray-outline', title, subtitle, testID }: Props) {
   const { colors, fonts } = useTheme();
 
   return (
-    <View style={styles.root}>
+    <View testID={testID} style={styles.root}>
       <View
         style={[styles.iconWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}
       >
