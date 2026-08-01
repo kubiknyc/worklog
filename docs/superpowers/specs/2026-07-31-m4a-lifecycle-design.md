@@ -83,9 +83,11 @@ plan picks the minimal seam (likely the pull applier's existing dirty-shield pat
 ### 5. Issue #26 (report screen refetch)
 
 Wire `useRefreshOnFocusAndSync` into `app/report/[id]/index.tsx` (same pattern as
-`app/(tabs)/index.tsx`), guarded so an open section sheet's draft is never clobbered —
-defer/skip reload while a sheet is open. The plan decides whether
-`useRefreshOnQueueChange` also lands so a parked submit surfaces immediately.
+`app/(tabs)/index.tsx`). No sheet-open guard is needed: section sheets seed their draft
+once at mount (`useSectionDraft`) and key off route state, and `reload()` is the silent
+mode that never nulls `data`, so a background refetch cannot reset an open sheet. The plan
+decides whether `useRefreshOnQueueChange` also lands so a parked submit surfaces
+immediately.
 
 ### 6. pgTAP harness (cross-repo gate, greenfield)
 
