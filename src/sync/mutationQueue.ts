@@ -141,6 +141,21 @@ export function newMutation(
   };
 }
 
+/**
+ * clientId for the two lifecycle kinds. `create_report` keeps the BARE report
+ * UUID (it doubles as the RPC's p_client_id idempotency key); submit/lock get
+ * a namespaced key so enqueue's INSERT OR IGNORE can never silently drop them
+ * against the queued create_report row or each other. Mirrors update_section's
+ * `${reportId}:${section}` composite. Re-enqueue of the same action stays an
+ * idempotent no-op by design.
+ */
+export function lifecycleClientId(
+  kind: 'submit_report' | 'lock_report',
+  reportId: string,
+): string {
+  return kind === 'submit_report' ? `submit:${reportId}` : `lock:${reportId}`;
+}
+
 /** The local cached row a mutation writes (and marks `_dirty` until pushed —
  * except photos, whose unpushed-flag analogue is `_pending`). */
 export interface RowTarget {
