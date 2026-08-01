@@ -194,3 +194,14 @@ test('readOnly: flush and markComplete are inert', async () => {
   await act(async () => {});
   expect(updateSection).not.toHaveBeenCalled();
 });
+
+test('readOnly: unmount does not flush the pending tail edit', async () => {
+  const { result, unmount } = setup(undefined, { readOnly: true });
+  act(() => result.current.setDraft({ count: 9 }));
+  expect(updateSection).not.toHaveBeenCalled();
+
+  await act(async () => {
+    unmount();
+  });
+  expect(updateSection).not.toHaveBeenCalled();
+});
