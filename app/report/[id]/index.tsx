@@ -12,7 +12,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -160,6 +160,12 @@ export default function ReportDetailScreen() {
   useReparentRedirect(reportId, reparentIdentity);
 
   const readOnly = data?.report ? !canEditSection(data.report.status) : false;
+
+  // Submit/Lock have no web UI yet: SubmitReportSheet is a native-only stub
+  // on web (dead tap target), and BottomSheet works there but M4a ships no
+  // web lifecycle UI at all — that's a deliberate M4b+ decision, not an
+  // oversight, so both actions are gated together for consistency.
+  const lifecycleActionsAvailable = Platform.OS !== 'web';
 
   const sectionByKind = useMemo(() => {
     const map = new Map<Exclude<SectionKind, 'weather'>, ReportSectionRow>();
@@ -395,7 +401,7 @@ export default function ReportDetailScreen() {
 
           <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />
 
-          {isSuper && data.report.status === 'draft' ? (
+          {lifecycleActionsAvailable && isSuper && data.report.status === 'draft' ? (
             <PrimaryButton
               testID="report-submit"
               label="Submit report"
@@ -405,7 +411,7 @@ export default function ReportDetailScreen() {
               }}
             />
           ) : null}
-          {isSuper && data.report.status === 'submitted' ? (
+          {lifecycleActionsAvailable && isSuper && data.report.status === 'submitted' ? (
             <PrimaryButton
               testID="report-lock"
               label="Lock report"

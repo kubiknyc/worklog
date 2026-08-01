@@ -88,7 +88,7 @@
         "lines": 90,
         "statements": 90
       },
-      "src\\data\\lifecycleGuards.ts": {
+      "src/data/lifecycleGuards.ts": {
         "branches": 95,
         "functions": 100,
         "lines": 95,

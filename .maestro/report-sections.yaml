@@ -268,24 +268,41 @@ appId: com.jobsight.worklog
     id: 'screen-report'
 
 # ── M4a: submit the draft ─────────────────────────────────────────────
-- scrollUntilVisible:
-    element:
-      id: 'report-submit'
-- tapOn:
-    id: 'report-submit'
-- assertVisible:
-    id: 'submit-signature-canvas'
-# Draw a stroke across the WebView canvas (coordinates are % of screen):
-- swipe:
-    start: 30%, 60%
-    end: 70%, 65%
-- tapOn:
-    id: 'submit-confirm'
-# The sheet closes; the chip flips optimistically, then the drain syncs it:
+# Submit is only offered on a draft; a same-day re-run finds the report
+# already submitted, so the whole block is conditional (re-run safe).
+# scrollUntilVisible before the conditional would itself fail on a re-run
+# (nothing to scroll to), so wait bounded+optional for the button first,
+# then gate the scroll + submit interaction on that visibility check.
+# TODO(on-device): validate this conditional path with a same-day
+# second run of this flow against a booted emulator (see M4a follow-up).
 - extendedWaitUntil:
     visible:
-      id: 'sync-status-synced'
-    timeout: 30000
+      id: 'report-submit'
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'report-submit'
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'report-submit'
+      - tapOn:
+          id: 'report-submit'
+      - assertVisible:
+          id: 'submit-signature-canvas'
+      # Draw a stroke across the WebView canvas (coordinates are % of screen):
+      - swipe:
+          start: 30%, 60%
+          end: 70%, 65%
+      - tapOn:
+          id: 'submit-confirm'
+      # The sheet closes; the chip flips optimistically, then the drain syncs it:
+      - extendedWaitUntil:
+          visible:
+            id: 'sync-status-synced'
+          timeout: 30000
 
 # --- Back out to Today. ---
 - tapOn:
