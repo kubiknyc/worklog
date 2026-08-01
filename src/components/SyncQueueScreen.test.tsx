@@ -131,6 +131,58 @@ describe('SyncQueueScreen rendering', () => {
     expect(screen.getByText('Sync runs automatically while online')).toBeTruthy();
   });
 
+  // #13: the online-only fallback leaves a native device with no queue at all.
+  // "Nothing queued" there reads as "everything is saved" over work that was
+  // never queued — the exact false reassurance AC-O6 exists to prevent.
+  test('degraded empty queue explains the device cannot save offline', () => {
+    render(
+      <SyncQueueScreen
+        rows={[]}
+        isWeb={false}
+        degraded
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByTestId('sync-queue-empty-degraded')).toBeTruthy();
+    expect(screen.getByText("This device can't save offline")).toBeTruthy();
+    expect(screen.queryByText('Nothing queued')).toBeNull();
+  });
+
+  test('degraded outranks the web empty copy', () => {
+    render(
+      <SyncQueueScreen
+        rows={[]}
+        isWeb
+        degraded
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByTestId('sync-queue-empty-degraded')).toBeTruthy();
+    expect(screen.queryByText('Sync runs automatically while online')).toBeNull();
+  });
+
+  test('degraded does not suppress rows when the queue is non-empty', () => {
+    render(
+      <SyncQueueScreen
+        rows={[mutation({ clientId: 'm-9' })]}
+        isWeb={false}
+        degraded
+        onRetry={noop}
+        onDiscard={noopDiscard}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+    expect(screen.getByTestId('sync-queue-row-m-9')).toBeTruthy();
+    expect(screen.queryByTestId('sync-queue-empty-degraded')).toBeNull();
+  });
+
   test('renders one row per mutation with its clientId testID and never the raw lastError', () => {
     const rawError = 'TypeError: Network request failed';
     const rows = [
