@@ -49,6 +49,7 @@ import type {
 import { emptyContentFor } from '../../../src/data/sectionContent';
 import type { Json, ReportSectionRow } from '../../../src/data/types';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
+import { useRefreshOnFocusAndSync } from '../../../src/hooks/useRefreshOnFocusAndSync';
 import { useReparentRedirect } from '../../../src/hooks/useReparentRedirect';
 import { REPORT_ROWS } from '../../../src/report/sectionMeta';
 import {
@@ -84,6 +85,15 @@ export default function ReportDetailScreen() {
   }, [repo, reportId]);
 
   const { data, loading, error, reload } = useAsyncData(load, [reportId]);
+
+  // Sheet close is not the only thing that invalidates this screen: a completed
+  // engine pull can land newer rows in SQLite while the report is open. Latent
+  // today (tier-1 pulls carry projects/memberships/profiles, not report rows),
+  // real the moment M4 cadence work pulls daily_reports — wired now so the gap
+  // never opens (#26). Safe mid-edit: the sheets seed their draft once at mount
+  // (useSectionDraft) and key off route state, so a refetch can't reset an open
+  // sheet, and reload() is the silent mode that never nulls `data`.
+  useRefreshOnFocusAndSync(reload);
 
   // Task 8: follow a same-day reparent off THIS report's loser id onto the
   // winner. The identity pair comes from the already-loaded report (not the
