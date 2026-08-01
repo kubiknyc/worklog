@@ -14,6 +14,8 @@ const NATIVE_ONLY_MODULES = [
   '@sentry/react-native',
   'expo-updates',
   '@react-native-community/netinfo',
+  'react-native-signature-canvas',
+  'react-native-webview',
 ];
 const SCAN_ROOTS = ['src', 'app'];
 const SOURCE_RE = /\.(ts|tsx)$/;
