@@ -23,13 +23,15 @@ type Props = {
   readonly reportId: string;
   readonly initial: GeneralNotesContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function NotesSectionSheet({ visible, reportId, initial, onClose }: Props) {
+export function NotesSectionSheet({ visible, reportId, initial, onClose, readOnly }: Props) {
   const { draft, setDraft, flush } = useSectionDraft<GeneralNotesContent>(
     reportId,
     'general_notes',
     initial,
+    { readOnly },
   );
 
   const close = useCallback(() => {
@@ -42,6 +44,7 @@ export function NotesSectionSheet({ visible, reportId, initial, onClose }: Props
       testID="sheet-notes"
       visible={visible}
       title="General notes"
+      readOnly={readOnly}
       onClose={close}
       footer={<PrimaryButton testID="sheet-notes-done" label="Done" onPress={close} />}
     >

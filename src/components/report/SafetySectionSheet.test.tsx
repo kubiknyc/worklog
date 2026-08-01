@@ -11,6 +11,10 @@ jest.mock('../../data', () => ({
 // eslint-disable-next-line import/first
 import { SafetySectionSheet } from './SafetySectionSheet';
 
+beforeEach(() => {
+  mockUpdateSection.mockClear();
+});
+
 test('Nothing to report marks the section complete', async () => {
   const { getByLabelText } = render(
     <ThemeProvider>
@@ -21,4 +25,17 @@ test('Nothing to report marks the section complete', async () => {
   await waitFor(() =>
     expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'safety', expect.anything(), true),
   );
+});
+
+test('readOnly renders content but hides None today and never writes', async () => {
+  const onClose = jest.fn();
+  const { getByTestId, queryByTestId } = render(
+    <ThemeProvider>
+      <SafetySectionSheet visible reportId="r1" initial={{ rows: [] }} onClose={onClose} readOnly />
+    </ThemeProvider>,
+  );
+  expect(queryByTestId('sheet-safety-none')).toBeNull();
+  fireEvent.press(getByTestId('sheet-safety-done'));
+  expect(onClose).toHaveBeenCalled();
+  expect(mockUpdateSection).not.toHaveBeenCalled();
 });

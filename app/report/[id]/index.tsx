@@ -34,6 +34,7 @@ import { SafetySectionSheet } from '../../../src/components/report/SafetySection
 import { VisitorsSectionSheet } from '../../../src/components/report/VisitorsSectionSheet';
 import { WeatherSectionSheet } from '../../../src/components/report/WeatherSectionSheet';
 import { useRepository } from '../../../src/data';
+import { canEditSection } from '../../../src/data/lifecycleGuards';
 import type {
   CrewContent,
   DelaysContent,
@@ -107,6 +108,8 @@ export default function ReportDetailScreen() {
   );
   useReparentRedirect(reportId, reparentIdentity);
 
+  const readOnly = data?.report ? !canEditSection(data.report.status) : false;
+
   const sectionByKind = useMemo(() => {
     const map = new Map<Exclude<SectionKind, 'weather'>, ReportSectionRow>();
     for (const row of data?.sections ?? []) map.set(row.section, row);
@@ -167,6 +170,7 @@ export default function ReportDetailScreen() {
             initialCrew={contentFor<CrewContent>('crew')}
             initialWork={contentFor<WorkPerformedContent>('work_performed')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'weather':
@@ -177,6 +181,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initialWeather={data?.weather ?? null}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'deliveries':
@@ -187,6 +192,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<DeliveriesContent>('deliveries')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'equipment':
@@ -197,6 +203,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<EquipmentContent>('equipment')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'inspections':
@@ -207,6 +214,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<InspectionsContent>('inspections')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'safety':
@@ -217,6 +225,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<SafetyContent>('safety')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'delays':
@@ -227,6 +236,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<DelaysContent>('delays')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'visitors':
@@ -237,6 +247,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<VisitorsContent>('visitors')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'rfis':
@@ -247,6 +258,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<RfisContent>('rfis')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'general_notes':
@@ -257,6 +269,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<GeneralNotesContent>('general_notes')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       default:
