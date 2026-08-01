@@ -20,7 +20,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useTheme } from '../../theme';
 import { BottomSheet } from '../BottomSheet';
@@ -34,6 +34,13 @@ type Props = {
   readonly noneLabel?: string;
   readonly footer?: ReactNode;
   readonly children: ReactNode;
+  /**
+   * True when the underlying report is not a draft (§B.7): the body renders
+   * but becomes non-interactive, and the "None today" affirmation hides (it
+   * would issue a write the lifecycle guard forbids). The default footer's
+   * Done button stays tappable so the sheet can still be closed.
+   */
+  readonly readOnly?: boolean;
   /**
    * Selector prefix for Maestro flows, e.g. `sheet-crew`. The affirmation row
    * becomes `<testID>-none` and the default footer `<testID>-done`, so every
@@ -51,6 +58,7 @@ export function SectionSheetScaffold({
   noneLabel = 'None today',
   footer,
   children,
+  readOnly = false,
   testID,
 }: Props) {
   const { colors, fonts, radii } = useTheme();
@@ -64,10 +72,10 @@ export function SectionSheetScaffold({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {children}
+        <View pointerEvents={readOnly ? 'none' : 'auto'}>{children}</View>
       </ScrollView>
 
-      {onNoneToday ? (
+      {onNoneToday && !readOnly ? (
         <Pressable
           testID={testID ? `${testID}-none` : undefined}
           accessibilityRole="button"

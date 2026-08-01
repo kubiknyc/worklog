@@ -28,6 +28,13 @@
  * `initial` is read once, at mount. A sheet showing a different report/section
  * must be remounted (give it a `key`) — the hook does not resync from props,
  * which would fight the optimistic local state.
+ *
+ * `options.readOnly` is the client half of the lifecycle guard (§B.7): a
+ * non-draft report's sheet may render content but can never produce a
+ * repository write or queued mutation. It is enforced at the single choke
+ * point every write funnels through — `issueWrite` — so the debounce timer,
+ * `flush()`, `markComplete`, and the unmount backstop are all inert; local
+ * state (`draft`) still updates so the sheet can render freely.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -52,7 +59,9 @@ export function useSectionDraft<T extends Json>(
   reportId: string,
   section: SectionKind,
   initial: T,
+  options?: { readonly readOnly?: boolean },
 ): SectionDraft<T> {
+  const readOnly = options?.readOnly ?? false;
   const repo = useRepository();
   const [draft, setDraftState] = useState<T>(initial);
 
@@ -76,6 +85,7 @@ export function useSectionDraft<T extends Json>(
 
   /** Queue a write of whatever `contentRef`/`completeRef` hold when it runs. */
   const issueWrite = useCallback(() => {
+    if (readOnly) return;
     const gen = (genRef.current += 1);
     chainRef.current = chainRef.current
       .then(() => {
@@ -96,7 +106,7 @@ export function useSectionDraft<T extends Json>(
         // and let the next edit retry.
         console.warn(`[useSectionDraft] updateSection(${section}) failed:`, error);
       });
-  }, [reportId, section]);
+  }, [reportId, section, readOnly]);
 
   const flush = useCallback(() => {
     if (timerRef.current === null) return; // nothing pending
