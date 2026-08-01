@@ -12,10 +12,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  BottomSheet,
   ConnectedSyncStatusBanner,
   DetailSkeleton,
   EmptyState,
@@ -31,9 +32,12 @@ import { NotesSectionSheet } from '../../../src/components/report/NotesSectionSh
 import { ReportDetailSections } from '../../../src/components/report/ReportDetailSections';
 import { RfisSectionSheet } from '../../../src/components/report/RfisSectionSheet';
 import { SafetySectionSheet } from '../../../src/components/report/SafetySectionSheet';
+import { SubmitReportSheet } from '../../../src/components/report/SubmitReportSheet';
 import { VisitorsSectionSheet } from '../../../src/components/report/VisitorsSectionSheet';
 import { WeatherSectionSheet } from '../../../src/components/report/WeatherSectionSheet';
+import { useAuth } from '../../../src/auth';
 import { useRepository } from '../../../src/data';
+import { canEditSection } from '../../../src/data/lifecycleGuards';
 import type {
   CrewContent,
   DelaysContent,
@@ -71,20 +75,68 @@ function formatReportDate(reportDate: string): string {
 export default function ReportDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const reportId = id ?? '';
-  const { colors, fonts, spacing, sizes } = useTheme();
+  const { colors, fonts, spacing, sizes, error: errorColor } = useTheme();
   const repo = useRepository();
+  const { userId, profile } = useAuth();
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [report, sections, weather] = await Promise.all([
-      repo.getReport(reportId),
+    const report = await repo.getReport(reportId);
+    const [sections, weather, members] = await Promise.all([
       repo.listSections(reportId),
       repo.getWeather(reportId),
+      report ? repo.listMembers(report.project_id) : Promise.resolve([] as const),
     ]);
-    return { report, sections, weather };
+    return { report, sections, weather, members };
   }, [repo, reportId]);
 
   const { data, loading, error, reload } = useAsyncData(load, [reportId]);
+
+  const me = useMemo(
+    () => (data?.members ?? []).find((m) => m.user_id === userId) ?? null,
+    [data?.members, userId],
+  );
+  const isSuper = me?.role === 'super';
+
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [lockConfirmOpen, setLockConfirmOpen] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleSubmit = useCallback(
+    async (input: { signerTitle: string | null; signaturePngBase64: string }) => {
+      setActionPending(true);
+      setActionError(null);
+      try {
+        await repo.submitReport(reportId, {
+          signerName: profile?.full_name ?? '',
+          signerTitle: input.signerTitle,
+          signaturePngBase64: input.signaturePngBase64,
+        });
+        setSubmitOpen(false);
+        reload();
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : 'Could not submit this report.');
+      } finally {
+        setActionPending(false);
+      }
+    },
+    [repo, reportId, profile?.full_name, reload],
+  );
+
+  const handleLock = useCallback(async () => {
+    setActionPending(true);
+    setActionError(null);
+    try {
+      await repo.lockReport(reportId);
+      setLockConfirmOpen(false);
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not lock this report.');
+    } finally {
+      setActionPending(false);
+    }
+  }, [repo, reportId, reload]);
 
   // Sheet close is not the only thing that invalidates this screen: a completed
   // engine pull can land newer rows in SQLite while the report is open. Latent
@@ -106,6 +158,14 @@ export default function ReportDetailScreen() {
     [data?.report],
   );
   useReparentRedirect(reportId, reparentIdentity);
+
+  const readOnly = data?.report ? !canEditSection(data.report.status) : false;
+
+  // Submit/Lock have no web UI yet: SubmitReportSheet is a native-only stub
+  // on web (dead tap target), and BottomSheet works there but M4a ships no
+  // web lifecycle UI at all — that's a deliberate M4b+ decision, not an
+  // oversight, so both actions are gated together for consistency.
+  const lifecycleActionsAvailable = Platform.OS !== 'web';
 
   const sectionByKind = useMemo(() => {
     const map = new Map<Exclude<SectionKind, 'weather'>, ReportSectionRow>();
@@ -167,6 +227,7 @@ export default function ReportDetailScreen() {
             initialCrew={contentFor<CrewContent>('crew')}
             initialWork={contentFor<WorkPerformedContent>('work_performed')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'weather':
@@ -177,6 +238,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initialWeather={data?.weather ?? null}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'deliveries':
@@ -187,6 +249,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<DeliveriesContent>('deliveries')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'equipment':
@@ -197,6 +260,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<EquipmentContent>('equipment')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'inspections':
@@ -207,6 +271,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<InspectionsContent>('inspections')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'safety':
@@ -217,6 +282,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<SafetyContent>('safety')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'delays':
@@ -227,6 +293,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<DelaysContent>('delays')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'visitors':
@@ -237,6 +304,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<VisitorsContent>('visitors')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'rfis':
@@ -247,6 +315,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<RfisContent>('rfis')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       case 'general_notes':
@@ -257,6 +326,7 @@ export default function ReportDetailScreen() {
             reportId={reportId}
             initial={contentFor<GeneralNotesContent>('general_notes')}
             onClose={closeSheet}
+            readOnly={readOnly}
           />
         );
       default:
@@ -330,10 +400,73 @@ export default function ReportDetailScreen() {
           </View>
 
           <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />
+
+          {lifecycleActionsAvailable && isSuper && data.report.status === 'draft' ? (
+            <PrimaryButton
+              testID="report-submit"
+              label="Submit report"
+              onPress={() => {
+                setActionError(null);
+                setSubmitOpen(true);
+              }}
+            />
+          ) : null}
+          {lifecycleActionsAvailable && isSuper && data.report.status === 'submitted' ? (
+            <PrimaryButton
+              testID="report-lock"
+              label="Lock report"
+              onPress={() => {
+                setActionError(null);
+                setLockConfirmOpen(true);
+              }}
+            />
+          ) : null}
         </ScrollView>
       )}
 
       {renderActiveSheet()}
+
+      <SubmitReportSheet
+        visible={submitOpen}
+        defaultSignerTitle={me?.title ?? null}
+        onSubmit={handleSubmit}
+        onClose={() => setSubmitOpen(false)}
+        submitting={actionPending}
+        errorText={actionError}
+      />
+      <BottomSheet
+        visible={lockConfirmOpen}
+        onClose={() => setLockConfirmOpen(false)}
+        title="Lock report"
+      >
+        <Text style={{ color: colors.muted, fontFamily: fonts.ui.regular, fontSize: 14 }}>
+          Locking is final — after this, changes go through a formal amendment. Reports also lock
+          automatically 24 hours after submission.
+        </Text>
+        {actionError ? (
+          <Text style={{ color: errorColor, fontFamily: fonts.ui.semibold, fontSize: 14 }}>
+            {actionError}
+          </Text>
+        ) : null}
+        <PrimaryButton
+          testID="report-lock-confirm"
+          label={actionPending ? 'Locking…' : 'Lock report'}
+          disabled={actionPending}
+          onPress={handleLock}
+        />
+        <Pressable
+          testID="report-lock-cancel"
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          hitSlop={8}
+          style={({ pressed }) => [styles.cancelLink, pressed && styles.pressed]}
+          onPress={() => setLockConfirmOpen(false)}
+        >
+          <Text style={{ color: colors.accent, fontFamily: fonts.ui.semibold, fontSize: 15 }}>
+            Cancel
+          </Text>
+        </Pressable>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -347,4 +480,5 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   date: { fontSize: 22, letterSpacing: -0.4, flexShrink: 1 },
   pressed: { opacity: 0.6 },
+  cancelLink: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
 });

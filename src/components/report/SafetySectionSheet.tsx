@@ -19,14 +19,16 @@ type Props = {
   readonly reportId: string;
   readonly initial: SafetyContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function SafetySectionSheet({ visible, reportId, initial, onClose }: Props) {
+export function SafetySectionSheet({ visible, reportId, initial, onClose, readOnly }: Props) {
   const { colors, fonts } = useTheme();
   const { draft, setDraft, markComplete, flush } = useSectionDraft<SafetyContent>(
     reportId,
     'safety',
     initial,
+    { readOnly },
   );
   const setRows = useCallback(
     (rows: readonly SafetyRowContent[]) => setDraft({ rows }),
@@ -56,6 +58,7 @@ export function SafetySectionSheet({ visible, reportId, initial, onClose }: Prop
       visible={visible}
       title="Safety"
       testID="sheet-safety"
+      readOnly={readOnly}
       onClose={close}
       onNoneToday={
         draft.rows.length === 0

@@ -10,6 +10,7 @@ import {
   applySections,
   applyPhotos,
   applyAmendments,
+  heldStatusReportIds,
 } from './pullTables.native';
 import type {
   ReferenceSnapshot,
@@ -314,8 +315,10 @@ function fakeReportDb(
     report_photos?: readonly Row[];
     report_amendments?: readonly Row[];
     report_amendment_changes?: readonly Row[];
+    sync_mutations?: readonly Row[];
   } = {},
 ) {
+  const sync_mutations: Row[] = (seed.sync_mutations ?? []).map((r) => ({ ...r }));
   const daily_reports = new Map<string, Row>();
   (seed.daily_reports ?? []).forEach((r) => daily_reports.set(`${r.id}`, { ...r }));
   const report_weather = new Map<string, Row>();
@@ -369,6 +372,16 @@ function fakeReportDb(
             for (const c of cols) out[c] = r[c] ?? null;
             return out;
           }) as unknown as T[];
+      }
+      if (table === 'sync_mutations') {
+        return sync_mutations
+          .filter(
+            (r) =>
+              r.status === 'pending' &&
+              (String(r.client_id).startsWith('submit:') ||
+                String(r.client_id).startsWith('lock:')),
+          )
+          .map((r) => ({ client_id: r.client_id })) as unknown as T[];
       }
     }
     return [] as T[];
@@ -525,6 +538,23 @@ describe('applyReports', () => {
     expect(result.hardSkipped).toBe(0);
     expect(result.cursorKeys).toEqual(['2026-07-01T10:00:00Z']);
     expect(db.daily_reports.get('r1')).toMatchObject({ status: 'submitted', _dirty: 0 });
+  });
+
+  it('holds the optimistic local status while a lifecycle mutation is pending for that report', async () => {
+    const db = fakeReportDb({
+      daily_reports: [{ id: 'r1', status: 'submitted', updated_at: 'T1', _dirty: 0 }],
+    });
+    const result = await applyReports(
+      db as unknown as Db,
+      [
+        reportBundle({
+          report: reportRow({ id: 'r1', status: 'draft', updated_at: 'T2' }),
+        }),
+      ],
+      new Set(['r1']),
+    );
+    expect(db.daily_reports.get('r1')).toMatchObject({ status: 'submitted' });
+    expect(result.cursorKeys).toContain('T2');
   });
 
   it('clean local report is replaced verbatim regardless of timestamps (server older)', async () => {
@@ -779,6 +809,22 @@ describe('applyReports', () => {
     ]);
     expect(result.applied).toBe(1); // credited to the report insert, not double-counted for weather
     expect(db.calls.filter((c) => /^INSERT INTO report_weather/i.test(c.sql))).toHaveLength(0);
+  });
+});
+
+describe('heldStatusReportIds', () => {
+  it('parses pending submit:/lock: clientIds and ignores parked ones', async () => {
+    const db = fakeReportDb({
+      sync_mutations: [
+        { client_id: 'submit:r1', status: 'pending' },
+        { client_id: 'lock:r2', status: 'pending' },
+        { client_id: 'submit:r3', status: 'parked' },
+        { client_id: 'r4', status: 'pending' },
+        { client_id: 'r5:crew', status: 'pending' },
+      ],
+    });
+    const held = await heldStatusReportIds(db as unknown as Db);
+    expect(held).toEqual(new Set(['r1', 'r2']));
   });
 });
 

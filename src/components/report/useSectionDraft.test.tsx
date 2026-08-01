@@ -29,8 +29,8 @@ function installRepo(): void {
   mockRepo = { updateSection } as unknown as Repository;
 }
 
-function setup(initial: Content = { count: 0 }) {
-  return renderHook(() => useSectionDraft<Content>('r1', 'crew', initial));
+function setup(initial: Content = { count: 0 }, options?: { readonly readOnly?: boolean }) {
+  return renderHook(() => useSectionDraft<Content>('r1', 'crew', initial, options));
 }
 
 /** Advance past the debounce and let the queued write's promise chain settle. */
@@ -177,4 +177,31 @@ test('a failed write is logged, not thrown, and the draft survives', async () =>
   expect(warn).toHaveBeenCalled();
   expect(result.current.draft).toEqual({ count: 1 });
   warn.mockRestore();
+});
+
+test('readOnly: setDraft updates local state but never writes through', async () => {
+  const { result } = setup(undefined, { readOnly: true });
+  act(() => result.current.setDraft({ count: 1 }));
+  await settle();
+  expect(updateSection).not.toHaveBeenCalled();
+});
+
+test('readOnly: flush and markComplete are inert', async () => {
+  const { result } = setup(undefined, { readOnly: true });
+  act(() => result.current.setDraft({ count: 1 }));
+  act(() => result.current.flush());
+  act(() => result.current.markComplete(true));
+  await act(async () => {});
+  expect(updateSection).not.toHaveBeenCalled();
+});
+
+test('readOnly: unmount does not flush the pending tail edit', async () => {
+  const { result, unmount } = setup(undefined, { readOnly: true });
+  act(() => result.current.setDraft({ count: 9 }));
+  expect(updateSection).not.toHaveBeenCalled();
+
+  await act(async () => {
+    unmount();
+  });
+  expect(updateSection).not.toHaveBeenCalled();
 });

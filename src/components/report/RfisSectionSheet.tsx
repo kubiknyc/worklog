@@ -19,13 +19,16 @@ type Props = {
   readonly reportId: string;
   readonly initial: RfisContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
 const TRADE_OPTIONS = TRADES.map((t) => ({ value: t, label: t }));
 
-export function RfisSectionSheet({ visible, reportId, initial, onClose }: Props) {
+export function RfisSectionSheet({ visible, reportId, initial, onClose, readOnly }: Props) {
   const { colors, fonts } = useTheme();
-  const { draft, setDraft, flush } = useSectionDraft<RfisContent>(reportId, 'rfis', initial);
+  const { draft, setDraft, flush } = useSectionDraft<RfisContent>(reportId, 'rfis', initial, {
+    readOnly,
+  });
   const setEntries = useCallback(
     (entries: readonly RfiEntry[]) => setDraft({ entries }),
     [setDraft],
@@ -57,6 +60,7 @@ export function RfisSectionSheet({ visible, reportId, initial, onClose }: Props)
       visible={visible}
       title="RFIs"
       testID="sheet-rfis"
+      readOnly={readOnly}
       onClose={close}
       footer={<PrimaryButton testID="sheet-rfis-done" label="Done" onPress={close} />}
     >

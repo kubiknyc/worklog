@@ -25,9 +25,16 @@ type Props = {
   readonly reportId: string;
   readonly initialWeather: WeatherRow | null;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function WeatherSectionSheet({ visible, reportId, initialWeather, onClose }: Props) {
+export function WeatherSectionSheet({
+  visible,
+  reportId,
+  initialWeather,
+  onClose,
+  readOnly,
+}: Props) {
   const { colors, fonts } = useTheme();
   const initial: WeatherOverrideContent = {
     condition: initialWeather?.override_condition ?? null,
@@ -37,6 +44,7 @@ export function WeatherSectionSheet({ visible, reportId, initialWeather, onClose
     reportId,
     'weather',
     initial,
+    { readOnly },
   );
 
   const autoCondition = initialWeather?.auto_condition ?? null;
@@ -58,6 +66,7 @@ export function WeatherSectionSheet({ visible, reportId, initialWeather, onClose
       visible={visible}
       title="Weather"
       testID="sheet-weather"
+      readOnly={readOnly}
       onClose={close}
       footer={<PrimaryButton testID="sheet-weather-done" label="Done" onPress={close} />}
     >

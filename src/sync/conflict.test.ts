@@ -162,4 +162,36 @@ describe('resolveReport (absolute dirty shield — status is server-governed)', 
       content: 'local content',
     });
   });
+
+  it('lifecycleHeld keeps the optimistic local status on a clean row (server content still adopted)', () => {
+    const local = { status: 'submitted', note: 'local' };
+    const server = { status: 'draft', note: 'server' };
+    expect(resolveReport(local, server, false, true)).toEqual({
+      item: { status: 'submitted', note: 'server' },
+      dirty: 0,
+    });
+  });
+
+  it('lifecycleHeld keeps the optimistic local status on a dirty row (local content already shielded)', () => {
+    const local = { status: 'submitted', note: 'local' };
+    const server = { status: 'draft', note: 'server' };
+    expect(resolveReport(local, server, true, true)).toEqual({
+      item: { status: 'submitted', note: 'local' },
+      dirty: 1,
+    });
+  });
+
+  it('lifecycleHeld with no local row is a plain server adoption', () => {
+    const server = { status: 'draft' };
+    expect(resolveReport(null, server, false, true)).toEqual({ item: server, dirty: 0 });
+  });
+
+  it('defaulted lifecycleHeld leaves the existing contract untouched', () => {
+    const local = { status: 'draft', note: 'local' };
+    const server = { status: 'submitted', note: 'server' };
+    expect(resolveReport(local, server, true)).toEqual({
+      item: { status: 'submitted', note: 'local' },
+      dirty: 1,
+    });
+  });
 });

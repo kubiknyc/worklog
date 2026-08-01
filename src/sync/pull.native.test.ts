@@ -40,6 +40,7 @@ jest.mock('./pullTables.native', () => ({
   applySections: jest.fn(),
   applyPhotos: jest.fn(),
   applyAmendments: jest.fn(),
+  heldStatusReportIds: jest.fn(async () => new Set()),
 }));
 jest.mock('./pullSweep.native', () => ({
   evictProjects: jest.fn(async () => undefined),

@@ -31,12 +31,22 @@ type Props = {
   readonly initialCrew: CrewContent;
   readonly initialWork: WorkPerformedContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function CrewWorkSheet({ visible, reportId, initialCrew, initialWork, onClose }: Props) {
+export function CrewWorkSheet({
+  visible,
+  reportId,
+  initialCrew,
+  initialWork,
+  onClose,
+  readOnly,
+}: Props) {
   const { colors, fonts, spacing } = useTheme();
-  const crew = useSectionDraft<CrewContent>(reportId, 'crew', initialCrew);
-  const work = useSectionDraft<WorkPerformedContent>(reportId, 'work_performed', initialWork);
+  const crew = useSectionDraft<CrewContent>(reportId, 'crew', initialCrew, { readOnly });
+  const work = useSectionDraft<WorkPerformedContent>(reportId, 'work_performed', initialWork, {
+    readOnly,
+  });
 
   const setCrewRows = useCallback(
     (rows: readonly CrewRowContent[]) => crew.setDraft({ rows }),
@@ -107,6 +117,7 @@ export function CrewWorkSheet({ visible, reportId, initialCrew, initialWork, onC
       visible={visible}
       title="Crew & work by trade"
       testID="sheet-crew-work"
+      readOnly={readOnly}
       onClose={close}
       onNoneToday={crew.draft.rows.length === 0 ? noCrew : undefined}
       noneLabel="No crew today"

@@ -20,11 +20,14 @@ type Props = {
   readonly reportId: string;
   readonly initial: DelaysContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function DelaysSectionSheet({ visible, reportId, initial, onClose }: Props) {
+export function DelaysSectionSheet({ visible, reportId, initial, onClose, readOnly }: Props) {
   const { colors, fonts } = useTheme();
-  const { draft, setDraft, flush } = useSectionDraft<DelaysContent>(reportId, 'delays', initial);
+  const { draft, setDraft, flush } = useSectionDraft<DelaysContent>(reportId, 'delays', initial, {
+    readOnly,
+  });
   const setRows = useCallback((rows: readonly DelayRowContent[]) => setDraft({ rows }), [setDraft]);
   const add = useCallback(
     () =>
@@ -60,6 +63,7 @@ export function DelaysSectionSheet({ visible, reportId, initial, onClose }: Prop
       visible={visible}
       title="Delays"
       testID="sheet-delays"
+      readOnly={readOnly}
       onClose={close}
       footer={<PrimaryButton testID="sheet-delays-done" label="Done" onPress={close} />}
     >

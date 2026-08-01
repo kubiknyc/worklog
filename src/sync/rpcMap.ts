@@ -28,6 +28,11 @@ const HEX_CHARS = '0123456789abcdef';
  * The `\x` prefix must be written in JS source as the two-character escape
  * `'\\x'` (a bare `\x` is an invalid escape sequence in a JS string
  * literal) — this is the one place that escaping is pinned.
+ *
+ * Exported (not module-private) because the web repo's direct RPC path
+ * (`src/data/supabaseRepo.ts`) also needs this exact wire encoding — sharing
+ * the function keeps the native push handler and the web repo from drifting
+ * on how the signature bytes are hex-encoded.
  */
 export function base64ToByteaHex(b64: string): string {
   const binary = atob(b64);

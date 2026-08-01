@@ -11,6 +11,10 @@ describe('base64ToByteaHex', () => {
     expect(base64ToByteaHex('')).toBe('\\x');
   });
 
+  it('exports base64ToByteaHex for the web repo path', () => {
+    expect(base64ToByteaHex('AAAA')).toMatch(/^\\x/);
+  });
+
   it('pins the backslash-x escaping (a bare \\x is invalid JS source)', () => {
     // In JS source, the literal prefix must be written as '\\x' — a single
     // backslash followed by x is what ends up in the runtime string.

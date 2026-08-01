@@ -86,6 +86,14 @@ export interface PlatformRepoBundle {
   readonly engine: SyncEngineApi | null;
 }
 
+/** Input to `submitReport` (Task 5); `signerTitle` mirrors the optional PM/super
+ * display title (MemberRow.title) — null when the signer has none on file. */
+export interface SubmitReportInput {
+  readonly signerName: string;
+  readonly signerTitle: string | null;
+  readonly signaturePngBase64: string;
+}
+
 export interface Repository {
   // ── Reads ────────────────────────────────────────────────────────────────
   listProjects(): Promise<readonly ProjectRow[]>;
@@ -130,4 +138,18 @@ export interface Repository {
    * pull cursor to bias, so it's a no-op.
    */
   setActiveProject(projectId: string): Promise<void>;
+  /**
+   * draft -> submitted. Native flips the local status and enqueues a
+   * `submit:<id>`-namespaced mutation atomically (status guard throws before
+   * any write); web calls the `submit_report` RPC directly. Neither path
+   * touches `_dirty` — content is untouched, and the pull-side status hold
+   * protects the optimistic status until the server ack.
+   */
+  submitReport(reportId: string, input: SubmitReportInput): Promise<void>;
+  /**
+   * submitted -> locked. Same shape as `submitReport`: native optimistic
+   * status write + `lock:<id>`-namespaced enqueue atomically, web calls the
+   * `lock_report` RPC. Status guard throws before any write.
+   */
+  lockReport(reportId: string): Promise<void>;
 }

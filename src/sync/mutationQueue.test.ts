@@ -2,6 +2,7 @@ import {
   applyOutcome,
   classifyError,
   isDuplicateUpload,
+  lifecycleClientId,
   newMutation,
   normalizeStorageError,
   orderForDrain,
@@ -491,5 +492,16 @@ describe('rowTargetOf / otherMutationTargetsRow (M1)', () => {
       status: 'parked' as const,
     };
     expect(otherMutationTargetsRow([s, dup], s)).toBe(true);
+  });
+});
+
+describe('lifecycleClientId', () => {
+  it('namespaces submit and lock so they cannot collide with create_report or each other', () => {
+    expect(lifecycleClientId('submit_report', 'r1')).toBe('submit:r1');
+    expect(lifecycleClientId('lock_report', 'r1')).toBe('lock:r1');
+    expect(lifecycleClientId('submit_report', 'r1')).not.toBe('r1');
+    expect(lifecycleClientId('submit_report', 'r1')).not.toBe(
+      lifecycleClientId('lock_report', 'r1'),
+    );
   });
 });

@@ -40,7 +40,9 @@ The convention, applied as screens are built rather than retrofitted:
 |---|---|---|
 | Screen root | `screen-<route>` | `screen-today`, `screen-history`, `screen-photos`, `screen-settings`, `screen-camera` |
 | Tab bar button | `tab-<route>` | `tab-today`, `tab-history`, `tab-camera`, `tab-photos`, `tab-settings` |
-| Form control | `<screen>-<field>` | `login-email`, `login-password`, `login-submit`, `login-forgot` |
+| Form control | `<screen>-<field>` | `login-email`, `login-password`, `login-submit`, `login-forgot`, `report-submit`, `report-lock` |
+| Confirm dialog | `<action>-confirm` / `<action>-cancel` | `report-lock-confirm`, `report-lock-cancel` |
+| Submit signature sheet | `submit-<field>` | `submit-signer-title`, `submit-signature-canvas`, `submit-clear-signature`, `submit-confirm` |
 | Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent`, `report-section-crew_work` |
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
 | Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-synced`, `sync-status-queued` — deliberate exception to `<screen>-<state>`: the pill is the same surface on every screen |

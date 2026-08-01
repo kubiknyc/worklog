@@ -20,14 +20,16 @@ type Props = {
   readonly reportId: string;
   readonly initial: DeliveriesContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function DeliveriesSectionSheet({ visible, reportId, initial, onClose }: Props) {
+export function DeliveriesSectionSheet({ visible, reportId, initial, onClose, readOnly }: Props) {
   const { colors, fonts } = useTheme();
   const { draft, setDraft, flush } = useSectionDraft<DeliveriesContent>(
     reportId,
     'deliveries',
     initial,
+    { readOnly },
   );
   const setEntries = useCallback(
     (entries: readonly DeliveryEntry[]) => setDraft({ entries }),
@@ -60,6 +62,7 @@ export function DeliveriesSectionSheet({ visible, reportId, initial, onClose }: 
       visible={visible}
       title="Deliveries"
       testID="sheet-deliveries"
+      readOnly={readOnly}
       onClose={close}
       footer={<PrimaryButton testID="sheet-deliveries-done" label="Done" onPress={close} />}
     >

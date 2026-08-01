@@ -19,14 +19,16 @@ type Props = {
   readonly reportId: string;
   readonly initial: EquipmentContent;
   readonly onClose: () => void;
+  readonly readOnly?: boolean;
 };
 
-export function EquipmentSectionSheet({ visible, reportId, initial, onClose }: Props) {
+export function EquipmentSectionSheet({ visible, reportId, initial, onClose, readOnly }: Props) {
   const { colors, fonts } = useTheme();
   const { draft, setDraft, flush } = useSectionDraft<EquipmentContent>(
     reportId,
     'equipment',
     initial,
+    { readOnly },
   );
   const [pendingName, setPendingName] = useState('');
   const setRows = useCallback(
@@ -60,6 +62,7 @@ export function EquipmentSectionSheet({ visible, reportId, initial, onClose }: P
       visible={visible}
       title="Equipment"
       testID="sheet-equipment"
+      readOnly={readOnly}
       onClose={close}
       footer={<PrimaryButton testID="sheet-equipment-done" label="Done" onPress={close} />}
     >
