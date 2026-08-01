@@ -267,6 +267,26 @@ appId: com.jobsight.worklog
 - assertVisible:
     id: 'screen-report'
 
+# ── M4a: submit the draft ─────────────────────────────────────────────
+- scrollUntilVisible:
+    element:
+      id: 'report-submit'
+- tapOn:
+    id: 'report-submit'
+- assertVisible:
+    id: 'submit-signature-canvas'
+# Draw a stroke across the WebView canvas (coordinates are % of screen):
+- swipe:
+    start: 30%, 60%
+    end: 70%, 65%
+- tapOn:
+    id: 'submit-confirm'
+# The sheet closes; the chip flips optimistically, then the drain syncs it:
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-synced'
+    timeout: 30000
+
 # --- Back out to Today. ---
 - tapOn:
     id: 'report-back'
