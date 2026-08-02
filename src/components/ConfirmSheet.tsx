@@ -1,11 +1,23 @@
 /**
  * Confirmation bottom sheet — a heading, optional body, and a cancel/confirm
- * button pair. Used for terminal-move gates (e.g. confirming a submit→locked
- * move on a report), so the confirm button carries the `locked` status color.
+ * button pair, used to gate destructive or terminal actions.
+ *
+ * The confirm button used to fill with the `locked` status colour and hardcode
+ * white text: 2.10:1 in the default theme, under half the 4.5:1 AC-S1 floor
+ * (#18). It now fills with the theme's `error` colour — semantically right for
+ * a destructive gate, where a green "locked" fill never was — and derives its
+ * foreground via `onFillColor`, so a palette change cannot silently
+ * reintroduce an unreadable pairing.
+ *
+ * Picking a better literal would not have sufficed: editorial's `locked` green
+ * clears 4.5:1 against neither white nor black, so no foreground could rescue
+ * it. Status colours are graphical indicators (3:1) and must not be used as
+ * text backgrounds at all.
  */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '../theme';
+import { onFillColor } from '../theme/contrast';
 import { BottomSheet } from './BottomSheet';
 
 type Props = {
@@ -27,7 +39,8 @@ export function ConfirmSheet({
   onConfirm,
   onClose,
 }: Props) {
-  const { colors, fonts, radii, reportStatus } = useTheme();
+  const { colors, fonts, radii, error } = useTheme();
+  const confirmInk = onFillColor(error);
   return (
     <BottomSheet visible={visible} onClose={onClose} title={title}>
       {message ? (
@@ -58,14 +71,14 @@ export function ConfirmSheet({
             styles.btn,
             styles.confirm,
             {
-              backgroundColor: reportStatus.locked,
-              borderColor: reportStatus.locked,
+              backgroundColor: error,
+              borderColor: error,
               borderRadius: radii.button,
             },
             pressed && styles.pressed,
           ]}
         >
-          <Text style={[styles.btnText, { color: '#FFFFFF', fontFamily: fonts.ui.bold }]}>
+          <Text style={[styles.btnText, { color: confirmInk, fontFamily: fonts.ui.bold }]}>
             {confirmLabel}
           </Text>
         </Pressable>
