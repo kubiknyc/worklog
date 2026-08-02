@@ -343,6 +343,65 @@ describe('createSyncStatusHub — attachEngine', () => {
     expect(hub.getState()).toEqual({ ...engineB.getState(), countError: false });
   });
 
+  // #21: `publish()` wraps every subscriber call in try/catch so one bad
+  // subscriber cannot break the hub or `refresh()`'s never-rejects contract.
+  // That guard had no test — the suite's only `throw`s were inside QueueCounter
+  // fakes, never inside a subscribe callback — so the 100%-function pin was
+  // satisfied without the catch ever executing.
+  describe('a throwing subscriber cannot break the hub', () => {
+    // Created per-test: this project restores mocks between tests, so a spy
+    // installed at describe-eval time would be torn down before it ran.
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => warn.mockRestore());
+
+    test('later subscribers still receive the notification', () => {
+      const hub = createSyncStatusHub();
+      const seen: string[] = [];
+      hub.subscribe(() => seen.push('first'));
+      hub.subscribe(() => {
+        throw new Error('subscriber blew up');
+      });
+      hub.subscribe(() => seen.push('third'));
+
+      const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 4 });
+      hub.attachEngine(engine);
+
+      // The thrower sits between them: both neighbours must still be called.
+      expect(seen).toEqual(['first', 'third']);
+      expect(warn).toHaveBeenCalled();
+    });
+
+    test('state is still published and readable after a subscriber throws', () => {
+      const hub = createSyncStatusHub();
+      hub.subscribe(() => {
+        throw new Error('subscriber blew up');
+      });
+
+      const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 7 });
+      hub.attachEngine(engine);
+
+      expect(hub.getState().pending).toBe(7);
+    });
+
+    test('refresh() still resolves when a subscriber throws', async () => {
+      const hub = createSyncStatusHub();
+      hub.subscribe(() => {
+        throw new Error('subscriber blew up');
+      });
+      const counter: QueueCounter = () => Promise.resolve({ pending: 2, parked: 1 });
+      hub.setCounter(counter);
+
+      // The never-rejects contract: a throwing subscriber must not surface as
+      // a rejected refresh, and must not be misread as a count failure.
+      await expect(hub.refresh()).resolves.toBeUndefined();
+      expect(hub.getState().pending).toBe(2);
+      expect(hub.getState().countError).toBe(false);
+    });
+  });
+
   test('epoch: a stale setCounter resolving after attachEngine is ignored', async () => {
     const hub = createSyncStatusHub();
     const stale = deferred<QueueCounts>();

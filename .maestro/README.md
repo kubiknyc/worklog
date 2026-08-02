@@ -22,6 +22,17 @@ an iOS simulator `.app`) with `EXPO_PUBLIC_DEMO_LOGINS=on`, which is what
 `login.yaml`'s fast path depends on. `login.yaml` documents its own
 preconditions.
 
+**The profile also sets `developmentClient: true`, and must keep it.** Demo
+logins are gated on `__DEV__ && EXPO_PUBLIC_DEMO_LOGINS !== 'off'`
+(`app/(auth)/login.tsx`) — the `__DEV__` half is deliberate, letting Metro strip
+the demo password literal out of production bundles. Without
+`developmentClient`, `__DEV__` is false, the gate short-circuits regardless of
+the env var, and both flows fail against a screen that never renders the demo
+rows (#16). Being a dev-client build, it needs a reachable Metro bundler at
+launch. `src/easConfig.test.ts` fails `npm run verify` if any profile sets
+`EXPO_PUBLIC_DEMO_LOGINS=on` without `developmentClient`, so this cannot
+regress silently.
+
 ## In CI
 
 `.eas/workflows/e2e-android.yml` builds that profile and runs these flows on
