@@ -17,6 +17,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { isLikelyOffline } from '../lib/errors';
 import type { Mutation, MutationPayload } from '../sync/types';
 import { useTheme } from '../theme';
+import { hitSlopFor } from '../theme/touchTarget';
 import { ConfirmSheet } from './ConfirmSheet';
 import { EmptyState } from './EmptyState';
 import { PrimaryButton } from './PrimaryButton';
@@ -65,6 +66,9 @@ export function confirmMessageOf(kind: MutationPayload['kind']): string {
 }
 
 const GUARD_WIN_NOTICE = 'This change was just updated — it no longer needs attention';
+
+/** Line box of the Discard label at the default 14px size. Feeds its hit slop. */
+const DISCARD_LABEL_HEIGHT = 18;
 
 type Props = {
   readonly rows: readonly Mutation[];
@@ -162,7 +166,9 @@ export function SyncQueueScreen({
                   accessibilityRole="button"
                   accessibilityLabel={`Discard ${kindLabelOf(m.payload.kind)}`}
                   onPress={() => setConfirmTarget(m)}
-                  hitSlop={8}
+                  // A ~18px text line + 8px slop was a 34px target — on the one
+                  // screen where a mis-tap costs unsent work (#19).
+                  hitSlop={hitSlopFor(DISCARD_LABEL_HEIGHT)}
                   style={({ pressed }) => pressed && styles.pressed}
                 >
                   <Text style={{ color: colors.accent, fontFamily: fonts.ui.semibold }}>

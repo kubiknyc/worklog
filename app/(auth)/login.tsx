@@ -28,6 +28,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth, validateCredentials } from '../../src/auth';
 import { ERROR_COLORS, FONTS, PALETTES } from '../../src/theme';
+import { MIN_TOUCH_TARGET } from '../../src/theme/touchTarget';
 
 const C = PALETTES.blueprint;
 const ERROR_TEXT = ERROR_COLORS.blueprint;
@@ -317,7 +318,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: C.accentInk,
   },
-  forgotLink: { alignSelf: 'center', paddingVertical: 12, marginTop: 4, minHeight: 40 },
+  // AC-T1: 48px floor. AC-T2: adjacent controls need clear separation — 4px
+  // below a 50px submit button put "Forgot password" within a thumb's slip of
+  // the primary action (#19).
+  forgotLink: {
+    alignSelf: 'center',
+    paddingVertical: 12,
+    marginTop: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   forgotText: {
     fontFamily: FONTS.ui.semibold,
     fontSize: 13,

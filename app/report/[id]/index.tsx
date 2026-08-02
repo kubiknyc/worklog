@@ -64,6 +64,10 @@ import {
 } from '../../../src/report/summarize';
 import type { SectionKind } from '../../../src/sync/types';
 import { useTheme } from '../../../src/theme';
+import { hitSlopFor } from '../../../src/theme/touchTarget';
+
+/** Kept beside the slop it feeds — changing one without the other is the bug. */
+const BACK_ICON_SIZE = 26;
 
 /** "2026-07-24" → "Thursday, Jul 24" (parsed at local noon to dodge TZ skew). */
 function formatReportDate(reportDate: string): string {
@@ -346,10 +350,11 @@ export default function ReportDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel="Back"
           onPress={() => router.back()}
-          hitSlop={10}
+          // 26px icon + 10px slop was 46px — two short of the floor (#19).
+          hitSlop={hitSlopFor(BACK_ICON_SIZE)}
           style={({ pressed }) => pressed && styles.pressed}
         >
-          <Ionicons name="chevron-back" size={26} color={colors.text} />
+          <Ionicons name="chevron-back" size={BACK_ICON_SIZE} color={colors.text} />
         </Pressable>
         <Text style={[styles.title, { color: colors.text, fontFamily: fonts.ui.extrabold }]}>
           Daily report

@@ -15,6 +15,14 @@ import { useSyncActions } from '../data/RepositoryProvider';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import type { HubSyncState } from '../sync/statusHub';
 import { useTheme } from '../theme';
+import { hitSlopFor } from '../theme/touchTarget';
+
+/**
+ * Rendered height of the pill: `paddingVertical: 5` on each side plus the
+ * 12.5px label's line box (~17px). Kept beside the styles it derives from so a
+ * padding or font-size change here is visibly a touch-target change too.
+ */
+const PILL_CONTENT_HEIGHT = 27;
 
 export type SyncBannerState =
   'synced' | 'queued' | 'syncing' | 'attention' | 'degraded' | 'offline';
@@ -110,6 +118,11 @@ export function SyncStatusBanner({ syncState, degraded = false, onPress }: Props
       // label on focus (AC-A1 scoped — no announceForAccessibility in M2).
       accessibilityLiveRegion="polite"
       onPress={onPress}
+      // The pill is deliberately small — it sits in fixed chrome on every
+      // screen — but small is not the same as hard to hit. Its rendered box is
+      // ~27px (5px padding each side plus a 12.5px label), so it needs slop to
+      // clear the 48px floor. Extends the touch area without moving pixels (#19).
+      hitSlop={hitSlopFor(PILL_CONTENT_HEIGHT)}
       style={[styles.pill, { backgroundColor: `${color}14` }]}
     >
       <View style={[styles.dot, { backgroundColor: color }]} />
