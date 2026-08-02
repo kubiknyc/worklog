@@ -8,6 +8,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 
 import { useTheme } from '../theme';
+import { onFillColor } from '../theme/contrast';
 
 type Tone = 'primary' | 'danger';
 
@@ -36,8 +37,11 @@ export function PrimaryButton({
 
   const isBlocked = disabled || busy;
   const backgroundColor = tone === 'danger' ? error : colors.accent;
-  // Accent-ink reads on the accent fill; danger fills are dark reds → white.
-  const textColor = tone === 'danger' ? '#FFFFFF' : colors.accentInk;
+  // Accent-ink is chosen to read on the accent fill. The danger fill is NOT
+  // always a dark red — the comment here used to assert it was, but Blueprint's
+  // error colour is #FF8A8A, a light red picked for error *text on a dark
+  // surface*; white on it is 2.27:1. Derive instead of assuming (#18).
+  const textColor = tone === 'danger' ? onFillColor(error) : colors.accentInk;
 
   return (
     <Pressable
