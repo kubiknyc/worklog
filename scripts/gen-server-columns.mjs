@@ -18,7 +18,12 @@ const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = process.env.BACKEND_MIGRATIONS_DIR
   ? path.resolve(process.env.BACKEND_MIGRATIONS_DIR)
   : path.resolve(HERE, '../../jobsight-backend/supabase/migrations');
-const OUT = path.resolve(HERE, '../src/db/serverColumns.generated.json');
+// $SERVER_COLUMNS_OUT lets a test drive the real script against a fixture
+// migrations dir without clobbering the committed snapshot. Nothing in the app
+// or CI sets it — both use the default path.
+const OUT = process.env.SERVER_COLUMNS_OUT
+  ? path.resolve(process.env.SERVER_COLUMNS_OUT)
+  : path.resolve(HERE, '../src/db/serverColumns.generated.json');
 
 if (!fs.existsSync(MIGRATIONS_DIR)) {
   console.error(
@@ -130,11 +135,35 @@ for (const file of files) {
     for (const m of [...sql.matchAll(alterStartRe)]) {
       const terminator = sql.indexOf(';', m.index);
       const stmt = sql.slice(m.index, terminator < 0 ? sql.length : terminator);
-      for (const am of [...stmt.matchAll(/add column (if not exists )?"?([a-z_]+)"?/gi)]) {
-        columns[table].add(am[2].toLowerCase());
+      // A table rename would silently orphan every column tracked for it —
+      // fail loudly rather than emit a stale snapshot. `rename column a to b`
+      // cannot trip this: it has an identifier between `rename` and `to`.
+      if (/\brename\s+to\s+/i.test(stmt)) {
+        throw new Error(
+          `${file}: 'alter table ${table} rename to ...' is not supported by this ` +
+            `parser. Update TABLES and this script together, then regenerate.`,
+        );
       }
-      for (const dm of [...stmt.matchAll(/drop column (if exists )?"?([a-z_]+)"?/gi)]) {
-        columns[table].delete(dm[2].toLowerCase());
+      // One pass in SOURCE ORDER over all three mutating clause forms. Order
+      // matters: `add column a, rename column a to b` and `rename a to b, drop
+      // column b` both depend on clauses applying as written, which three
+      // independent matchAll loops could not do.
+      //
+      // `rename column` was previously unhandled entirely — a rename neither
+      // added nor dropped, so the regenerated snapshot came out byte-identical
+      // on real drift and the parity gate passed (#14). CI did not catch it
+      // either, because CI regenerates with this same parser and diffs the
+      // result against the committed file.
+      const clauseRe =
+        /add column (?:if not exists )?"?([a-z_]+)"?|drop column (?:if exists )?"?([a-z_]+)"?|rename\s+(?:column\s+)?"?([a-z_]+)"?\s+to\s+"?([a-z_]+)"?/gi;
+      for (const c of [...stmt.matchAll(clauseRe)]) {
+        const [, added, dropped, renamedFrom, renamedTo] = c;
+        if (added) columns[table].add(added.toLowerCase());
+        else if (dropped) columns[table].delete(dropped.toLowerCase());
+        else if (renamedFrom && renamedTo) {
+          columns[table].delete(renamedFrom.toLowerCase());
+          columns[table].add(renamedTo.toLowerCase());
+        }
       }
     }
   }

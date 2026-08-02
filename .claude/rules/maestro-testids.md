@@ -35,5 +35,20 @@ enforces this in `npm run verify`. Runtime-built testIDs
 (`login-demo-${role}`) go in that test's `DYNAMIC_TESTIDS` list with the file
 that generates them. Never loosen the assertion.
 
+Two rules for `DYNAMIC_TESTIDS` entries, both learned from guards that passed
+while broken:
+
+- **The prefix must appear in real code, not a comment.** The check strips
+  comments first. `sync-status-` used to be satisfied by the prose in
+  `SyncStatusBanner.tsx`'s header, so deleting the runtime template would have
+  left the guard green.
+- **If another file appends the suffix, name it in `derivedIn`.** A prefix
+  declared in one file says nothing about the template that builds the full id
+  elsewhere. `sheet-safety` was satisfied by a static literal in
+  `SafetySectionSheet.tsx` while the `` `${testID}-none` `` template it was meant
+  to protect lived in `SectionSheetScaffold.tsx`. Prefer the narrowest prefix
+  that covers only genuinely derived ids — static siblings are found by the
+  normal scan and need no exemption.
+
 The guard proves a selector exists in source, not that navigation reaches it —
 that is what the flow itself is for.
