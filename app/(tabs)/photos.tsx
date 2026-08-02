@@ -1,5 +1,10 @@
-import { Text, View } from 'react-native';
+/**
+ * Photos (placeholder until the gallery ships). User-facing copy describes what
+ * will appear here rather than naming an internal milestone (#20).
+ */
+import { View } from 'react-native';
 
+import { EmptyState } from '../../src/components';
 import { useTheme } from '../../src/theme';
 
 export default function PhotosScreen() {
@@ -14,7 +19,12 @@ export default function PhotosScreen() {
         backgroundColor: colors.bg,
       }}
     >
-      <Text style={{ color: colors.text }}>Photos — M2</Text>
+      <EmptyState
+        testID="photos-empty"
+        icon="images-outline"
+        title="No photos yet"
+        subtitle="Photos you attach to a report will be collected here."
+      />
     </View>
   );
 }

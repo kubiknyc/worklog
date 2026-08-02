@@ -1,5 +1,11 @@
-import { Text, View } from 'react-native';
+/**
+ * Camera (placeholder until capture ships). User-facing copy describes the
+ * feature rather than naming an internal milestone — "Camera — M5" told crews
+ * about a roadmap they have no context for (#20).
+ */
+import { View } from 'react-native';
 
+import { EmptyState } from '../../src/components';
 import { useTheme } from '../../src/theme';
 
 export default function CameraScreen() {
@@ -14,7 +20,12 @@ export default function CameraScreen() {
         backgroundColor: colors.bg,
       }}
     >
-      <Text style={{ color: colors.text }}>Camera — M5</Text>
+      <EmptyState
+        testID="camera-empty"
+        icon="camera-outline"
+        title="Photo capture isn't ready yet"
+        subtitle="You'll be able to take site photos straight into the day's report."
+      />
     </View>
   );
 }
