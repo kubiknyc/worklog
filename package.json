@@ -48,9 +48,15 @@
     "coverageThreshold": {
       "global": {
         "branches": 40,
-        "functions": 55,
-        "lines": 57,
+        "functions": 57,
+        "lines": 55,
         "statements": 55
+      },
+      "src/supabase/storageAdapters.ts": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
       },
       "src/sync/mutationQueue.ts": {
         "branches": 100,

@@ -334,6 +334,21 @@ to all of `src/` (excluding `*.native.*`, `types.ts`, `index.ts`, `fonts.ts`,
 Jest subtracts files carrying their own path threshold from the global pool, so
 the right-hand column is what `global` actually gates. The floor is set a few
 points under it (`55/40/57/55`) so CI is green today and any *regression* fails.
+That tuple is **statements / branches / functions / lines**, matching the table
+order above — `package.json` had `functions` and `lines` transposed against it
+until #15; the order is load-bearing, so keep the two in step when ratcheting.
+
+**On the `supabase/client.ts` exclusion (revised by #15).** Every other entry in
+that exclusion list is logic-free. `client.ts` was not: it carried the chunked
+SecureStore session adapter, so a security-critical path sat at 0% and invisible
+to every threshold. The logic now lives in `src/supabase/storageAdapters.ts`,
+which is **inside** `collectCoverageFrom` and pinned in `coverageThreshold`.
+`client.ts` keeps the exclusion because what remains is module-scope wiring that
+cannot be imported without side effects — it throws on missing env vars,
+constructs a live client, and registers an `AppState` listener. The rule the
+exclusion list now follows: *a file may be excluded only if it has no branchable
+logic.* If logic lands in `client.ts` again, extract it rather than re-widening
+the exclusion.
 
 **Ratchet, not a resting place.** Raise the floor at each milestone gate:
 
