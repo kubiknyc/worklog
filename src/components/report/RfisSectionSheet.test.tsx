@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 import { ThemeProvider } from '../../theme';
 
@@ -10,15 +10,30 @@ jest.mock('../../data', () => ({
 
 // eslint-disable-next-line import/first
 import { RfisSectionSheet } from './RfisSectionSheet';
+// eslint-disable-next-line import/first
+import { SECTION_DRAFT_DEBOUNCE_MS } from './useSectionDraft';
 
+// Fake timers, not `waitFor`: this test also pays the suite's one-time cost of
+// lazily requiring the RN/Expo component stack during its first `render`.
+// Waiting the 400ms debounce on the wall clock puts both inside one jest test
+// budget, which a cold transform cache blows through. Repo precedent:
+// CrewWorkSheet.test.tsx and useSectionDraft.test.tsx.
 test('Add item writes an entry', async () => {
-  const { getByLabelText } = render(
-    <ThemeProvider>
-      <RfisSectionSheet visible reportId="r1" initial={{ entries: [] }} onClose={jest.fn()} />
-    </ThemeProvider>,
-  );
-  fireEvent.press(getByLabelText('Add item'));
-  await waitFor(() =>
-    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'rfis', expect.anything(), false),
-  );
+  jest.useFakeTimers();
+  try {
+    const { getByLabelText } = render(
+      <ThemeProvider>
+        <RfisSectionSheet visible reportId="r1" initial={{ entries: [] }} onClose={jest.fn()} />
+      </ThemeProvider>,
+    );
+    fireEvent.press(getByLabelText('Add item'));
+    jest.advanceTimersByTime(SECTION_DRAFT_DEBOUNCE_MS);
+    // Flush the microtask chain the debounced callback kicks off (issueWrite
+    // chains through a Promise) — fake timers don't do this for us.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'rfis', expect.anything(), false);
+  } finally {
+    jest.useRealTimers();
+  }
 });

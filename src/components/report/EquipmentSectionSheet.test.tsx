@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 import { ThemeProvider } from '../../theme';
 
@@ -10,16 +10,31 @@ jest.mock('../../data', () => ({
 
 // eslint-disable-next-line import/first
 import { EquipmentSectionSheet } from './EquipmentSectionSheet';
+// eslint-disable-next-line import/first
+import { SECTION_DRAFT_DEBOUNCE_MS } from './useSectionDraft';
 
+// Fake timers, not `waitFor`: this test also pays the suite's one-time cost of
+// lazily requiring the RN/Expo component stack during its first `render`.
+// Waiting the 400ms debounce on the wall clock puts both inside one jest test
+// budget, which a cold transform cache blows through. Repo precedent:
+// CrewWorkSheet.test.tsx and useSectionDraft.test.tsx.
 test('Add equipment writes a row', async () => {
-  const { getByPlaceholderText, getByLabelText } = render(
-    <ThemeProvider>
-      <EquipmentSectionSheet visible reportId="r1" initial={{ rows: [] }} onClose={jest.fn()} />
-    </ThemeProvider>,
-  );
-  fireEvent.changeText(getByPlaceholderText('Equipment name'), 'Excavator');
-  fireEvent.press(getByLabelText('Add equipment'));
-  await waitFor(() =>
-    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'equipment', expect.anything(), false),
-  );
+  jest.useFakeTimers();
+  try {
+    const { getByPlaceholderText, getByLabelText } = render(
+      <ThemeProvider>
+        <EquipmentSectionSheet visible reportId="r1" initial={{ rows: [] }} onClose={jest.fn()} />
+      </ThemeProvider>,
+    );
+    fireEvent.changeText(getByPlaceholderText('Equipment name'), 'Excavator');
+    fireEvent.press(getByLabelText('Add equipment'));
+    jest.advanceTimersByTime(SECTION_DRAFT_DEBOUNCE_MS);
+    // Flush the microtask chain the debounced callback kicks off (issueWrite
+    // chains through a Promise) — fake timers don't do this for us.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockUpdateSection).toHaveBeenCalledWith('r1', 'equipment', expect.anything(), false);
+  } finally {
+    jest.useRealTimers();
+  }
 });
