@@ -26,6 +26,8 @@
       "**/__tests__/**/*.test.{ts,tsx}",
       "**/?(*.)+(test).{ts,tsx}"
     ],
+    "_testTimeoutWhy": "Jest's 5s default is a cold-render budget, not a logic budget: the first RTL render in a suite pays jest-expo module load + ThemeProvider setup, which under full-parallel workers on a loaded machine exceeds 5s and fails tests that have no waiting in them at all (#21). The debounce races that used to cause this are gone — sheet tests drive fake timers now — so anything still approaching this ceiling is a real hang worth investigating.",
+    "testTimeout": 30000,
     "testPathIgnorePatterns": [
       "/node_modules/",
       "<rootDir>/app/",
