@@ -65,7 +65,11 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
     faint: '#525147', // WCAG AA: 5.3:1 on surface, 4.8:1 on bg (was #9A988F, 1.7:1 — failed)
     border: 'rgba(28,26,23,0.12)',
     accent: '#E8531F',
-    accentInk: '#FFFFFF',
+    // WCAG AA: 5.21:1 on accent (was #FFFFFF, 3.69:1 — under AC-S1's 4.5 floor
+    // for text on a fill). This is the value `onFillColor(accent)` picks, i.e.
+    // ON_FILL_DARK: beton's accent is a mid-tone orange, light enough that
+    // white text on it is the same class of bug as #18.
+    accentInk: '#0B0F14',
     scheme: 'light',
   },
 } as const;
@@ -81,6 +85,14 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
 // unused (WorkLog's 3-stage lifecycle has no analog). `amended` is a derived
 // display state, not a lifecycle stage, so it takes each theme's `accent` color
 // (PALETTES[name].accent) rather than an item-status value.
+//
+// The "verified" claim above is NOT true of `beton.amended`: the raw accent is
+// 2.00–2.44:1 against beton's light surfaces. That is a known, deliberate
+// exception — recolouring it means re-tinting the theme's accent, a brand
+// decision rather than a contrast fix — and it is pinned as such in
+// `contrast.test.ts`'s KNOWN_BELOW_FLOOR, which also fails if the problem ever
+// resolves so the exemption cannot outlive it. Status-colour contrast is owned
+// there; `tokens.test.ts` deliberately does not restate it.
 export const REPORT_STATUS_COLORS: Readonly<
   Record<ThemeName, Readonly<Record<ReportStatus, string>>>
 > = {

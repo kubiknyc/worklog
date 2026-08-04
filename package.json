@@ -45,8 +45,10 @@
       "!src/lib/observability.web.ts",
       "!src/lib/observabilityTypes.ts",
       "!src/platformSplit.test.ts",
-      "!src/maestroSelectors.test.ts"
+      "!src/maestroSelectors.test.ts",
+      "src/db/rows.native.ts"
     ],
+    "_collectCoverageFromWhy": "The `!src/**/*.native.ts` negation keeps device-only modules out of the denominator, but it also hid tx() — the global transaction serializer every device write funnels through — so that module had neither a test nor a line in the report (#24). The trailing positive pattern re-adds just that file; order matters, a re-include must follow the negation.",
     "coverageThreshold": {
       "global": {
         "branches": 40,
@@ -89,6 +91,12 @@
         "functions": 100,
         "lines": 95,
         "statements": 95
+      },
+      "src/db/rows.native.ts": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
       },
       "src/db/schema.ts": {
         "branches": 90,
