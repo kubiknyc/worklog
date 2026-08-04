@@ -296,12 +296,12 @@ describe('SyncQueueScreen rendering', () => {
     fireEvent.press(screen.getByTestId('sync-queue-discard-p1'));
     expect(screen.getByText('This change stays on this device only.')).toBeTruthy();
 
-    // Two "Discard" texts are on screen once the confirm sheet opens: the
-    // row's own Discard pressable, and the confirm sheet's confirm button —
-    // the confirm sheet's is declared last, so it renders last.
+    // Addressed by testID, not copy. This used to reach for the LAST of two
+    // "Discard" texts on screen and depend on declaration order, because the
+    // confirm button had no testID at all — the same gap that left the flow
+    // undrivable by Maestro (#23).
     await act(async () => {
-      const discardTexts = screen.getAllByText('Discard');
-      fireEvent.press(discardTexts[discardTexts.length - 1]);
+      fireEvent.press(screen.getByTestId('sync-discard-confirm'));
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -310,6 +310,73 @@ describe('SyncQueueScreen rendering', () => {
     expect(onNotice).toHaveBeenCalledWith(
       'This change was just updated — it no longer needs attention',
     );
+  });
+
+  // #23: the trigger was addressable and its destination was not, so a flow
+  // could open the app's most destructive confirmation and then neither
+  // complete nor dismiss it. `maestroSelectors.test.ts` proves these ids exist
+  // in source; these prove they actually reach the tree.
+  test('the confirmation exposes confirm, cancel and backdrop testIDs', () => {
+    render(
+      <SyncQueueScreen
+        rows={[mutation({ clientId: 'p1', status: 'parked' })]}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={jest.fn().mockResolvedValue(1)}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+
+    expect(screen.queryByTestId('sync-discard-confirm')).toBeNull(); // closed
+    fireEvent.press(screen.getByTestId('sync-queue-discard-p1'));
+
+    expect(screen.getByTestId('sync-discard-confirm')).toBeTruthy();
+    expect(screen.getByTestId('sync-discard-cancel')).toBeTruthy();
+    // The backdrop is the only dismiss affordance besides Cancel; without a
+    // testID a flow that opened this sheet was stuck in it.
+    expect(screen.getByTestId('sync-discard-backdrop')).toBeTruthy();
+  });
+
+  test('cancelling closes the sheet and discards nothing', () => {
+    const onDiscard = jest.fn();
+    render(
+      <SyncQueueScreen
+        rows={[mutation({ clientId: 'p1', status: 'parked' })]}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={onDiscard}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+
+    fireEvent.press(screen.getByTestId('sync-queue-discard-p1'));
+    fireEvent.press(screen.getByTestId('sync-discard-cancel'));
+
+    // Backing out of a destructive gate must be inert — the whole point of it.
+    expect(onDiscard).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('sync-discard-confirm')).toBeNull();
+  });
+
+  test('tapping the backdrop dismisses without discarding', () => {
+    const onDiscard = jest.fn();
+    render(
+      <SyncQueueScreen
+        rows={[mutation({ clientId: 'p1', status: 'parked' })]}
+        isWeb={false}
+        onRetry={noop}
+        onDiscard={onDiscard}
+        onNotice={noop}
+      />,
+      { wrapper },
+    );
+
+    fireEvent.press(screen.getByTestId('sync-queue-discard-p1'));
+    fireEvent.press(screen.getByTestId('sync-discard-backdrop'));
+
+    expect(onDiscard).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('sync-discard-confirm')).toBeNull();
   });
 
   test('a create_report discard confirm states the queued subtree is removed', () => {

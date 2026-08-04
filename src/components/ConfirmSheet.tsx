@@ -26,6 +26,21 @@ type Props = {
   readonly message?: string;
   readonly confirmLabel: string;
   readonly cancelLabel: string;
+  /**
+   * Required testID prefix — yields `<testID>-confirm`, `<testID>-cancel`, and
+   * `<testID>-backdrop` on the sheet behind. Required rather than optional
+   * because this component exists to gate destructive actions and every one of
+   * them needs an end-to-end path: until #23 the buttons carried only
+   * `accessibilityLabel`, so a flow could open the confirmation and had no way
+   * to complete or dismiss it except `tapOn` visible copy, which
+   * `.claude/rules/maestro-testids.md` forbids.
+   *
+   * Suffixes follow `.maestro/README.md`'s `<action>-confirm` /
+   * `<action>-cancel` convention. Both halves of each id are pinned by
+   * `src/maestroSelectors.test.ts`: the prefix at the call site, the suffix
+   * template here.
+   */
+  readonly testID: string;
   readonly onConfirm: () => void;
   readonly onClose: () => void;
 };
@@ -36,13 +51,14 @@ export function ConfirmSheet({
   message,
   confirmLabel,
   cancelLabel,
+  testID,
   onConfirm,
   onClose,
 }: Props) {
   const { colors, fonts, radii, error } = useTheme();
   const confirmInk = onFillColor(error);
   return (
-    <BottomSheet visible={visible} onClose={onClose} title={title}>
+    <BottomSheet visible={visible} onClose={onClose} title={title} testID={testID}>
       {message ? (
         <Text style={[styles.message, { color: colors.muted, fontFamily: fonts.ui.regular }]}>
           {message}
@@ -52,6 +68,7 @@ export function ConfirmSheet({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={cancelLabel}
+          testID={`${testID}-cancel`}
           onPress={onClose}
           style={({ pressed }) => [
             styles.btn,
@@ -66,6 +83,7 @@ export function ConfirmSheet({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={confirmLabel}
+          testID={`${testID}-confirm`}
           onPress={onConfirm}
           style={({ pressed }) => [
             styles.btn,

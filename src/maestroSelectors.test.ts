@@ -77,6 +77,40 @@ const DYNAMIC_TESTIDS: readonly DynamicTestId[] = [
     prefix: 'sync-queue-discard-',
     source: path.join('src', 'components', 'SyncQueueScreen.tsx'),
   },
+  // The discard CONFIRMATION (#23). Its ids are `sync-discard-*`, deliberately
+  // not nested under the `sync-queue-discard-` prefix above: that entry is a
+  // blanket exemption, so anything under it would be invisible to this guard.
+  //
+  // Each is pinned in both halves, as #11 requires — the prefix literal at the
+  // ConfirmSheet call site in SyncQueueScreen, the suffix template in the
+  // component that actually appends it.
+  {
+    prefix: 'sync-discard-confirm',
+    source: path.join('src', 'components', 'SyncQueueScreen.tsx'),
+    sourceLiteral: 'sync-discard',
+    derivedIn: {
+      file: path.join('src', 'components', 'ConfirmSheet.tsx'),
+      template: '`${testID}-confirm`',
+    },
+  },
+  {
+    prefix: 'sync-discard-cancel',
+    source: path.join('src', 'components', 'SyncQueueScreen.tsx'),
+    sourceLiteral: 'sync-discard',
+    derivedIn: {
+      file: path.join('src', 'components', 'ConfirmSheet.tsx'),
+      template: '`${testID}-cancel`',
+    },
+  },
+  {
+    prefix: 'sync-discard-backdrop',
+    source: path.join('src', 'components', 'SyncQueueScreen.tsx'),
+    sourceLiteral: 'sync-discard',
+    derivedIn: {
+      file: path.join('src', 'components', 'BottomSheet.tsx'),
+      template: '`${testID}-backdrop`',
+    },
+  },
 ];
 
 const SCAN_ROOTS = ['src', 'app'];

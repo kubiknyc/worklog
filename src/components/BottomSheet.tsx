@@ -21,16 +21,25 @@ type Props = {
   readonly visible: boolean;
   readonly onClose: () => void;
   readonly title?: string;
+  /**
+   * Prefix for the backdrop's `testID` (`<testID>-backdrop`). Optional so the
+   * existing call sites are unaffected, but supply it on any sheet a flow must
+   * be able to dismiss: the backdrop was the only way out of `ConfirmSheet`
+   * and was unaddressable, so a flow could open the discard confirmation and
+   * then neither complete nor cancel it (#23).
+   */
+  readonly testID?: string;
   readonly children: ReactNode;
 };
 
-export function BottomSheet({ visible, onClose, title, children }: Props) {
+export function BottomSheet({ visible, onClose, title, testID, children }: Props) {
   const { colors, fonts, radii } = useTheme();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Dismiss"
+        testID={testID ? `${testID}-backdrop` : undefined}
         style={styles.backdrop}
         onPress={onClose}
       />

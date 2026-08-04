@@ -183,6 +183,11 @@ export function SyncQueueScreen({
 
       <ConfirmSheet
         visible={confirmTarget !== null}
+        // Deliberately NOT `sync-queue-discard`: that prefix is a blanket
+        // exemption in maestroSelectors' DYNAMIC_TESTIDS (it covers the
+        // per-row `sync-queue-discard-${clientId}` buttons), so any id under
+        // it would be un-catchable by the guard — the same hole as #11.
+        testID="sync-discard"
         title="Discard this change?"
         message={confirmTarget ? confirmMessageOf(confirmTarget.payload.kind) : undefined}
         confirmLabel="Discard"

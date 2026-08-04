@@ -58,7 +58,10 @@ The convention, applied as screens are built rather than retrofitted:
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
 | Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-synced`, `sync-status-queued` — deliberate exception to `<screen>-<state>`: the pill is the same surface on every screen |
 | Section sheet | `sheet-<section>` + `-done` / `-none` / `-add` | `sheet-crew-work`, `sheet-crew-work-done`, `sheet-crew-work-none`, `sheet-deliveries-add` |
-| Sync queue screen | `sync-queue-screen`, `sync-queue-retry`, `sync-queue-row-<clientId>`, `sync-queue-discard-<clientId>` | Task 8's retry/discard surface (`app/settings/sync.tsx`); the row/discard ids are dynamic — declared in `DYNAMIC_TESTIDS` |
+| Sync queue screen | `sync-queue-screen`, `sync-back`, `sync-queue-retry`, `sync-queue-row-<clientId>`, `sync-queue-discard-<clientId>` | Task 8's retry/discard surface (`app/settings/sync.tsx`); the row/discard ids are dynamic — declared in `DYNAMIC_TESTIDS` |
+| Discard confirmation | `sync-discard-confirm`, `sync-discard-cancel`, `sync-discard-backdrop` | The sheet the per-row Discard opens. Deliberately **not** `sync-queue-discard-*`: that prefix is a blanket `DYNAMIC_TESTIDS` exemption, so ids nested under it would be invisible to the guard |
+
+**A trigger without its destination is not a shipped path.** `sync-queue-discard-<clientId>` was listed here and passed the guard while the `ConfirmSheet` it opens had no testIDs at all — so a flow could reach the app's most destructive action and then neither complete nor dismiss it. The guard cannot catch this: it only checks ids a flow *already* references, never the reverse, and no single diff spans both files. When you add a control that opens something, add the destination's ids in the same change.
 
 `PrimaryButton`, `TextField` and `SheetRow` all accept an optional `testID` and
 forward it — use it rather than asserting on their `label` or
