@@ -3,9 +3,13 @@
  * interface: creating a project is online-only on every platform (there is no
  * offline "provisional project" concept; a project must exist server-side
  * before anything can be filed against it), so both the native and web builds
- * share this exact module and it never touches the mutation queue. The
- * CreateProjectSheet gates on the failure being a transport error
- * (`isLikelyOffline`) to show the neutral offline copy.
+ * share this exact module and it never touches the mutation queue.
+ *
+ * Failure copy is chosen HERE, not by the caller: `fail()` classifies the raw
+ * error before masking it and throws `OFFLINE_COPY` or `REJECTED_COPY`. The
+ * header used to say CreateProjectSheet gated on `isLikelyOffline` — it could
+ * not, because by the time the sheet sees the error the original is gone and
+ * the classification is always false (#22).
  *
  * Server contract (verified against the backend migrations and PunchLog's
  * `src/data/createProject.ts`):
@@ -29,6 +33,7 @@
  * `timezone` is the DEVICE zone, which `computeReportDate` already treats as
  * the fallback.
  */
+import { isLikelyOffline } from '../lib/errors';
 import { uuidv4 } from '../lib/uuid';
 import { supabase } from '../supabase/client';
 
@@ -39,11 +44,23 @@ export interface CreateProjectInput {
   readonly lng?: number | null;
 }
 
-function fail(context: string, error: { readonly message: string }): never {
+/** Shown when the request never reached the server — no server verdict exists. */
+export const OFFLINE_COPY =
+  "You appear to be offline. Creating a project needs a connection — try again once you're back online.";
+/** Shown when the server did reply and rejected the insert. */
+export const REJECTED_COPY = "Couldn't create the project. Please try again.";
+
+function fail(context: string, error: unknown): never {
   // Raw PostgREST messages can leak schema detail — keep them out of the UI,
   // but log them so production failures stay diagnosable (supabaseRepo idiom).
   console.warn(`[createProject] ${context} failed:`, error);
-  throw new Error("Couldn't create the project. Please check your connection and try again.");
+  // Classify BEFORE masking. This used to throw one fixed string, on which
+  // `isLikelyOffline` is always false — so the sheet's documented offline gate
+  // could never fire and every offline attempt got server-rejection copy (#22).
+  // The classification has to happen here, while the original error still
+  // exists; the alternative — loosening `isLikelyOffline` to match the masked
+  // string — would make every server rejection read as offline.
+  throw new Error(isLikelyOffline(error) ? OFFLINE_COPY : REJECTED_COPY);
 }
 
 /** The device's IANA zone, or null when the runtime can't report one. */

@@ -381,7 +381,7 @@ export default function ReportDetailScreen() {
             subtitle={error.message}
           />
           <View style={{ paddingHorizontal: sizes.screenPad, width: '100%' }}>
-            <PrimaryButton label="Try again" onPress={reload} />
+            <PrimaryButton testID="report-retry" label="Try again" onPress={reload} />
           </View>
         </View>
       ) : !data?.report ? (

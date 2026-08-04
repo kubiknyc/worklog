@@ -137,7 +137,7 @@ CI runs this as a required check (mirrors PunchLog; the web build's import graph
 |---|---|
 | `hooks/useAsyncData.ts`, `hooks/useReducedMotion.ts`, `hooks/useRefreshOnFocusAndSync.ts` | Reused verbatim (the last subscribes to `SyncState.completedPulls`, unchanged contract). |
 | `hooks/useVoiceDictation.ts` | New: wraps `expo-speech-recognition`, `supportsOnDeviceRecognition()` capability gate, `contextualStrings` fed from project trades/vendors (PRD §11 item 1). Isolated per M8 risk containment. |
-| `lib/base64.ts`, `lib/color.ts`, `lib/errors.ts`, `lib/status.ts`, `lib/strings.ts`, `lib/time.ts`, `lib/uuid.ts` | Reused verbatim. |
+| `lib/base64.ts`, `lib/color.ts`, `lib/errors.ts`, `lib/status.ts`, `lib/strings.ts`, `lib/uuid.ts` | Reused verbatim. `lib/time.ts` was **deleted** 2026-08-04 (#22): it had no importers, and its `todayIso()` returned the naive device day under a canonical-looking name — exactly what `data/reportDate.ts` forbids for `report_date`. Any calendar date for a report comes from `computeReportDate`, in the project's timezone. |
 | `notifications/*` | Reused verbatim — WorkLog wires the existing `send-push` function for the M11 "report submitted" notification. |
 | `observability/sentry.ts` | Reused verbatim (own DSN/project per app). |
 
@@ -271,7 +271,7 @@ PunchLog's convention is a single **global** cursor per table (every pull is alr
 | 2 | Push-then-pull | `engine.native.ts` copied verbatim; no orchestration change. |
 | 3 | Single-flight + coalescing | `engine.native.ts` copied verbatim. |
 | 4 | Offline is not failure | `classifyError`/`applyOutcome` copied verbatim, domain-agnostic. Weather auto-fill is server-side fill, not a client mutation (PRD §11.7), so it can never pollute this queue's retry accounting. |
-| 5 | Retry ceiling parks, never drops | `RETRY_CEILING = 5` unchanged. RLS denial evicts, **except** `remove_photo`'s inverted semantics (above) — a deliberate, documented adaptation, not a silent deviation. |
+| 5 | Retry ceiling parks, never drops | `RETRY_CEILING = 5` unchanged. RLS denial classifies `evict` — which, as shipped, parks and raises an `'evicted'` incident but deletes **no** local row (corrected 2026-08-04, #22; local deletion is M3b's membership sweep, per the M3a plan). `remove_photo`'s inverted semantics (above) therefore describe the intended M5 contract, not a deviation from current behaviour. |
 | 6 | Dirty-row protection | `_dirty` on `daily_reports`/`report_sections`; `report_photos` uses `_pending` (mirrors PunchLog's photo precedent exactly). `rowTargetOf`/`otherMutationTargetsRow` extended to the 4-table union with the added `reportId` grouping field. |
 | 7 | Photos ride the same queue, drained last | `orderForDrain` unchanged; `remove_photo` proven never to precede its own `add_photo` by construction (above). |
 | 8 | Non-status LWW by server `updated_at`; no client timestamps | `report_sections` content is LWW by the section row's server `updated_at` via generalized `mergeReport`/`resolveReport`; `daily_reports.status` is 100% RPC-governed (`submit_report`/`lock_report`/`amend_report`), never touched by `update_section` or any merge path — mirrors how PunchLog's `conflict.ts` protects `items.status`. |

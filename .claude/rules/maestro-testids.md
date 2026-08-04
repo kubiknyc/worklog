@@ -20,7 +20,13 @@ to the behaviour under test.
 | Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent` |
 | Status surface | `<screen>-<state>` | `login-error` |
 | Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-queued` (screen-agnostic by design) |
-| Section sheet | `sheet-<section>` + `-done` / `-none` | `sheet-crew-done` |
+| Section sheet | `sheet-<section>` + `-done` / `-none` | `sheet-safety-done` |
+
+The section-sheet prefix is the sheet's own name, which is not always the
+`SectionKind`: the crew sheet is `sheet-crew-work`, so its footer is
+`sheet-crew-work-done`. (`sheet-crew-done` was the example here until #22 and
+exists nowhere in the source.) `.maestro/README.md` holds the live inventory —
+check it rather than inferring a prefix from the section name.
 
 `SectionSheetScaffold` derives `<prefix>-none` and `<prefix>-done` from its
 `testID` prefix; a sheet supplying its own `footer` owns that button's testID.

@@ -26,13 +26,32 @@ function asError(err: unknown): SupabaseLikeError {
 /**
  * Map a push failure to an action:
  * - `evict`    — RLS/authorization denial (Postgres 42501, HTTP 403). The
- *                server won't ever accept this write; drop the local row too.
+ *                server will never accept this write, so it parks immediately.
+ *                The name is aspirational: NOTHING is deleted locally. It is a
+ *                distinct class only so the engine can raise an `'evicted'`
+ *                incident rather than a `'parked'` one. M3b's membership sweep
+ *                is the authoritative evictor of local rows — see
+ *                `AppliedOutcome.evict`.
  * - `permanent`— a deterministic rejection (illegal transition 22000, check
  *                violation 23514, …). Parking it and surfacing beats looping.
  * - `retryable`— 5xx/auth-refresh/unknown — back off and try again next sync.
  * - `offline`  — transport failure (no reply at all). Retried, but exempt from
  *                the ceiling: a week without signal must not park valid writes.
  */
+/**
+ * Message shapes that mean "the request never reached a server": RN's "Network
+ * request failed", web's "Failed to fetch", WebKit's "Load failed", and abort
+ * messages carrying "timeout".
+ *
+ * Exported because `isLikelyOffline` (`src/lib/errors.ts`) documents itself as
+ * mirroring this branch, and used to do so by copy — with a narrower pattern
+ * that omitted `timeout` and bare `network`/`fetch`, so a fetch abort was
+ * `offline` here (exempt from the retry ceiling) while the queue screen told
+ * the user "Will retry automatically". Sharing the constant is what keeps the
+ * two honest (#22). Stateless: no `/g`, safe to share across call sites.
+ */
+export const TRANSPORT_MESSAGE = /network|fetch|timeout|load failed/i;
+
 export function classifyError(err: unknown): ErrorClass {
   const e = asError(err);
   const code = e.code ?? '';
@@ -51,7 +70,7 @@ export function classifyError(err: unknown): ErrorClass {
   if (status >= 500) return 'retryable';
   // No HTTP status at all → the request never got a response (airplane mode,
   // dead wifi, DNS). This is the normal offline case, not a server verdict.
-  if (status === 0 && (e.name === 'TypeError' || /network|fetch|timeout/i.test(e.message ?? ''))) {
+  if (status === 0 && (e.name === 'TypeError' || TRANSPORT_MESSAGE.test(e.message ?? ''))) {
     return 'offline';
   }
 
@@ -216,7 +235,21 @@ export interface PushOutcome {
 export interface AppliedOutcome {
   /** The mutation's next state, or null when it should be removed from the queue. */
   readonly next: Mutation | null;
-  /** True when the local row(s) must be evicted (RLS denial). */
+  /**
+   * True on an RLS denial (42501/403). **This does not delete anything.** The
+   * engine's only use is `onIncident(applied.evict ? 'evicted' : 'parked', …)`
+   * (`engineCore.ts:204`), so the flag picks an incident label and nothing
+   * more. Local row deletion is deliberately deferred to M3b's membership
+   * sweep — see `docs/superpowers/plans/2026-07-28-m3a-sync-engine-push.md:15`
+   * ("park + incident, no local row deletion").
+   *
+   * Consequence to know before building on this: when membership is revoked
+   * with an `update_section` queued, the mutation parks and the incident
+   * fires, but the local report and its children stay readable on the device
+   * until that sweep exists. M5's inverted photo evict path
+   * (`docs/architecture/06-sync-mappings.md`) inverts a deletion that this
+   * field has never performed.
+   */
   readonly evict: boolean;
   /** `classifyError`'s verdict for a failed outcome; null on success. */
   readonly errorClass: ErrorClass | null;
@@ -224,9 +257,9 @@ export interface AppliedOutcome {
 
 /**
  * Fold a push outcome into the mutation. Pure: returns the next queue state and
- * whether the caller must evict the local row. Success → remove. Retryable →
- * bump attempts (park at the ceiling). Offline → stay pending, attempts
- * untouched. Permanent/evict → park immediately.
+ * the `evict` incident-label flag (which evicts nothing — see `AppliedOutcome`).
+ * Success → remove. Retryable → bump attempts (park at the ceiling). Offline →
+ * stay pending, attempts untouched. Permanent/evict → park immediately.
  */
 export function applyOutcome(m: Mutation, outcome: PushOutcome): AppliedOutcome {
   if (outcome.ok) return { next: null, evict: false, errorClass: null };

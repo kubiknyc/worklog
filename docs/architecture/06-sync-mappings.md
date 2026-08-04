@@ -48,7 +48,9 @@ interface RowTarget {
 
 **`create_amendment` — local optimistic rows.** Enqueue writes the local `report_amendments` row (`amendment_number` NULL until pull backfill, `_dirty = 1`) plus `report_amendment_changes` rows computed from local state; the pull later overwrites both with the server's authoritative snapshot.
 
-**`add_photo` failure semantics.** Identical to PunchLog: offline exempt from the retry ceiling; RLS denial (403/42501) evicts the local row + outbox file; a parked `create_report` causes dependent kinds (including photos) for that report to be *skipped*, not burned.
+**`add_photo` failure semantics.** Identical to PunchLog: offline exempt from the retry ceiling; RLS denial (403/42501) classifies `evict`; a parked `create_report` causes dependent kinds (including photos) for that report to be *skipped*, not burned.
+
+> **Status of eviction (corrected 2026-08-04, #22).** As shipped, the `evict` class deletes **nothing**. `applyOutcome` parks the mutation and sets a flag whose only consumer is `onIncident(applied.evict ? 'evicted' : 'parked', …)` (`engineCore.ts:204`). Deferring local deletion to M3b's membership sweep is the deliberate M3a decision (`docs/superpowers/plans/2026-07-28-m3a-sync-engine-push.md:15`); until that sweep lands, local rows and outbox files survive an RLS denial indefinitely. Read the paragraph below as the *intended* M5 contract, not as current behaviour — its "inverted evict" inverts a deletion that does not yet happen.
 
 **`update_photo_meta` / `remove_photo` — inverted evict.** These two kinds NEVER delete the local photo row on a permanent/RLS failure — the generic `evictLocal` would destroy evidence. Instead: park + surface, clear `_dirty` (meta) or restore visibility by nulling the local `deleted_at` (remove), and let the next pull's LWW restore the server's meta. `remove_photo`'s 403 surfaces "This report was already sent — the photo will stay in the report."
 
