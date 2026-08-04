@@ -110,6 +110,12 @@
         "lines": 100,
         "statements": 100
       },
+      "src/components/report/ReportDetailSections.tsx": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      },
       "src/data/lifecycleGuards.ts": {
         "branches": 95,
         "functions": 100,

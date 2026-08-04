@@ -43,6 +43,13 @@ const DYNAMIC_TESTIDS: readonly DynamicTestId[] = [
   // `login-demo-${acc.role.toLowerCase()}` — one row per DEMO_ACCOUNTS entry.
   { prefix: 'login-demo-', source: path.join('app', '(auth)', 'login.tsx') },
   // `report-section-${row.id}` — one row per REPORT_ROWS entry.
+  //
+  // A blanket exemption, and it cannot be narrowed: the suffix is a row id, so
+  // there is no literal to pin. That means a renamed row id (crew_work → crew)
+  // keeps this guard green while every flow tap misses on device — verified by
+  // mutation. The render-side half lives in ReportDetailSections.test.tsx,
+  // which asserts every `report-section-*` id the flow taps is actually
+  // rendered from REPORT_ROWS. Both halves are needed; neither alone suffices.
   {
     prefix: 'report-section-',
     source: path.join('src', 'components', 'report', 'ReportDetailSections.tsx'),
