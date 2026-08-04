@@ -43,8 +43,10 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_DEMO_LOGINS": "off"
-      }
+        "EXPO_PUBLIC_DEMO_LOGINS": "off",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "false"
+      },
+      "environment": "production"
     }
   },
   "submit": {

@@ -46,9 +46,10 @@
       "!src/lib/observabilityTypes.ts",
       "!src/platformSplit.test.ts",
       "!src/maestroSelectors.test.ts",
-      "src/db/rows.native.ts"
+      "src/db/rows.native.ts",
+      "src/lib/observability.native.ts"
     ],
-    "_collectCoverageFromWhy": "The `!src/**/*.native.ts` negation keeps device-only modules out of the denominator, but it also hid tx() — the global transaction serializer every device write funnels through — so that module had neither a test nor a line in the report (#24). The trailing positive pattern re-adds just that file; order matters, a re-include must follow the negation.",
+    "_collectCoverageFromWhy": "The `!src/**/*.native.ts` negation keeps device-only modules out of the denominator, but it also hid two modules that are not device plumbing (#24): tx(), the global transaction serializer every device write funnels through, and the Sentry incident seam, whose contract is that no report body ever carries user content. Neither had a test or a line in the report. The trailing positive patterns re-add just those files; order matters, a re-include must follow the negation.",
     "coverageThreshold": {
       "global": {
         "branches": 40,
@@ -93,6 +94,18 @@
         "statements": 95
       },
       "src/db/rows.native.ts": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      },
+      "src/lib/observability.native.ts": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      },
+      "src/data/platformRepo.web.ts": {
         "branches": 100,
         "functions": 100,
         "lines": 100,
