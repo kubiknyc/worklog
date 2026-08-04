@@ -73,10 +73,10 @@
         "statements": 95
       },
       "src/sync/statusHub.ts": {
-        "branches": 95,
+        "branches": 100,
         "functions": 100,
-        "lines": 95,
-        "statements": 95
+        "lines": 100,
+        "statements": 100
       },
       "src/sync/cursors.ts": {
         "branches": 95,
@@ -95,6 +95,12 @@
         "functions": 100,
         "lines": 90,
         "statements": 90
+      },
+      "src/data/supabaseRepo.ts": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
       },
       "src/data/lifecycleGuards.ts": {
         "branches": 95,

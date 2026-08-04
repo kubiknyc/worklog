@@ -24,3 +24,7 @@ jobs:
       build_id: ${{ needs.build_android_for_e2e.outputs.build_id }}
       flow_path:
         - .maestro/login.yaml
+        # report-sections was written but never listed here, so it had never
+        # run in CI. It is listed after login because it starts from a signed-in
+        # session, which the e2e-test profile's demo logins provide (#21).
+        - .maestro/report-sections.yaml

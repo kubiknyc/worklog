@@ -21,17 +21,26 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function raceFakeDb() {
   const daily: Row[] = [];
+  /**
+   * Ordered trace of what the racing calls did, e.g.
+   * `['select:proj-1', 'select:proj-2', 'insert:proj-1', 'insert:proj-2']`.
+   * Counting rows alone cannot tell per-key locking apart from one global
+   * lock — both end with two rows. The interleaving is the only observable
+   * difference, so the unrelated-keys test asserts on this.
+   */
+  const events: string[] = [];
   const db = {
     getAllAsync: async () => [] as Row[],
     getFirstAsync: async (sql: string, params: readonly unknown[] = []): Promise<Row | null> => {
       if (!/FROM daily_reports/i.test(sql)) return null;
+      const [projectId, reportDate] = params as string[];
+      events.push(`select:${projectId}`);
       // Snapshot the table synchronously at entry, THEN await a tick. Two
       // concurrent callers both snapshot the (empty) table before either
       // inserts — the exact race window. Serialization makes the second call
       // start only after the first has inserted, so it snapshots the row.
       const snapshot = [...daily];
       await tick();
-      const [projectId, reportDate] = params as string[];
       return (
         snapshot.find((r) => r.project_id === projectId && r.report_date === reportDate) ?? null
       );
@@ -39,12 +48,13 @@ function raceFakeDb() {
     runAsync: async (sql: string, params: readonly unknown[] = []): Promise<void> => {
       if (/INSERT INTO daily_reports/i.test(sql)) {
         const [id, project_id, report_date] = params as string[];
+        events.push(`insert:${project_id}`);
         daily.push({ id, project_id, report_date, status: 'draft' });
       }
     },
     withTransactionAsync: async (fn: () => Promise<void>): Promise<void> => fn(),
   };
-  return { db: db as unknown as Db, daily };
+  return { db: db as unknown as Db, daily, events };
 }
 
 function noopMutations(): MutationStore {
@@ -76,7 +86,7 @@ describe('createReport concurrency (get-or-create)', () => {
   });
 
   it('does not serialize unrelated (project, date) keys against each other', async () => {
-    const { db, daily } = raceFakeDb();
+    const { db, daily, events } = raceFakeDb();
     const repo = createSqliteRepo(db, noopMutations());
 
     await Promise.all([
@@ -85,5 +95,13 @@ describe('createReport concurrency (get-or-create)', () => {
     ]);
 
     expect(daily).toHaveLength(2);
+    // Two rows on their own prove nothing: a single global lock would also
+    // produce two. What proves the lock is keyed by (project, date) is that
+    // the second key's SELECT enters before the first key's INSERT — i.e. the
+    // two calls genuinely overlap. Widening the lock to a global one yields
+    // ['select:proj-1', 'insert:proj-1', 'select:proj-2', 'insert:proj-2']
+    // and fails here, which is the regression this test exists to catch.
+    expect(events.slice(0, 2).sort()).toEqual(['select:proj-1', 'select:proj-2']);
+    expect(events).toHaveLength(4);
   });
 });
