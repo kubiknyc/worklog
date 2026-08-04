@@ -18,13 +18,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '../auth';
 import { syncStatusHub } from '../sync/statusHub';
 import type { SyncEngineApi } from '../sync/engineApi';
 import { useTheme } from '../theme';
-import { createPlatformRepository } from './platformRepo';
+import { createPlatformRepository, INITIAL_REPOSITORY } from './platformRepo';
 import type { Repository } from './types';
 import { supabaseRepository } from './supabaseRepo';
 
@@ -93,9 +93,11 @@ export function RepositoryProvider({ children, repository }: Props) {
   const { userId } = useAuth();
   const [resolved, setResolved] = useState<Repository | null>(() => {
     if (override) return override;
-    // Web is online-only: ready on first render, no hydration gate.
-    if (Platform.OS === 'web') return supabaseRepository;
-    return null;
+    // The platform seam decides whether a repo exists on first render: web
+    // (online-only) returns one, native returns null and hydrates. Asking the
+    // seam rather than branching on `Platform.OS` here is what keeps
+    // `platformRepo.web.ts` live — it was dead at runtime before #22.
+    return INITIAL_REPOSITORY;
   });
 
   // The current engine (null on web, before hydration, or after a fallback)
@@ -110,9 +112,10 @@ export function RepositoryProvider({ children, repository }: Props) {
   const [degraded, setDegraded] = useState(false);
 
   useEffect(() => {
-    // Override (tests/explicit) and web (online-only, RLS-enforced, no local
-    // cache to reconcile) never rebuild on account change.
-    if (override || Platform.OS === 'web') return;
+    // Override (tests/explicit) and any platform with a first-render repo (web:
+    // online-only, RLS-enforced, no local cache to reconcile) never rebuild on
+    // account change.
+    if (override || INITIAL_REPOSITORY) return;
 
     let active = true;
     // Gate children while the switch reconciles ownership, so the previous

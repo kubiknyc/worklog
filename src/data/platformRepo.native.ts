@@ -16,7 +16,17 @@ import { createSyncEngine } from '../sync/engine.native';
 import { createMutationStore } from '../sync/store.native';
 import { supabase } from '../supabase/client';
 import { createSqliteRepo } from './sqliteRepo.native';
-import type { PlatformRepoBundle } from './types';
+import type { PlatformRepoBundle, Repository } from './types';
+
+/**
+ * Native has NO first-render repository: `createPlatformRepository()` must run
+ * `reconcileDbOwnership()` before any read can touch cached rows, so the
+ * provider gates children until hydration resolves. The web variant returns its
+ * online-only repo here instead. Counterpart of `platformRepo.web.ts`'s
+ * `INITIAL_REPOSITORY` — see it for why the provider asks the seam rather than
+ * branching on `Platform.OS` itself (#22).
+ */
+export const INITIAL_REPOSITORY: Repository | null = null;
 
 /** sync_meta key recording which user's data the local cache holds (bare uuid). */
 export const OWNER_META_KEY = 'owner_user_id';
