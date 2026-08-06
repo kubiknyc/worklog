@@ -77,10 +77,17 @@ appId: com.jobsight.worklog
           end: 70%, 65%
       - tapOn:
           id: 'submit-confirm'
-      # draft -> submitted, proven by the CHIP, not by a button's absence:
-      - extendedWaitUntil:
-          visible:
+      # draft -> submitted, proven by the CHIP, not by a button's absence.
+      # scrollUntilVisible, not assertVisible/extendedWaitUntil: the earlier
+      # scrollUntilVisible(report-submit) left the sheet scrolled down, and
+      # the chip lives in the top meta row — asserting "visible" on it here
+      # fails on an off-screen element even though the status DID flip
+      # (observed on device: the Lock button was already showing, proving
+      # submitted, while this assertion failed purely on scroll position).
+      - scrollUntilVisible:
+          element:
             id: 'report-status-submitted'
+          direction: UP
           timeout: 20000
 
 # ── Arm 2 — submitted: the "already submitted" branch + the lock action.
@@ -106,8 +113,12 @@ appId: com.jobsight.worklog
           id: 'report-lock-cancel'
       - assertNotVisible:
           id: 'report-lock-confirm'
-      - assertVisible:
-          id: 'report-status-submitted'
+      # Same off-screen-not-unflipped caveat as arm 1's submit assertion.
+      - scrollUntilVisible:
+          element:
+            id: 'report-status-submitted'
+          direction: UP
+          timeout: 20000
       # Confirm path.
       - scrollUntilVisible:
           element:
@@ -118,9 +129,10 @@ appId: com.jobsight.worklog
           id: 'report-lock-confirm'
       - tapOn:
           id: 'report-lock-confirm'
-      - extendedWaitUntil:
-          visible:
+      - scrollUntilVisible:
+          element:
             id: 'report-status-locked'
+          direction: UP
           timeout: 20000
 
 # ── Arm 3 — locked: prove read-only for real, not just that a status string
