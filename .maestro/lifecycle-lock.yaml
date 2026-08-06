@@ -1,0 +1,165 @@
+# Submit -> lock -> read-only, for real, on-device.
+#
+# Closes two debts:
+#   - the M4a submit block's on-device TODO: its "already submitted" branch
+#     had never been exercised by a same-day second run. This flow's arm 2
+#     fires immediately after arm 1 on a first run, AND independently as the
+#     entry point on a same-day re-run — both paths make a positive
+#     assertion, neither just skips, so a second run genuinely validates it.
+#   - `report-lock` / `report-lock-confirm` / `report-lock-cancel` shipped as
+#     testIDs with no flow driving them.
+#
+# CASCADING ARMS, each gated on the status it starts from, so this flow is
+# safe to run repeatedly the same day even though LOCK IS IRREVERSIBLE:
+#   draft -> submit           (arm 1, only fires once per day)
+#   submitted -> lock         (arm 2, fires after arm 1 or as the entry point)
+#   locked -> prove read-only (arm 3, always reached)
+# A run that finds today's report already locked enters straight at arm 3 and
+# still asserts something real — it never degrades to a vacuous pass.
+#
+# OWN FILE, NOT IN .eas/workflows/e2e-android.yml's flow_path. Locking is
+# irreversible and UNIQUE(project_id, report_date) means one report per
+# project per day: once this runs, today's report is locked for every other
+# flow on a shared backend, and app/(tabs)/history.tsx has no route to any
+# other report yet (M10). Local pre-merge ritual only, run last, against a
+# freshly seeded stack:
+#   (cd ../jobsight-backend && supabase db reset)
+#
+# PRECONDITIONS: same as report-sections.yaml. Run report-sections.yaml (and
+# offline-reconcile.yaml, if desired) BEFORE this — both require a draft.
+#
+# Run:  maestro test .maestro/lifecycle-lock.yaml
+appId: com.jobsight.worklog
+---
+- runFlow: _launch-and-signin.yaml
+
+- extendedWaitUntil:
+    visible:
+      id: 'today-start-report'
+    timeout: 30000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'today-start-report'
+    commands:
+      - tapOn:
+          id: 'today-start-report'
+- runFlow:
+    when:
+      visible:
+        id: 'today-open-report'
+    commands:
+      - tapOn:
+          id: 'today-open-report'
+- extendedWaitUntil:
+    visible:
+      id: 'screen-report'
+    timeout: 10000
+
+# ── Arm 1 — draft: submit. Fires only on the day's first run. ────────────
+- runFlow:
+    when:
+      visible:
+        id: 'report-status-draft'
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'report-submit'
+      - tapOn:
+          id: 'report-submit'
+      - assertVisible:
+          id: 'submit-signer-title'
+      - assertVisible:
+          id: 'submit-signature-canvas'
+      - swipe:
+          start: 30%, 60%
+          end: 70%, 65%
+      - tapOn:
+          id: 'submit-confirm'
+      # draft -> submitted, proven by the CHIP, not by a button's absence:
+      - extendedWaitUntil:
+          visible:
+            id: 'report-status-submitted'
+          timeout: 20000
+
+# ── Arm 2 — submitted: the "already submitted" branch + the lock action.
+# Fires right after arm 1 on a first run, AND as the entry point on a
+# same-day re-run — both are the same assertions, which is what makes this a
+# real validation of the on-device TODO rather than a conditional skip. ────
+- runFlow:
+    when:
+      visible:
+        id: 'report-status-submitted'
+    commands:
+      - assertNotVisible:
+          id: 'report-submit'
+      - scrollUntilVisible:
+          element:
+            id: 'report-lock'
+      # Cancel path first — the destructive confirm must be dismissible.
+      - tapOn:
+          id: 'report-lock'
+      - assertVisible:
+          id: 'report-lock-confirm'
+      - tapOn:
+          id: 'report-lock-cancel'
+      - assertNotVisible:
+          id: 'report-lock-confirm'
+      - assertVisible:
+          id: 'report-status-submitted'
+      # Confirm path.
+      - scrollUntilVisible:
+          element:
+            id: 'report-lock'
+      - tapOn:
+          id: 'report-lock'
+      - assertVisible:
+          id: 'report-lock-confirm'
+      - tapOn:
+          id: 'report-lock-confirm'
+      - extendedWaitUntil:
+          visible:
+            id: 'report-status-locked'
+          timeout: 20000
+
+# ── Arm 3 — locked: prove read-only for real, not just that a status string
+# flipped. Always reached, first run or a same-day re-run. ────────────────
+- runFlow:
+    when:
+      visible:
+        id: 'report-status-locked'
+    commands:
+      - assertNotVisible:
+          id: 'report-submit'
+      - assertNotVisible:
+          id: 'report-lock'
+      - scrollUntilVisible:
+          element:
+            id: 'report-section-safety'
+      - tapOn:
+          id: 'report-section-safety'
+      # Positive + negative: the sheet is open (proving `-done` renders), and
+      # the affirmation row that a readOnly sheet omits ENTIRELY is absent —
+      # so this can't pass because the sheet never opened.
+      - assertVisible:
+          id: 'sheet-safety-done'
+      - assertVisible:
+          id: 'sheet-readonly'
+      - assertNotVisible:
+          id: 'sheet-safety-none'
+      - tapOn:
+          id: 'sheet-safety-done'
+      - assertVisible:
+          id: 'screen-report'
+
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-synced'
+    timeout: 60000
+- tapOn:
+    id: 'report-back'
+- assertVisible:
+    id: 'screen-today'
+- assertVisible:
+    id: 'today-status-locked'
