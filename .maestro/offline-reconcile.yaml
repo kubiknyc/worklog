@@ -1,0 +1,161 @@
+# AC-O1 — the offline reconciliation flow (docs/architecture/01-work-plan.md
+# §C.1 "a standing gate from M3 onward", §E Phase-4 DoD). The highest-value
+# flow in this suite: everything else proves navigation and enqueue; this is
+# the only flow that proves the sync ENGINE — push + pull working together
+# against real SQLite and a real Supabase instance under a real transport
+# failure, not a mock.
+#
+# Was blocked on the M3 engine landing (.maestro/README.md, "Blocked" section,
+# now superseded by this file). M3a (push) and M3b (pull) both shipped; this
+# flow closes the gap.
+#
+# THE EMPTY-QUEUE TRAP: SyncStatusBanner's precedence
+# (`!online && pending > 0` -> offline) means going offline with an EMPTY
+# queue never reaches `sync-status-offline` — it falls through to `synced`.
+# Order matters: this flow goes online long enough to create a draft report
+# (clearState wiped SQLite, so project/membership only exist after the first
+# pull — Today shows no start-report button until then), drains that create,
+# THEN goes offline, THEN mutates. Reversing any of that hits the trap.
+#
+# WHY THIS IS SAFER THAN report-sections.yaml's dropped `sync-status-queued`
+# assert (.maestro/README.md, "M3a" section): under airplane mode the drain
+# CANNOT happen, so `offline` is a genuine resting state here, not a
+# transient one racing the engine's own cadence.
+#
+# PRECONDITIONS: same as report-sections.yaml. Requires today's report to
+# still be a draft — run this before lifecycle-lock.yaml, not after.
+#
+# RECOVERY: if this flow is killed between `setAirplaneMode: enabled` and
+# `disabled`, the device is left offline and every subsequent flow fails at
+# sign-in with a misleading network error. Recover with:
+#   adb shell cmd connectivity airplane-mode disable
+#
+# Run:  maestro test .maestro/offline-reconcile.yaml
+appId: com.jobsight.worklog
+---
+- runFlow: _launch-and-signin.yaml
+
+# Queue empty after clearState -> the pill reads synced (same reasoning as
+# report-sections.yaml's opening assert).
+- assertVisible:
+    id: 'sync-status-synced'
+
+# --- Reach a draft report WHILE ONLINE. Non-negotiable ordering: the local
+# mirror is empty until the tier-1 pull lands, so start-report can't appear
+# offline on a fresh install. ---
+- extendedWaitUntil:
+    visible:
+      id: 'today-start-report'
+    timeout: 30000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'today-start-report'
+    commands:
+      - tapOn:
+          id: 'today-start-report'
+- runFlow:
+    when:
+      visible:
+        id: 'today-open-report'
+    commands:
+      - tapOn:
+          id: 'today-open-report'
+- extendedWaitUntil:
+    visible:
+      id: 'screen-report'
+    timeout: 10000
+- assertVisible:
+    id: 'report-status-draft'
+
+# Drain the create before cutting the radio — establishes the EMPTY-QUEUE
+# baseline deliberately, so the offline assert below can only be explained by
+# work created while offline, not by leftover pending work from creation.
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-synced'
+    timeout: 30000
+
+- setAirplaneMode: enabled
+
+# THE TRAP, TURNED INTO AN ASSERTION: offline with an empty queue still reads
+# synced. Pins the precedence rule (AC-O6: never a false alarm) before any
+# mutation makes the claim trivially different.
+- assertVisible:
+    id: 'sync-status-synced'
+
+# --- Offline WRITES: two section sheets, so pending > 0 under a dead radio.
+- tapOn:
+    id: 'report-section-deliveries'
+- assertVisible:
+    id: 'sheet-deliveries-done'
+- scrollUntilVisible:
+    element:
+      id: 'sheet-deliveries-add'
+- tapOn:
+    id: 'sheet-deliveries-add'
+- tapOn:
+    id: 'sheet-deliveries-done'
+- assertVisible:
+    id: 'screen-report'
+- scrollUntilVisible:
+    element:
+      id: 'report-section-equipment'
+- tapOn:
+    id: 'report-section-equipment'
+- assertVisible:
+    id: 'sheet-equipment-done'
+- scrollUntilVisible:
+    element:
+      id: 'sheet-equipment-add'
+- tapOn:
+    id: 'sheet-equipment-add'
+- tapOn:
+    id: 'sheet-equipment-done'
+- assertVisible:
+    id: 'screen-report'
+
+# THE AC-O1 precondition: with pending work and no transport, the pill must
+# NOT tell the user everything is saved. assertNotVisible on synced is the
+# robust form — it holds whether the engine rests at `queued` or `offline`
+# (see the header's empty-queue-trap note; the exact resting id depends on
+# whether NetInfo/the engine has yet observed the transport failure).
+- assertNotVisible:
+    id: 'sync-status-synced'
+
+# --- The queue surface is reachable from the offline state (AC-O6: every
+# parked/pending write visible, never silent). Trigger -> destination, per
+# the README rule. ---
+- tapOn:
+    id: 'sync-status'
+- extendedWaitUntil:
+    visible:
+      id: 'sync-queue-screen'
+    timeout: 10000
+- tapOn:
+    id: 'sync-back'
+- assertVisible:
+    id: 'screen-report'
+
+- setAirplaneMode: disabled
+
+# THE AC-O1 assertion. Only reachable if every offline write enqueued AND
+# drained once transport returned — the claim the whole flow exists to make.
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-synced'
+    timeout: 60000
+
+# Cross-screen + still a draft: reconciliation didn't accidentally submit or
+# lock anything.
+- tapOn:
+    id: 'report-back'
+- assertVisible:
+    id: 'screen-today'
+- extendedWaitUntil:
+    visible:
+      id: 'sync-status-synced'
+    timeout: 30000
+- assertVisible:
+    id: 'today-status-draft'
