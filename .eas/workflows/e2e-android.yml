@@ -28,3 +28,21 @@ jobs:
         # run in CI. It is listed after login because it starts from a signed-in
         # session, which the e2e-test profile's demo logins provide (#21).
         - .maestro/report-sections.yaml
+        # offline-reconcile is LAST, deliberately. Maestro has no `finally`:
+        # if it fails between setAirplaneMode enabled/disabled, the device
+        # stays offline and every later flow in the same session fails at
+        # sign-in with a misleading network error. Last confines that blast
+        # radius to itself.
+        #
+        # Risk: setAirplaneMode drives `adb shell`, which may be a no-op on
+        # an EAS cloud maestro runner. If so this fails loudly (the terminal
+        # sync-status-offline wait times out) rather than silently passing —
+        # that is the correct failure, and the `maestro` job is already kept
+        # out of required status checks, so it cannot block a merge.
+        - .maestro/offline-reconcile.yaml
+        # lifecycle-lock.yaml is intentionally NOT listed: locking is
+        # irreversible and UNIQUE(project_id, report_date) means one report
+        # per project per day, so a run on this shared backend would lock
+        # today's report for every subsequent PR run the same day. Local
+        # pre-merge ritual only (.maestro/lifecycle-lock.yaml header) until
+        # there is a per-run ephemeral backend or a project-switcher testID.
