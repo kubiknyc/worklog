@@ -118,6 +118,26 @@ const DYNAMIC_TESTIDS: readonly DynamicTestId[] = [
       template: '`${testID}-backdrop`',
     },
   },
+  // `report-status-${status}` — the report detail screen's status chip.
+  {
+    prefix: 'report-status-',
+    source: path.join('app', 'report', '[id]', 'index.tsx'),
+    sourceLiteral: 'report-status',
+    derivedIn: {
+      file: path.join('src', 'components', 'ReportStatusChip.tsx'),
+      template: '`${testID}-${status}`',
+    },
+  },
+  // `today-status-${status}` — the same chip, sized small, on the Today card.
+  {
+    prefix: 'today-status-',
+    source: path.join('app', '(tabs)', 'index.tsx'),
+    sourceLiteral: 'today-status',
+    derivedIn: {
+      file: path.join('src', 'components', 'ReportStatusChip.tsx'),
+      template: '`${testID}-${status}`',
+    },
+  },
 ];
 
 const SCAN_ROOTS = ['src', 'app'];

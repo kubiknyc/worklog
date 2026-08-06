@@ -149,7 +149,7 @@ export default function TodayScreen() {
                   >
                     {"Today's report"}
                   </Text>
-                  <ReportStatusChip status={data.report.status} size="sm" />
+                  <ReportStatusChip status={data.report.status} size="sm" testID="today-status" />
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.faint} />
               </Pressable>

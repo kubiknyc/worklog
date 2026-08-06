@@ -24,15 +24,18 @@ export const REPORT_STATUS_LABELS: Readonly<Record<ReportStatus, string>> = {
 type Props = {
   readonly status: ReportStatus;
   readonly size?: 'sm' | 'md';
+  /** Prefix for the derived `<testID>-<status>` node id — see .maestro/README.md. */
+  readonly testID?: string;
 };
 
-export function ReportStatusChip({ status, size = 'md' }: Props) {
+export function ReportStatusChip({ status, size = 'md', testID }: Props) {
   const { reportStatus: statusColors, fonts } = useTheme();
   const color = statusColors[status];
   const small = size === 'sm';
 
   return (
     <View
+      testID={testID ? `${testID}-${status}` : undefined}
       style={[
         styles.chip,
         small ? styles.chipSm : styles.chipMd,

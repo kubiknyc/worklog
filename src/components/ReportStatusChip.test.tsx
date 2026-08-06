@@ -53,6 +53,20 @@ describe('ReportStatusChip', () => {
     expect(screen.getByText('Amended')).toBeTruthy();
   });
 
+  it.each(STATUSES)('derives the maestro node id <testID>-%s when testID is set', (status) => {
+    render(<ReportStatusChip status={status} testID="report-status" />, { wrapper });
+
+    // .maestro/offline-reconcile.yaml and lifecycle-lock.yaml assert
+    // report-status-<status> to prove draft->submitted->locked transitions.
+    expect(screen.getByTestId(`report-status-${status}`)).toBeTruthy();
+  });
+
+  it('renders no testID when the prop is omitted', () => {
+    render(<ReportStatusChip status="draft" />, { wrapper });
+
+    expect(screen.queryByTestId('report-status-draft')).toBeNull();
+  });
+
   it('renders the small variant with a smaller label than the default', () => {
     const { rerender } = render(<ReportStatusChip status="draft" size="sm" />, { wrapper });
     const small = screen.getByText('Draft').props.style as readonly { fontSize?: number }[];

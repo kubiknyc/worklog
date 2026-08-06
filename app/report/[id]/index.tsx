@@ -401,7 +401,7 @@ export default function ReportDetailScreen() {
             <Text style={[styles.date, { color: colors.text, fontFamily: fonts.serif.semibold }]}>
               {formatReportDate(data.report.report_date)}
             </Text>
-            <ReportStatusChip status={data.report.status} />
+            <ReportStatusChip status={data.report.status} testID="report-status" />
           </View>
 
           <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />

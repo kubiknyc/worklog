@@ -66,6 +66,15 @@ export function SectionSheetScaffold({
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title={title}>
+      {readOnly ? (
+        <Text
+          testID="sheet-readonly"
+          style={[styles.readOnlyNotice, { color: colors.muted, fontFamily: fonts.ui.regular }]}
+        >
+          This report is locked. Changes need a formal amendment.
+        </Text>
+      ) : null}
+
       <ScrollView
         style={{ maxHeight: height * 0.85 }}
         contentContainerStyle={styles.bodyContent}
@@ -118,4 +127,5 @@ const styles = StyleSheet.create({
   },
   noneText: { fontSize: 15 },
   pressed: { opacity: 0.8 },
+  readOnlyNotice: { fontSize: 13, paddingBottom: 8 },
 });
