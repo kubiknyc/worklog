@@ -21,28 +21,11 @@
 # Run:  maestro test .maestro/login.yaml
 appId: com.jobsight.worklog
 ---
-- launchApp:
-    clearState: true
-
-# Login screen is up once its fields exist.
-- assertVisible:
-    id: 'login-email'
-- assertVisible:
-    id: 'login-password'
-- assertVisible:
-    id: 'login-submit'
-
-# Fast path: tap the seeded Superintendent demo row, which fills both fields
-# and submits in one action (onDemoPress).
-- tapOn:
-    id: 'login-demo-superintendent'
-
-# The layout guard redirects on success; login.tsx never navigates manually.
-# Generous timeout: this is a real GoTrue round-trip, not a mock.
-- extendedWaitUntil:
-    visible:
-      id: 'screen-today'
-    timeout: 20000
+# The shared preamble already proves cold launch -> login screen -> demo
+# sign-in -> screen-today, including the launcher/dev-client handling this
+# flow used to duplicate. What's left here is specific to this flow: tab
+# navigation.
+- runFlow: _launch-and-signin.yaml
 
 # Tab bar is present and navigable.
 - assertVisible:

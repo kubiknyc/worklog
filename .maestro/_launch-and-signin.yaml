@@ -1,0 +1,73 @@
+# Shared preamble: cold launch through demo sign-in, landing on Today.
+#
+# Every flow in this directory starts here. Extracted because it was
+# duplicated verbatim between login.yaml and report-sections.yaml, and every
+# new flow (offline-reconcile, lifecycle-lock) would otherwise add a third and
+# fourth copy of the same ~50 lines of dev-client-launcher handling.
+#
+# Leading underscore: not a standalone flow to run for its own sake, though
+# running it alone is harmless (it just signs in and stops at Today) — kept
+# flat in .maestro/, not a subdirectory, because the selector guard's
+# `readdirSync` in src/maestroSelectors.test.ts is non-recursive; a nested
+# file would silently stop being checked.
+#
+# NOT listed in .eas/workflows/e2e-android.yml's flow_path: it is consumed via
+# `runFlow: file:` by the flows that need it, not run standalone in CI.
+#
+# Consumed via:  - runFlow: _launch-and-signin.yaml
+appId: com.jobsight.worklog
+---
+- launchApp:
+    clearState: true
+
+# Dev-client builds (expo run:android) land on the expo-dev-client launcher
+# after clearState wipes its remembered server. Third-party UI — no testIDs
+# exist, so these steps key on the URL text. Release e2e builds never show
+# the launcher and skip this.
+# The launcher renders a beat after launchApp returns, so give it a bounded
+# optional wait first — otherwise the when-visible check below races it and
+# skips the handling entirely (observed on Maestro 2.7.0). optional: a release
+# build never shows the launcher, and that must not fail the flow.
+- extendedWaitUntil:
+    visible: '.*:8081.*'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: '.*:8081.*'
+    commands:
+      # Deep-link straight to Metro over the adb-reverse tunnel instead of
+      # tapping the launcher's auto-detected 10.0.2.2 row: the emulator-NAT
+      # route to the host can be firewall-blocked ("Error loading app:
+      # timeout") while 127.0.0.1 via `adb reverse tcp:8081` always works.
+      - openLink: 'worklog://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+      # The first-run developer-menu sheet may overlay the app once the
+      # bundle renders (clearState resets it). Wait for it — bundle load can
+      # take tens of seconds on a cold Metro — then dismiss. Conditional:
+      # a prewarmed Metro sometimes renders the app with no sheet at all.
+      - extendedWaitUntil:
+          visible: 'Continue'
+          timeout: 120000
+          optional: true
+      # 'Continue' advances into the full developer menu; Android back
+      # closes it and reveals the app.
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+            - back
+
+# --- Sign in via the seeded demo row. ---
+# extendedWaitUntil (not assertVisible): the first bundle request after a
+# fresh install compiles for tens of seconds on a dev build.
+- extendedWaitUntil:
+    visible:
+      id: 'login-submit'
+    timeout: 90000
+- tapOn:
+    id: 'login-demo-superintendent'
+- extendedWaitUntil:
+    visible:
+      id: 'screen-today'
+    timeout: 20000

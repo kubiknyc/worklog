@@ -14,66 +14,22 @@
 # backend persists across clearState), so the Today tap is conditional, and
 # no step asserts entry counts.
 #
+# DRAFT-ONLY, hard-asserted below. Submit and lock live in
+# lifecycle-lock.yaml, not here — a locked/submitted report suppresses the
+# "None today" affirmation row ENTIRELY (SectionSheetScaffold.tsx, gated on
+# `onNoneToday && !readOnly`, not merely disabled), so the Safety step's
+# `tapOn: sheet-safety-none` has nothing to hit on a non-draft report. Walking
+# a submitted report here would fail confusingly mid-flow instead of loudly
+# at the precondition; keeping submit/lock in their own file is what makes
+# lifecycle-lock.yaml's cascading arms safe to run repeatedly same-day.
+#
 # PRECONDITIONS: same as login.yaml (e2e-test build with demo logins, local
 # Supabase stack from ../jobsight-backend seeded with demo accounts).
 #
 # Run:  maestro test .maestro/report-sections.yaml
 appId: com.jobsight.worklog
 ---
-- launchApp:
-    clearState: true
-
-# Dev-client builds (expo run:android) land on the expo-dev-client launcher
-# after clearState wipes its remembered server. Third-party UI — no testIDs
-# exist, so these steps key on the URL text. Release e2e builds never show
-# the launcher and skip this.
-# The launcher renders a beat after launchApp returns, so give it a bounded
-# optional wait first — otherwise the when-visible check below races it and
-# skips the handling entirely (observed on Maestro 2.7.0). optional: a release
-# build never shows the launcher, and that must not fail the flow.
-- extendedWaitUntil:
-    visible: '.*:8081.*'
-    timeout: 15000
-    optional: true
-- runFlow:
-    when:
-      visible: '.*:8081.*'
-    commands:
-      # Deep-link straight to Metro over the adb-reverse tunnel instead of
-      # tapping the launcher's auto-detected 10.0.2.2 row: the emulator-NAT
-      # route to the host can be firewall-blocked ("Error loading app:
-      # timeout") while 127.0.0.1 via `adb reverse tcp:8081` always works.
-      - openLink: 'worklog://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
-      # The first-run developer-menu sheet may overlay the app once the
-      # bundle renders (clearState resets it). Wait for it — bundle load can
-      # take tens of seconds on a cold Metro — then dismiss. Conditional:
-      # a prewarmed Metro sometimes renders the app with no sheet at all.
-      - extendedWaitUntil:
-          visible: 'Continue'
-          timeout: 120000
-          optional: true
-      # 'Continue' advances into the full developer menu; Android back
-      # closes it and reveals the app.
-      - runFlow:
-          when:
-            visible: 'Continue'
-          commands:
-            - tapOn: 'Continue'
-            - back
-
-# --- Sign in via the seeded demo row (same fast path as login.yaml). ---
-# extendedWaitUntil (not assertVisible): the first bundle request after a
-# fresh install compiles for tens of seconds on a dev build.
-- extendedWaitUntil:
-    visible:
-      id: 'login-submit'
-    timeout: 90000
-- tapOn:
-    id: 'login-demo-superintendent'
-- extendedWaitUntil:
-    visible:
-      id: 'screen-today'
-    timeout: 20000
+- runFlow: _launch-and-signin.yaml
 
 # Queue is provably empty here (clearState wiped SQLite; login and the
 # reference-mirror seed enqueue nothing) → the pill reads synced. Near-vacuous
@@ -112,6 +68,14 @@ appId: com.jobsight.worklog
     visible:
       id: 'screen-report'
     timeout: 10000
+
+# Hard precondition, not an assumption: this flow only makes sense against a
+# draft. If lifecycle-lock.yaml already ran today, the report is submitted or
+# locked and every "None today" affirmation row below is entirely absent from
+# the tree (SectionSheetScaffold, not merely disabled) — better to fail loudly
+# here than mid-flow on a dead Safety tap.
+- assertVisible:
+    id: 'report-status-draft'
 
 # --- Weather: auto snapshot + manual override sheet opens and closes. ---
 - tapOn:
@@ -267,42 +231,9 @@ appId: com.jobsight.worklog
 - assertVisible:
     id: 'screen-report'
 
-# ── M4a: submit the draft ─────────────────────────────────────────────
-# Submit is only offered on a draft; a same-day re-run finds the report
-# already submitted, so the whole block is conditional (re-run safe).
-# scrollUntilVisible before the conditional would itself fail on a re-run
-# (nothing to scroll to), so wait bounded+optional for the button first,
-# then gate the scroll + submit interaction on that visibility check.
-# TODO(on-device): validate this conditional path with a same-day
-# second run of this flow against a booted emulator (see M4a follow-up).
-- extendedWaitUntil:
-    visible:
-      id: 'report-submit'
-    timeout: 10000
-    optional: true
-- runFlow:
-    when:
-      visible:
-        id: 'report-submit'
-    commands:
-      - scrollUntilVisible:
-          element:
-            id: 'report-submit'
-      - tapOn:
-          id: 'report-submit'
-      - assertVisible:
-          id: 'submit-signature-canvas'
-      # Draw a stroke across the WebView canvas (coordinates are % of screen):
-      - swipe:
-          start: 30%, 60%
-          end: 70%, 65%
-      - tapOn:
-          id: 'submit-confirm'
-      # The sheet closes; the chip flips optimistically, then the drain syncs it:
-      - extendedWaitUntil:
-          visible:
-            id: 'sync-status-synced'
-          timeout: 30000
+# Submit and lock are exercised by lifecycle-lock.yaml, not here — see the
+# header note. This flow's claim ends at "every section write enqueued and
+# drained," proven by the terminal sync-status-synced assert below.
 
 # --- Back out to Today. ---
 - tapOn:
