@@ -56,8 +56,10 @@ The convention, applied as screens are built rather than retrofitted:
 | Submit signature sheet | `submit-<field>` | `submit-signer-title`, `submit-signature-canvas`, `submit-clear-signature`, `submit-confirm` |
 | Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent`, `report-section-crew_work` |
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
+| Lifecycle status chip | `<testID>-<status>` (a `ReportStatusChip` prop, not a fixed prefix) | `report-status-draft`, `report-status-submitted`, `report-status-locked`, `today-status-draft` — the report detail chip and Today's card chip, so a flow can assert lifecycle transitions instead of inferring them from a button's presence |
 | Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-synced`, `sync-status-queued` — deliberate exception to `<screen>-<state>`: the pill is the same surface on every screen |
 | Section sheet | `sheet-<section>` + `-done` / `-none` / `-add` | `sheet-crew-work`, `sheet-crew-work-done`, `sheet-crew-work-none`, `sheet-deliveries-add` |
+| Section sheet read-only notice | `sheet-readonly` — screen-agnostic like the sync pill, one node shared by every locked sheet | `sheet-readonly` |
 | Sync queue screen | `sync-queue-screen`, `sync-back`, `sync-queue-retry`, `sync-queue-row-<clientId>`, `sync-queue-discard-<clientId>` | Task 8's retry/discard surface (`app/settings/sync.tsx`); the row/discard ids are dynamic — declared in `DYNAMIC_TESTIDS` |
 | Discard confirmation | `sync-discard-confirm`, `sync-discard-cancel`, `sync-discard-backdrop` | The sheet the per-row Discard opens. Deliberately **not** `sync-queue-discard-*`: that prefix is a blanket `DYNAMIC_TESTIDS` exemption, so ids nested under it would be invisible to the guard |
 
@@ -92,30 +94,40 @@ testIDs built at runtime (`login-demo-${role}`) can't be found by a literal
 scan, so they are declared in that test's `DYNAMIC_TESTIDS` list along with the
 file that generates them. Add to it rather than loosening the assertion.
 
-## Blocked: the offline reconciliation flow
+## Offline reconciliation — `offline-reconcile.yaml`
 
-The highest-value flow — the one the sync engine exists for — **cannot be
-written yet**:
+The highest-value flow — the one the sync engine exists for. `src/sync/`
+(`mutationQueue.ts` at 100% coverage, `conflict.ts`, `cursors.ts`,
+`paginate.ts`) is unit-tested piece by piece, but nothing exercised them
+together against a real SQLite database and a real Supabase instance until
+this flow: launch → reach a draft report online → go offline → mutate two
+sections → come back online → assert the queue drained (AC-O1,
+`docs/architecture/01-work-plan.md`).
 
-> launch → create a report → go offline → mutate sections → come back online →
-> assert the queue drained and the server state reconciled
+Was blocked on the sync ENGINE (M3); M3a (push) and M3b (pull) have since
+landed and this flow closes the gap. Maestro toggles connectivity with
+`- setAirplaneMode: enabled` / `disabled`. The empty-queue trap is the thing
+to know before touching this flow: `SyncStatusBanner`'s precedence means
+going offline with a **empty** queue never reaches `sync-status-offline` — it
+falls through to `synced`. The flow goes offline only after draining the
+report-create write, so the later offline assertion can only be explained by
+the writes made while offline.
 
-`src/sync/` implements this (`mutationQueue.ts` at 100% coverage,
-`conflict.ts`, `cursors.ts`, `paginate.ts`), and each piece is unit-tested.
-Nothing exercises them together against a real SQLite database and a real
-Supabase instance. Until this flow exists, 100% coverage on `mutationQueue.ts`
-proves the *policy* is correct and proves nothing about the *engine*.
+## Lock, submit, and read-only — `lifecycle-lock.yaml` (local only)
 
-It is now blocked only on the sync ENGINE (M3), not on UI. All three UI
-prerequisites shipped with M2: report creation from Today, section sheets
-writing through the mutation queue, and the sync indicator
-(`SyncStatusBanner` — machine-readable `sync-status-<state>` testIDs;
-`report-sections.yaml` asserts the synced→queued transition). The engine that
-drains the queue is what the reconciliation assertions still wait for.
+Drives `report-submit` → `report-lock` / `-confirm` / `-cancel`, and proves
+lock actually disables editing (`sheet-readonly` visible,
+`sheet-safety-none` entirely absent on a locked report). Three cascading
+arms gated on the report's current status, so a same-day second run — which
+is what validates the M4a submit block's "already submitted" branch — enters
+directly at whichever arm the status allows and still asserts something
+real, never skipping.
 
-Maestro toggles connectivity with `- setAirplaneMode: enabled` / `disabled`,
-which is the offline half of the flow. `sync-status-synced` after
-`setAirplaneMode: disabled` is the "queue drained" assertion once M3 lands.
+**Not run in CI.** Locking is irreversible and `UNIQUE(project_id,
+report_date)` means one report per project per day; running this against the
+shared CI backend would lock today's report for every other PR's flows the
+same day. Run it locally, last, against a freshly reset+seeded backend:
+`(cd ../jobsight-backend && supabase db reset)`.
 
 ### M3a: `report-sections.yaml` now proves a real drain
 

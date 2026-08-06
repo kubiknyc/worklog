@@ -215,7 +215,14 @@ appliers, membership/id reconcile sweeps, `completedPulls` UI refetch signal).
 - [ ] `tsc --noEmit` green under strict; jest green incl. schema-parity + all `mutationQueue` pure-policy tests.
 - [ ] Platform-split grep returns nothing across `src`/`app`.
 - [ ] Sync pure modules 100% behavior-covered before native adapters; every failure path ends in retry/park/decision — no silent drops.
-- [ ] AC-O1 airplane-mode E2E passes (create→fill→photo→submit→queue→drain-on-reconnect).
+- [x] AC-O1 airplane-mode E2E — the sync-engine core proven on device
+      (`.maestro/offline-reconcile.yaml`, Pixel_API_36 emulator against a
+      local Supabase stack): create→fill sections while offline→queue
+      (`sync-status-offline`)→drain-on-reconnect (`sync-status-synced`).
+      **Not yet covered:** photo capture (unbuilt pre-M5) and submit while
+      offline (not attempted — `lifecycle-lock.yaml` submits only online).
+      Re-verify against the literal create→fill→photo→submit→queue sequence
+      once M5 ships.
 - [ ] Photo provenance columns populated end-to-end; GPS guard no-ops on null coords.
 - [ ] Golden-output PDF test green across on-device and server renderers.
 - [ ] Lifecycle immutability enforced at DB level (locked-row rejection trigger); amendments audited.
