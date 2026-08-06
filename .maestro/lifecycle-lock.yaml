@@ -32,30 +32,7 @@
 appId: com.jobsight.worklog
 ---
 - runFlow: _launch-and-signin.yaml
-
-- extendedWaitUntil:
-    visible:
-      id: 'today-start-report'
-    timeout: 30000
-    optional: true
-- runFlow:
-    when:
-      visible:
-        id: 'today-start-report'
-    commands:
-      - tapOn:
-          id: 'today-start-report'
-- runFlow:
-    when:
-      visible:
-        id: 'today-open-report'
-    commands:
-      - tapOn:
-          id: 'today-open-report'
-- extendedWaitUntil:
-    visible:
-      id: 'screen-report'
-    timeout: 10000
+- runFlow: _open-todays-report.yaml
 
 # ── Arm 1 — draft: submit. Fires only on the day's first run. ────────────
 - runFlow:

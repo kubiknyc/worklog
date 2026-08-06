@@ -39,35 +39,7 @@ appId: com.jobsight.worklog
     id: 'sync-status-synced'
 
 # --- Enter today's report: create it, or open the existing one. ---
-# The buttons render only once the initial tier-1 pull lands memberships and
-# the active-project bridge resolves — on a fresh install that is seconds
-# after Today mounts, so give it a bounded wait before the instantaneous
-# when-visible checks below (observed race: checks ran ~7s before the first
-# pull committed). optional: on re-runs a report already exists, so
-# start-report may never appear and open-report is the one that renders.
-- extendedWaitUntil:
-    visible:
-      id: 'today-start-report'
-    timeout: 30000
-    optional: true
-- runFlow:
-    when:
-      visible:
-        id: 'today-start-report'
-    commands:
-      - tapOn:
-          id: 'today-start-report'
-- runFlow:
-    when:
-      visible:
-        id: 'today-open-report'
-    commands:
-      - tapOn:
-          id: 'today-open-report'
-- extendedWaitUntil:
-    visible:
-      id: 'screen-report'
-    timeout: 10000
+- runFlow: _open-todays-report.yaml
 
 # Hard precondition, not an assumption: this flow only makes sense against a
 # draft. If lifecycle-lock.yaml already ran today, the report is submitted or

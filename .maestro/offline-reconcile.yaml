@@ -54,29 +54,7 @@ appId: com.jobsight.worklog
 # --- Reach a draft report WHILE ONLINE. Non-negotiable ordering: the local
 # mirror is empty until the tier-1 pull lands, so start-report can't appear
 # offline on a fresh install. ---
-- extendedWaitUntil:
-    visible:
-      id: 'today-start-report'
-    timeout: 30000
-    optional: true
-- runFlow:
-    when:
-      visible:
-        id: 'today-start-report'
-    commands:
-      - tapOn:
-          id: 'today-start-report'
-- runFlow:
-    when:
-      visible:
-        id: 'today-open-report'
-    commands:
-      - tapOn:
-          id: 'today-open-report'
-- extendedWaitUntil:
-    visible:
-      id: 'screen-report'
-    timeout: 10000
+- runFlow: _open-todays-report.yaml
 - assertVisible:
     id: 'report-status-draft'
 
