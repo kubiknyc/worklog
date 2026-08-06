@@ -25,6 +25,17 @@
 # PRECONDITIONS: same as report-sections.yaml. Requires today's report to
 # still be a draft — run this before lifecycle-lock.yaml, not after.
 #
+# LOCAL-RUN GOTCHA, confirmed on device: if EXPO_PUBLIC_SUPABASE_URL points at
+# 127.0.0.1 reached via `adb reverse`, setAirplaneMode does NOT block Supabase
+# calls — the reverse tunnel runs over the ADB/USB transport, not the
+# emulator's virtual radio, so it survives airplane mode entirely (the pill
+# stayed `synced` under airplane mode in first testing, and the write landed
+# server-side with a timestamp inside the airplane-mode window). Point the
+# emulator build's Supabase URL at the NAT gateway instead —
+# `http://10.0.2.2:<port>` — which routes over the virtual radio airplane
+# mode actually gates. Metro/dev-client's own 127.0.0.1:8081 reverse tunnel
+# can stay as is; only the Supabase URL needs to avoid the reverse tunnel.
+#
 # RECOVERY: if this flow is killed between `setAirplaneMode: enabled` and
 # `disabled`, the device is left offline and every subsequent flow fails at
 # sign-in with a misleading network error. Recover with:
@@ -117,12 +128,13 @@ appId: com.jobsight.worklog
     id: 'screen-report'
 
 # THE AC-O1 precondition: with pending work and no transport, the pill must
-# NOT tell the user everything is saved. assertNotVisible on synced is the
-# robust form — it holds whether the engine rests at `queued` or `offline`
-# (see the header's empty-queue-trap note; the exact resting id depends on
-# whether NetInfo/the engine has yet observed the transport failure).
-- assertNotVisible:
-    id: 'sync-status-synced'
+# NOT tell the user everything is saved. Observed on device (Pixel_API_36,
+# Maestro 2.7.0): the engine reaches `sync-status-offline` well within a few
+# seconds of the second offline write ("1 change waiting to send — offline"),
+# so this asserts the exact resting id rather than the weaker
+# assertNotVisible(synced) — a stronger claim now that it's confirmed true.
+- assertVisible:
+    id: 'sync-status-offline'
 
 # --- The queue surface is reachable from the offline state (AC-O6: every
 # parked/pending write visible, never silent). Trigger -> destination, per
