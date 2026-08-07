@@ -118,6 +118,17 @@ Port from PunchLog:
 - Invite management UI (`invites.ts`, `companyMembers.ts` from PunchLog).
 - Reconciling the hosted project's drifted function deployments.
 
+## Resolved decisions (2026-08-07, user)
+
+- **Website:** a minimal WorkLog site (`/welcome` web set-password, `/terms`,
+  `/privacy`) is IN SCOPE, cloned from PunchLog's website pieces, deployed to
+  Vercel. Registration ships working end to end; §6's gate flips when live.
+- **Tenancy:** audit-first. The A2 preflight audit of the hosted project runs
+  before any deploy decision; deploy to the shared project only if its schema
+  matches jobsight-backend's assumptions and cross-tenant risks are acceptable
+  (rehearsed on a Supabase branch). Otherwise escalate back to the user with
+  the evidence before considering a separate project.
+
 ## Review amendments (2026-08-07, two-agent review)
 
 Corrections from the fact-check pass:
