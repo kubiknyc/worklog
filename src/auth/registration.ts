@@ -55,9 +55,16 @@ async function parseErrorBody(
 }
 
 /**
- * `client` picks which surface the emailed confirm link opens: native builds
- * send 'app' (punchlist://set-password deep link); the web build sends 'web'
- * because a custom-scheme link is dead in a desktop browser.
+ * `client` picks which surface the emailed confirm link opens. Per spec
+ * amendment A1, `register-company` never mints a `punchlist://` URL for a
+ * WorkLog registration — that was PunchLog's fallback and, delivered to a
+ * device with PunchLog also installed, would hand a WorkLog auth token to
+ * the wrong app. Both `'app'` and `'web'` land the confirm link on the
+ * WorkLog website's `/welcome` set-password page; `client` only lets the
+ * backend fork vary presentation (e.g. an app-store nudge for `'app'`), not
+ * the destination. `worklog://set-password` stays reachable only via the
+ * in-app links this screen already handles (invite/recovery), never via the
+ * registration confirm email.
  */
 export async function registerCompany(
   request: RegisterCompanyRequest,

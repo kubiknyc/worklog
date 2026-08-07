@@ -36,8 +36,8 @@ import {
   type AuthLinkType,
 } from '../src/auth';
 import { BrandMark } from '../src/components/BrandMark';
-import { syncStatusHub } from '../src/sync/statusHub';
-import { FIXED_COLORS, useTheme } from '../src/theme';
+import { readFreshPendingCount, syncStatusHub } from '../src/sync/statusHub';
+import { useTheme } from '../src/theme';
 
 type Phase =
   | { readonly kind: 'waiting' }
@@ -52,17 +52,29 @@ type Phase =
    */
   | { readonly kind: 'blocked' };
 
-/** Read the currently published pending-mutation count from the sync status
- *  hub — the same source RepositoryProvider wires into the pill, so the
- *  queue-loss guard (spec A5) sees the same number the user does, without
- *  this screen taking a direct dependency on the sync/data layers. */
+/**
+ * Read a TRUSTWORTHY pending-mutation count from the sync status hub for the
+ * queue-loss guard (spec A5). Do not read `syncStatusHub.getState().pending`
+ * directly here: the hub's idle state publishes `pending: 0` both genuinely
+ * (nothing queued) and transiently (no producer installed yet on a cold
+ * start, or `setCounter`'s idle reset before the first real recount lands).
+ * On a cold start via someone else's confirm link, `applyAuthTokens` can run
+ * before RepositoryProvider has attached the real counter/engine — a raw
+ * read of the idle `0` would let the session swap proceed and wipe the
+ * signed-in user's offline queue.
+ *
+ * `readFreshPendingCount` forces a real recount and fails CLOSED — treat as
+ * blocked — when no producer is installed yet or the count errored, so this
+ * producer maps that untrustworthy case to a sentinel guaranteed to read as
+ * "pending work exists" at the `pending > 0` check in applyAuthTokens.
+ */
 const pendingMutationCount = (): Promise<number> =>
-  Promise.resolve(syncStatusHub.getState().pending);
+  readFreshPendingCount(syncStatusHub).then((count) => count ?? Number.POSITIVE_INFINITY);
 
 export default function SetPasswordScreen() {
   const router = useRouter();
   const url = useURL();
-  const { colors, fonts, radii } = useTheme();
+  const { colors, error: errorColor, fonts, radii } = useTheme();
 
   // The confirm.tsx shim hands the auth fragment over in module scope (see
   // pendingAuthLink). Read it exactly once per mount and prefer it over
@@ -330,7 +342,7 @@ export default function SetPasswordScreen() {
             {formError ? (
               <Text
                 testID="set-password-error"
-                style={[styles.error, { color: FIXED_COLORS.error, fontFamily: fonts.ui.medium }]}
+                style={[styles.error, { color: errorColor, fontFamily: fonts.ui.medium }]}
               >
                 {formError}
               </Text>

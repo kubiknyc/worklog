@@ -36,6 +36,15 @@ export interface SyncStatusHub {
   /** Recount and publish. Serialized + coalesced; never rejects. No-ops while an engine is attached. */
   refresh(): Promise<void>;
   /**
+   * True once a real counts producer is wired in — a `setCounter(counter)`
+   * with a non-null counter, or an attached engine. False both before the
+   * first producer is installed (cold start) and after a `setCounter(null)` /
+   * engine detach (sign-out, fallback) — the caller cannot tell those apart
+   * from `getState()` alone, since both publish the same idle `pending: 0`.
+   * Zero IO: reads hub-internal flags only.
+   */
+  hasProducer(): boolean;
+  /**
    * M3: swap the producer to the sync engine. Bumps the epoch (discarding any
    * in-flight `setCounter` count and superseding a later-resolving stale
    * result), publishes `{...engine.getState(), countError: false}`
@@ -128,6 +137,7 @@ export function createSyncStatusHub(): SyncStatusHub {
 
   return {
     getState: () => state,
+    hasProducer: () => counter !== null || attached,
     subscribe(fn) {
       listeners.add(fn);
       return () => {
@@ -164,3 +174,29 @@ export function createSyncStatusHub(): SyncStatusHub {
 
 /** App-wide instance — installed by RepositoryProvider, read by useSyncStatus. */
 export const syncStatusHub: SyncStatusHub = createSyncStatusHub();
+
+/**
+ * Trustworthy pending-mutation read for guards that must never act on a
+ * possibly-uninitialized hub snapshot — e.g. the set-password queue-loss
+ * guard (spec A5, app/set-password.tsx). `getState().pending` alone cannot
+ * be trusted: the hub's idle state publishes `pending: 0` both genuinely
+ * (nothing queued) and transiently (no producer installed yet on a cold
+ * start, or `setCounter`'s idle reset before the first real recount lands).
+ * A guard reading the raw idle `0` on a cold start via someone else's
+ * confirm link would let a queue-wiping session swap through.
+ *
+ * Forces a fresh count via `refresh()` (a no-op while an engine is attached,
+ * since the engine's own state is already live), then fails CLOSED — returns
+ * `null`, meaning "do not trust this, treat it as if work is queued" — when
+ * no producer is installed yet or the fresh count errored (`countError`).
+ * Only returns a real number once a producer is installed AND the count is
+ * known-good.
+ */
+export async function readFreshPendingCount(
+  hub: Pick<SyncStatusHub, 'hasProducer' | 'refresh' | 'getState'>,
+): Promise<number | null> {
+  if (!hub.hasProducer()) return null;
+  await hub.refresh();
+  const state = hub.getState();
+  return state.countError ? null : state.pending;
+}

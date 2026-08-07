@@ -3,7 +3,7 @@
  * package.json. Tests run against isolated `createSyncStatusHub()` instances
  * (never the app singleton) so cases cannot leak into each other.
  */
-import { createSyncStatusHub } from './statusHub';
+import { createSyncStatusHub, readFreshPendingCount } from './statusHub';
 import { IDLE_SYNC_STATE } from './engineApi';
 import type { SyncState } from './engineApi';
 import type { QueueCounts, QueueCounter } from './types';
@@ -416,5 +416,97 @@ describe('createSyncStatusHub — attachEngine', () => {
 
     expect(hub.getState()).toEqual({ ...engine.getState(), countError: false });
     expect(hub.getState().pending).toBe(9);
+  });
+});
+
+// readFreshPendingCount is the trustworthy read the set-password queue-loss
+// guard (spec A5) relies on instead of the hub's raw, possibly-uninitialized
+// getState().pending. Reproduces the review finding: a cold start via
+// someone else's confirm link must not read the idle 0 as "nothing queued".
+describe('readFreshPendingCount', () => {
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  test('no counter installed yet ⇒ null (fail closed / treat as blocked)', async () => {
+    const hub = createSyncStatusHub();
+
+    const result = await readFreshPendingCount(hub);
+
+    expect(result).toBeNull();
+  });
+
+  test('fresh count errors ⇒ null (fail closed / treat as blocked)', async () => {
+    const hub = createSyncStatusHub();
+    hub.setCounter(async () => {
+      throw new Error('db locked');
+    });
+
+    const result = await readFreshPendingCount(hub);
+
+    expect(result).toBeNull();
+  });
+
+  test('fresh count > 0 ⇒ returns the real count (caller treats as blocked)', async () => {
+    const hub = createSyncStatusHub();
+    hub.setCounter(async () => counts(3));
+
+    const result = await readFreshPendingCount(hub);
+
+    expect(result).toBe(3);
+  });
+
+  test('fresh count 0 ⇒ returns 0 (caller proceeds)', async () => {
+    const hub = createSyncStatusHub();
+    hub.setCounter(async () => counts(0));
+
+    const result = await readFreshPendingCount(hub);
+
+    expect(result).toBe(0);
+  });
+
+  test('forces a real recount rather than trusting a stale idle snapshot', async () => {
+    const hub = createSyncStatusHub();
+    const gate = deferred<QueueCounts>();
+    let calls = 0;
+    hub.setCounter(() => {
+      calls += 1;
+      return calls === 1 ? gate.promise : Promise.resolve(counts(7));
+    });
+    // The setCounter-triggered install refresh is still in flight; getState()
+    // would read the idle 0 here. Resolve it, then confirm the SECOND call
+    // (from readFreshPendingCount's own refresh()) is a fresh recount.
+    gate.resolve(counts(0));
+    await flush();
+
+    const result = await readFreshPendingCount(hub);
+
+    expect(calls).toBe(2);
+    expect(result).toBe(7);
+  });
+
+  test('an attached engine (no counter, no countError) reads through as trustworthy', () => {
+    const hub = createSyncStatusHub();
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 5 });
+    hub.attachEngine(engine);
+
+    return expect(readFreshPendingCount(hub)).resolves.toBe(5);
+  });
+
+  test('after detaching an engine, reads null again (no producer)', async () => {
+    const hub = createSyncStatusHub();
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 5 });
+    const detach = hub.attachEngine(engine);
+    detach();
+
+    const result = await readFreshPendingCount(hub);
+
+    expect(result).toBeNull();
   });
 });
