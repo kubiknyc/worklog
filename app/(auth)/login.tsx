@@ -9,8 +9,11 @@
  * sign in with the seeded demo accounts (jobsight-backend/supabase/seed.sql).
  * Invite acceptance and password reset land on app/set-password.tsx in a
  * later milestone (M2, P2-9) — "Forgot password?" below only sends the
- * email; it does not link anywhere yet.
+ * email; it does not link anywhere yet. New companies register via the
+ * "Create a company account" link → app/(auth)/register.tsx.
  */
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import {
@@ -27,6 +30,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth, validateCredentials } from '../../src/auth';
+import { BrandMark } from '../../src/components/BrandMark';
 import { ERROR_COLORS, FONTS, PALETTES } from '../../src/theme';
 import { MIN_TOUCH_TARGET } from '../../src/theme/touchTarget';
 
@@ -56,6 +60,7 @@ const DEMO_ACCOUNTS: readonly DemoAccount[] = DEMO_LOGINS_ENABLED
   : [];
 
 export default function LoginScreen() {
+  const router = useRouter();
   const { signIn, resetPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -120,8 +125,11 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Wordmark */}
+          {/* Logo lockup */}
           <View style={styles.lockup}>
+            <View style={styles.logoMark}>
+              <BrandMark size={64} />
+            </View>
             <Text style={styles.brand}>WorkLog</Text>
             <Text style={styles.brandSub}>Keystone Build Group</Text>
           </View>
@@ -203,6 +211,18 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
+          <Pressable
+            testID="login-register"
+            accessibilityRole="button"
+            onPress={() => router.push('/(auth)/register')}
+            disabled={submitting}
+            style={styles.registerLink}
+          >
+            <Text style={styles.registerText}>
+              New here? <Text style={styles.registerAccent}>Create a company account</Text>
+            </Text>
+          </Pressable>
+
           {/* Demo-account shortcuts — env-gated, dev builds only. */}
           {DEMO_LOGINS_ENABLED && (
             <>
@@ -222,12 +242,17 @@ export default function LoginScreen() {
                   style={({ pressed }) => [styles.demoRow, pressed && styles.pressed]}
                 >
                   <View style={styles.demoAvatar}>
-                    <Text style={styles.demoAvatarInitial}>{acc.role.charAt(0)}</Text>
+                    <Ionicons
+                      name={acc.role === 'Superintendent' ? 'shield-checkmark' : 'construct'}
+                      size={18}
+                      color={C.accent}
+                    />
                   </View>
                   <View style={styles.flex}>
                     <Text style={styles.demoRole}>{acc.role}</Text>
                     <Text style={styles.demoEmail}>{acc.email}</Text>
                   </View>
+                  <Ionicons name="chevron-forward" size={18} color={C.faint} />
                 </Pressable>
               ))}
 
@@ -252,6 +277,7 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
   },
   lockup: { alignItems: 'center', marginBottom: 28 },
+  logoMark: { marginBottom: 14 },
   brand: {
     fontFamily: FONTS.serif.bold,
     fontSize: 34,
@@ -333,6 +359,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: C.accent,
   },
+  registerLink: { alignSelf: 'center', paddingVertical: 12, minHeight: 40 },
+  registerText: {
+    fontFamily: FONTS.ui.regular,
+    fontSize: 13,
+    color: C.muted,
+  },
+  registerAccent: {
+    fontFamily: FONTS.ui.semibold,
+    color: C.accent,
+  },
   pressed: { opacity: 0.85 },
   divider: {
     flexDirection: 'row',
@@ -364,11 +400,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  demoAvatarInitial: {
-    fontFamily: FONTS.ui.bold,
-    fontSize: 15,
-    color: C.accent,
   },
   demoRole: {
     fontFamily: FONTS.ui.bold,
