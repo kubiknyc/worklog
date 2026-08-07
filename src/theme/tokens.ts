@@ -119,7 +119,12 @@ export const ERROR_COLORS: Readonly<Record<ThemeName, string>> = {
 } as const;
 
 /** Standalone fixed accents. */
-export const FIXED_COLORS = { camera: '#3FA9F0' } as const;
+export const FIXED_COLORS = {
+  camera: '#3FA9F0',
+  /** Login-screen error text only (login is always Blueprint). Themed surfaces
+   * use the per-theme `theme.error` (see ERROR_COLORS) instead. */
+  error: '#FF8A8A',
+} as const;
 
 export interface Density {
   readonly rowPad: number;
