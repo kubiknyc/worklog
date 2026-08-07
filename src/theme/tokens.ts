@@ -77,7 +77,8 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
 // Status/priority colors are per-theme: a single shared set cannot meet WCAG
 // contrast (>=3:1 for these graphical indicators) against both the dark Blueprint
 // surface and the light Editorial/Beton surfaces at once. Each value below clears
-// 3:1 against its theme's surface, bg, and surface2 (verified, ratios in review).
+// 3:1 against its theme's surface, bg, and surface2 (verified, ratios in review),
+// with one accepted exception: see `beton.amended` below.
 //
 // ReportStatus rename (PRD §3 M0 note): reuses PunchLog's ItemStatus palette
 // by lifecycle position — earliest stage (`open`) -> `draft`, next (`in_progress`)

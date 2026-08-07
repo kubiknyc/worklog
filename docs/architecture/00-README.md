@@ -54,9 +54,8 @@ Modules track requires `report_photos` INSERT to succeed while `status IN ('draf
 
 1. **Approve PRD rev 3** (Phase 1 gate — still formally open).
 2. **Approve this Phase 2 architecture** (with or without changes).
-3. **R1:** queued `update_photo_meta` (recommended) vs online-only RPC for photo tag edits.
-4. **Distribution lists scope:** project-scoped (recommended in 04 §A.7) vs company-scoped.
-5. **Lock grace window:** how long after submit does auto-lock fire (product policy — e.g. 24h)? The design supports any value; the pg_cron job needs a number.
+3. **Distribution lists scope:** project-scoped (recommended in 04 §A.7) vs company-scoped.
+4. **Lock grace window:** how long after submit does auto-lock fire (product policy — e.g. 24h)? The design supports any value; the pg_cron job needs a number.
 
 ## Consolidated open items for Phase 3 (verification work, no decision needed)
 
