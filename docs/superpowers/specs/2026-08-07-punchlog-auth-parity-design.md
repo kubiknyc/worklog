@@ -116,5 +116,73 @@ Port from PunchLog:
 ## Out of scope
 
 - Invite management UI (`invites.ts`, `companyMembers.ts` from PunchLog).
-- The WorkLog marketing site itself.
 - Reconciling the hosted project's drifted function deployments.
+
+## Review amendments (2026-08-07, two-agent review)
+
+Corrections from the fact-check pass:
+
+- **Theme:** PunchLog screens use `FIXED_COLORS.error`, which WorkLog's
+  `FIXED_COLORS` lacks (`{ camera }` only). Add `error` to WorkLog's
+  `FIXED_COLORS` (matching PunchLog's value) rather than diverging the port.
+- **Dependencies:** `passwordStrength.ts` requires `@zxcvbn-ts/core`,
+  `@zxcvbn-ts/language-common`, `@zxcvbn-ts/language-en` — add to package.json.
+- **authLink extension is also a security fix:** PunchLog's version stops
+  echoing GoTrue's `error_description` (attacker-controlled text reachable via
+  custom-scheme links); WorkLog's current parser still echoes it. Port includes
+  this fix and the `LINK_PROBLEM_MESSAGE` export, plus the `'signup'` link type.
+- **Contract detail:** `register-company` takes `{companyName, fullName, email,
+  client: 'app'|'web'}`; the `client` field drives the confirm-link landing.
+- **Scheme:** `worklog` scheme already registered in app.json — no native change
+  needed for the port itself. Universal links (`associatedDomains` + AASA) are
+  deferred until a website exists; THAT will be the native change forcing a
+  store build.
+
+Findings that change the plan (from the risk review):
+
+- **A1 — Confirm-link landing (supersedes part of §4/§7).** `register-company`
+  no longer deep-links registrants into the app: after a 2026-08-02 incident
+  (Gmail's in-app browser silently refuses custom-scheme redirects), PunchLog
+  lands `client:'app'` registrants on the website's `/welcome` set-password
+  page, with a **hardcoded `punchlist://set-password` fallback** when
+  `WEBSITE_URL` is unset. Deployed unmodified for WorkLog, registrants would
+  land on the PunchLog site or receive dead `punchlist://` links (which, with
+  PunchLog installed on the same phone, would deliver a WorkLog auth token into
+  the PunchLog app). Therefore: the function must be parameterized/forked so a
+  WorkLog registration can never mint a `punchlist://` URL, and **a minimal
+  WorkLog website (`/welcome`, `/terms`, `/privacy`) is a prerequisite of
+  shipping registration** — it also satisfies §6. `app/confirm.tsx` is a legacy
+  shim in PunchLog; WorkLog keeps it only as a generic bad-link landing.
+- **A2 — Shared-project tenancy (gates §7).** The hosted project serves another
+  app (approve/reject-user flow, QuickBooks, drawings). `register-company`
+  assumes `profiles`/`companies` tables, a `handle_new_user` trigger, and the
+  `consume_registration_quota` RPC exist and are WorkLog-shaped; `auth.users`,
+  GoTrue email templates, Site URL, redirect allowlist, and function secrets
+  (`WEBSITE_URL`, `ALLOWED_ORIGINS`, `EMAIL_SHARED_SECRET`) are all shared with
+  the other tenant. Before any deploy: a read-only preflight audit (tables,
+  triggers on auth.users, RPCs, secrets) diffed against the function's
+  assumptions, rehearsed on a Supabase branch — and an explicit product decision
+  on whether WorkLog registrants may enter the shared `auth.users` pool.
+- **A3 — send-email templates.** Registration hard-requires `send-email`
+  (`EMAIL_SHARED_SECRET` or 503) and its `confirm_signup`/`account_exists`
+  templates; the deployed v20's templates belong to the other tenant. Add
+  WorkLog-branded template variants; never mutate shared ones.
+- **A4 — Submission gate needs an enforcement point.** `check:submission` must
+  live-check both legal URLs return 200 AND be the only sanctioned path:
+  `submit:ios`/`submit:android` npm wrappers around `eas submit`, a CLAUDE.md
+  note prohibiting raw `eas submit`, and the same check in any release CI job.
+- **A5 — Queue-loss guard.** If user A has unsynced queued mutations and taps
+  user B's confirm/recovery link, the session swap rebuilds RepositoryProvider
+  and wipes A's cache. Before applying a session for a different userId,
+  check the pending-mutation count and block with "sign in and sync first"
+  copy (never silent-destroy offline reports). Covered by a seam test.
+- **A6 — Web/CORS.** WorkLog web origins must be added to `ALLOWED_ORIGINS`
+  (noting the shared-secret blast radius); Testing gains "register/confirm/
+  set-password functional in the `check:web` export against local Supabase."
+- **A7 — E2E.** Add a Maestro flow for register-screen validation and the
+  `worklog://set-password#error=...` landing states (no email loop needed);
+  assert existing login testIDs unchanged. Full email-loop stays a manual
+  on-device checklist.
+- **A8 — `pendingAuthLink`** is a second sanctioned module-stateful exception
+  (one-shot, security-motivated) — document it alongside `statusHub.ts` in
+  CLAUDE.md so it doesn't get "fixed" into a route param later.
