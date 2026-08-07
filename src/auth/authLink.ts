@@ -15,10 +15,14 @@
  * `supabase.auth.setSession`. Pure — unit-tested without any linking mocks.
  */
 
-/** Which GoTrue action link produced the session — drives screen copy only
- *  (an invitee is welcomed; a password reset says "reset"). Unknown/absent
- *  `type` values fall back to 'other' rather than failing the parse. */
-export type AuthLinkType = 'invite' | 'recovery' | 'other';
+/** Which GoTrue action link produced the session. 'invite' and 'recovery'
+ *  land on set-password (they drive its copy). 'signup' is the registration
+ *  confirm link, which ALSO lands on set-password under invite-style
+ *  registration — no password is collected at sign-up, so the confirm link is
+ *  where the account owner chooses one.
+ *  Unknown/absent `type` values fall back to 'other' rather than failing the
+ *  parse. */
+export type AuthLinkType = 'invite' | 'recovery' | 'signup' | 'other';
 
 export type AuthLinkResult =
   | {
@@ -31,8 +35,12 @@ export type AuthLinkResult =
   | { readonly kind: 'none' };
 
 function linkTypeOf(raw: string | null): AuthLinkType {
-  return raw === 'invite' || raw === 'recovery' ? raw : 'other';
+  return raw === 'invite' || raw === 'recovery' || raw === 'signup' ? raw : 'other';
 }
+
+/** The ONLY message shown for a failed auth link — see the note in
+ *  parseAuthLink about attacker-controlled `error_description`. */
+export const LINK_PROBLEM_MESSAGE = 'This link is no longer valid.';
 
 export function parseAuthLink(url: string | null): AuthLinkResult {
   if (!url) return { kind: 'none' };
@@ -40,13 +48,14 @@ export function parseAuthLink(url: string | null): AuthLinkResult {
   if (hashIndex < 0) return { kind: 'none' };
 
   const params = new URLSearchParams(url.slice(hashIndex + 1));
-  const errorDescription = params.get('error_description');
-  if (params.get('error') || errorDescription) {
-    return {
-      kind: 'error',
-      // GoTrue encodes spaces as '+' in error_description.
-      message: (errorDescription ?? 'This link is no longer valid.').replace(/\+/g, ' '),
-    };
+  if (params.get('error') || params.get('error_description')) {
+    // SECURITY: never surface GoTrue's `error_description`. A custom-scheme
+    // link is openable by any web page or app, so `error_description` is
+    // fully attacker-controlled — echoing it renders arbitrary text under the
+    // WorkLog logo ("Your account is locked, call this number…"), which is a
+    // phishing vector. A fixed string tells the user everything they can act
+    // on anyway.
+    return { kind: 'error', message: LINK_PROBLEM_MESSAGE };
   }
 
   const accessToken = params.get('access_token');

@@ -2,7 +2,7 @@
  * parseAuthLink — fragment parsing for the invite deep link: session tokens,
  * GoTrue error redirects, and everything else reads as "none".
  */
-import { parseAuthLink } from './authLink';
+import { LINK_PROBLEM_MESSAGE, parseAuthLink } from './authLink';
 
 it('extracts the session tokens from an invite redirect', () => {
   const result = parseAuthLink(
@@ -28,6 +28,18 @@ it('tags a password-recovery redirect so the screen can vary its copy', () => {
   });
 });
 
+it('tags a signup confirmation redirect (registration confirm flow)', () => {
+  const result = parseAuthLink(
+    'worklog://confirm#access_token=at123&refresh_token=rt456&type=signup',
+  );
+  expect(result).toEqual({
+    kind: 'session',
+    accessToken: 'at123',
+    refreshToken: 'rt456',
+    linkType: 'signup',
+  });
+});
+
 it('falls back to linkType "other" for unknown or missing type values', () => {
   expect(
     parseAuthLink('worklog://set-password#access_token=at&refresh_token=rt&type=magiclink'),
@@ -38,11 +50,27 @@ it('falls back to linkType "other" for unknown or missing type values', () => {
   });
 });
 
-it('surfaces a GoTrue error redirect with readable spacing', () => {
+it('reports a GoTrue error redirect as an error', () => {
   const result = parseAuthLink(
     'worklog://set-password#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
   );
-  expect(result).toEqual({ kind: 'error', message: 'Email link is invalid or has expired' });
+  expect(result).toEqual({ kind: 'error', message: LINK_PROBLEM_MESSAGE });
+});
+
+// PHISHING GUARD. A custom-scheme link can be opened by any web page, SMS or
+// QR code, so `error_description` is entirely attacker-authored. Echoing it
+// renders arbitrary text under the real WorkLog branding ("Your account is
+// locked, call this number"). Native must not be weaker than that guarantee.
+it('never echoes attacker-supplied error_description text', () => {
+  const attacks = [
+    'worklog://set-password#error_description=Your+account+is+locked.+Call+555-0100+to+restore+access',
+    'worklog://confirm#error=x&error_description=Send+your+password+to+support@evil.example',
+    'worklog://set-password#error_description=<b>urgent</b>',
+  ];
+  for (const url of attacks) {
+    const result = parseAuthLink(url);
+    expect(result).toEqual({ kind: 'error', message: LINK_PROBLEM_MESSAGE });
+  }
 });
 
 it('reads a bare open (no fragment) as none', () => {
