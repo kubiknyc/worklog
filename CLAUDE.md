@@ -21,6 +21,11 @@ path; every write goes through the sync queue in `src/sync/`.
   persistence lives only in `store.native.ts`. `statusHub.ts` is the one
   sanctioned stateful exception (mutable module-level subscription state for
   the sync pill) — still zero IO; its counts producer is injected.
+  `src/auth/pendingAuthLink.ts` is the same kind of exception for a different
+  reason: a one-shot module-scoped hand-off of an auth-link fragment from
+  `app/confirm.tsx` to `app/set-password.tsx` (never a route param — that
+  would put a live access token in the query string). It is cleared on read,
+  so a token can only ever be consumed once.
 - `src/db/` — SQLite schema plus the server-column parity snapshot.
 - `src/theme/` — `ThemeProvider` + `tokens.ts`; component tests must render
   inside the `ThemeProvider` wrapper.
@@ -104,6 +109,13 @@ the same `coverageThreshold` block.
 **Report tables are SELECT-only to clients.** All lifecycle writes go through
 `SECURITY DEFINER` RPCs on the server. Never add a direct client `INSERT`/
 `UPDATE` against a report table to work around a missing RPC.
+
+**Submission goes through `npm run submit:ios|android` — never raw `eas
+submit`.** Both scripts run `check:submission` first (`scripts/check-submission.mjs`),
+which fails the build unless `LEGAL_PAGES_PUBLISHED` (`src/lib/legal.ts`) is
+`true` AND both `TERMS_URL` and `PRIVACY_URL` live-check to HTTP 200 — the
+App Store 5.1.1(i)/EULA requirement. A raw `eas submit` skips that gate
+entirely and can ship a build whose legal links 404.
 
 `src/sync/` and most of `src/db/` are pure and IO-free by design — persistence
 lives in `store.native.ts`. Keep new policy logic pure so it stays testable

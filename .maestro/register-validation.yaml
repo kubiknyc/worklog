@@ -1,0 +1,101 @@
+# Register screen validation + back-navigation, plus the set-password
+# deep-link error surface (spec A7/A8).
+#
+# Deliberately does NOT runFlow: _launch-and-signin.yaml — that preamble signs
+# in with the demo superintendent and lands on screen-today, but this flow
+# needs the UNAUTHENTICATED login screen (to reach register-validation via
+# `login-register`). The dev-client-launcher handling below is duplicated from
+# that file's first block rather than shared, because the two flows diverge
+# right after it — a third flow needing "reach the login screen only" would be
+# the trigger to extract a common file.
+#
+# Covers:
+#   - login -> register navigation (`login-register`)
+#   - empty-form submit is blocked client-side (validateRegistration) and does
+#     NOT advance to the "check your email" done state
+#   - `register-back` returns to the login screen
+#   - a malformed/denied auth deep link (`error=access_denied`) surfaces the
+#     generic `set-password-error` copy, never GoTrue's raw error_description
+#     (see src/auth/authLink.ts)
+#
+# Run:  maestro test .maestro/register-validation.yaml
+appId: com.jobsight.worklog
+---
+- launchApp:
+    clearState: true
+
+# Dev-client builds land on the expo-dev-client launcher after clearState
+# wipes its remembered server. Third-party UI — no testIDs exist, so these
+# steps key on the URL text, same as _launch-and-signin.yaml.
+- extendedWaitUntil:
+    visible: '.*:8081.*'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: '.*:8081.*'
+    commands:
+      - openLink: 'worklog://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+      - extendedWaitUntil:
+          visible: 'Continue'
+          timeout: 120000
+          optional: true
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+            - back
+
+# --- Reach the login screen (do NOT sign in). ---
+- extendedWaitUntil:
+    visible:
+      id: 'login-submit'
+    timeout: 90000
+
+# --- Login -> Register navigation. ---
+- tapOn:
+    id: 'login-register'
+- assertVisible:
+    id: 'register-company-name'
+- assertVisible:
+    id: 'register-submit'
+
+# --- Empty submit is blocked client-side. ---
+# validateRegistration (src/auth/registrationValidation.ts) rejects all three
+# empty fields before any network call, so `register-error` (which only
+# renders from a server/network failure — see submit() in register.tsx) never
+# appears here. The per-field error Text nodes carry no testID (none of this
+# port's tasks added one), so the provable, testID-only signal that the empty
+# submit was blocked is that the form is still on screen — it never advanced
+# to the "check your email" done state.
+- tapOn:
+    id: 'register-submit'
+- assertVisible:
+    id: 'register-company-name'
+- assertVisible:
+    id: 'register-submit'
+- assertNotVisible:
+    id: 'register-done-heading'
+
+# --- Fill the form, then back out without submitting. ---
+- tapOn:
+    id: 'register-company-name'
+- inputText: 'Keystone Build Group'
+- tapOn:
+    id: 'register-full-name'
+- inputText: 'Sam Keystone'
+- tapOn:
+    id: 'register-email'
+- inputText: 'sam@keystonebuild.example'
+- tapOn:
+    id: 'register-back'
+- assertVisible:
+    id: 'login-submit'
+
+# --- Denied/malformed auth deep link surfaces generic copy, not the raw
+#     GoTrue error_description (never trust attacker-controlled query text —
+#     see authLink.ts). ---
+- openLink: 'worklog://set-password#error=access_denied'
+- assertVisible:
+    id: 'set-password-error'

@@ -15,7 +15,10 @@
     "verify": "npm run typecheck && npm run format:check && npm run lint && npm test",
     "gen:server-columns": "node scripts/gen-server-columns.mjs",
     "check:parity": "npm run gen:server-columns && git diff --exit-code src/db/serverColumns.generated.json",
-    "check:web": "expo export --platform web --output-dir .web-export"
+    "check:web": "expo export --platform web --output-dir .web-export",
+    "check:submission": "node scripts/check-submission.mjs",
+    "submit:ios": "npm run check:submission && eas submit --platform ios",
+    "submit:android": "npm run check:submission && eas submit --platform android"
   },
   "jest": {
     "preset": "jest-expo",

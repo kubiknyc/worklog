@@ -143,3 +143,40 @@ a transient `sync-status-syncing` frame in between) once back on Today — the
 stronger claim the engine now makes true: the whole section run (report
 creation + every section write) drains to `synced`, which can only pass if
 each write enqueued AND drained.
+
+## Register validation + set-password deep-link error — `register-validation.yaml`
+
+The one flow that runs UNAUTHENTICATED throughout — it does not
+`runFlow: _launch-and-signin.yaml`, because that preamble signs in with the
+demo superintendent and lands on `screen-today`; this flow needs the login
+screen itself, reached via `login-register`. The dev-client-launcher handling
+is duplicated from `_launch-and-signin.yaml`'s first block rather than
+extracted, since the two flows diverge immediately after it — a third flow
+needing "reach the login screen only" is the trigger to pull that shared
+prefix into its own file.
+
+Covers, in order:
+
+- `login-register` navigates from the login screen to the register screen.
+- An empty-form `register-submit` is blocked client-side
+  (`validateRegistration`, `src/auth/registrationValidation.ts`) before any
+  network call — `register-error` only renders from a server/network failure
+  in `submit()` (`app/(auth)/register.tsx`), so it never appears here, and the
+  per-field error `Text` nodes carry no `testID`. The provable, testID-only
+  signal is that the form stays put: `register-company-name` and
+  `register-submit` remain visible and `register-done-heading` (the "check
+  your email" success state) stays absent.
+- Filling the three fields and tapping `register-back` returns to the login
+  screen (`login-submit` visible again) without submitting.
+- `openLink: worklog://set-password#error=access_denied` proves a denied or
+  malformed auth deep link surfaces the screen's generic `set-password-error`
+  copy — never GoTrue's raw, attacker-controlled `error_description`
+  (`src/auth/authLink.ts`).
+
+**Not listed in `.eas/workflows/e2e-android.yml`'s `flow_path` yet.** Every
+flow currently in CI either signs in via the shared demo-login preamble or
+(offline-reconcile) depends on it having just run; this is the first flow
+that deliberately never signs in. Nothing about it depends on the CI backend
+state (no report/project rows touched), so adding it is low-risk, but that
+wiring is left for whoever next touches the CI flow list rather than bundled
+into this port.
