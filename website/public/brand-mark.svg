@@ -1,0 +1,16 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- WorkLog mark: field-notebook page on the blueprint-accent chip, an ink
+       date-stamp block, ruled lines, and a green "report filed" check.
+       New WorkLog design (not a port of PunchLog's clipboard mark) — reuses
+       the geometry ratios and colors of src/components/BrandMark.tsx's chip
+       variant (INK #0F172A, PAPER #FFFFFF, ACCENT #4FC3F7, GREEN #16A34A,
+       LINE #CBD2DA, LINE_FAINT #E2E5EA), scaled from its 120-unit box. -->
+  <rect width="1024" height="1024" rx="224" fill="#4FC3F7"/>
+  <rect x="128" y="94" width="768" height="836" rx="85" fill="#FFFFFF"/>
+  <rect x="179" y="145" width="290" height="188" rx="43" fill="#0F172A"/>
+  <rect x="179" y="427" width="666" height="34" rx="17" fill="#CBD2DA"/>
+  <rect x="179" y="529" width="666" height="34" rx="17" fill="#CBD2DA"/>
+  <rect x="179" y="631" width="512" height="34" rx="17" fill="#E2E5EA"/>
+  <circle cx="243" cy="798" r="64" fill="#16A34A"/>
+  <path d="M212 799 L235 823 L279 763" fill="none" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

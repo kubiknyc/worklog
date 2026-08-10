@@ -1,0 +1,201 @@
+/* WorkLog site identity tokens — paper surfaces with the field-notebook
+   motif's ink + blueprint-accent palette (src/components/BrandMark.tsx:
+   INK #0F172A, GREEN #16A34A "report filed", ACCENT #4FC3F7 blueprint
+   accent). ACCENT itself is too light for text/link contrast on white
+   (~2:1), so --accent below is a darker same-hue blue used for interactive
+   text/buttons; ACCENT stays literal in app/icon.svg's chip fill only.
+   Structure ported from PunchLog's website (PLW/app/globals.css) — trimmed
+   to the header/footer/legal-page classes this site's in-scope routes use. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: rgba(15, 23, 42, 0.12);
+  --text: #0f172a;
+  --muted: #55637a;
+  --faint: #8592a6;
+  --accent: #0369a1;
+  --accent-ink: #ffffff;
+
+  --radius-card: 18px;
+  --radius-button: 12px;
+
+  --font-ui: var(--font-archivo), Archivo, Arial, sans-serif;
+  --font-display: var(--font-spectral), Spectral, Georgia, serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+}
+
+.brand img {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+/* ── buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-block;
+  padding: 13px 24px;
+  border-radius: var(--radius-button);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 120ms ease;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* ── home ───────────────────────────────────────────────────────────────── */
+.home-hero {
+  padding: 72px 0 96px;
+  max-width: 640px;
+}
+
+.home-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 4.5vw, 46px);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin-bottom: 16px;
+}
+
+.home-hero .sub {
+  color: var(--muted);
+  font-size: 18px;
+  margin-bottom: 28px;
+}
+
+.home-hero .home-links {
+  display: flex;
+  gap: 20px;
+}
+
+/* ── legal pages (privacy, terms) ───────────────────────────────────────── */
+.legal {
+  max-width: 720px;
+  padding: 40px 0 72px;
+}
+
+.legal h1 {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 4vw, 40px);
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.legal .updated {
+  color: var(--faint);
+  font-size: 13px;
+  margin-bottom: 32px;
+}
+
+.legal h2 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 34px 0 10px;
+}
+
+.legal p {
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.legal ul {
+  color: var(--muted);
+  margin: 0 0 14px 22px;
+}
+
+.legal li {
+  margin-bottom: 8px;
+}
+
+.legal strong {
+  color: var(--text);
+}
+
+/* ── footer ─────────────────────────────────────────────────────────────── */
+.site-footer {
+  border-top: 1px solid var(--border);
+  padding: 28px 0 40px;
+  color: var(--faint);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.footer-links {
+  display: flex;
+  gap: 18px;
+}
+
+/* ── responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .home-hero {
+    padding: 40px 0 56px;
+  }
+}
