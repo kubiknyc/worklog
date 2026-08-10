@@ -34,7 +34,8 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "<rootDir>/app/",
-      "<rootDir>/.claude/"
+      "<rootDir>/.claude/",
+      "[\\\\/]website[\\\\/]"
     ],
     "collectCoverageFrom": [
       "src/**/*.{ts,tsx}",

@@ -8,6 +8,9 @@ dist/
 # Nested agent worktrees — each is its own checkout, formatted in place
 .claude/
 
+# Nested Next.js project — its own package.json/tooling, formatted in place
+website/
+
 # Generated — never hand-format. Formatting these makes the next regeneration
 # produce a whole-file diff that hides the real schema change.
 # (gitignore syntax — no trailing comments on pattern lines)
