@@ -34,6 +34,7 @@
       "extends": "base",
       "distribution": "internal",
       "channel": "preview",
+      "environment": "preview",
       "env": {
         "EXPO_PUBLIC_DEMO_LOGINS": "off"
       }
