@@ -2,21 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox syntax.
 
-**Goal:** Make registration work end to end: audit the shared hosted Supabase project, deploy a WorkLog-parameterized `register-company` + WorkLog email templates + auth redirect config, and validate real registration round-trips (app and web contract paths).
+**Goal:** Make registration work end to end: audit the shared hosted Supabase project, deploy a WorkLog-parameterized registration function under a **namespaced slug** + WorkLog email templates + auth redirect config, and validate real registration round-trips.
 
-**Architecture:** Audit-first (user decision, spec Resolved decisions). Server code lives in the sibling repo `../jobsight-backend` (its own git; branch from its default branch). The hosted JobSight project `nxlznnrocrffnbzjaaae` is **shared with another app**. Two classes of shared state: (a) **replace-forbidden** — existing secrets' values, existing email template keys, GoTrue Site URL, any function slug another tenant owns: never overwritten; (b) **append-permitted** — list-shaped config (GoTrue redirect allowlist) may be appended to, with the pre-change value recorded for rollback. Spec: `docs/superpowers/specs/2026-08-07-punchlog-auth-parity-design.md` (§7, A1–A3, A6, Resolved decisions).
+**Architecture:** Audit-first (user decision, spec Resolved decisions). Server code lives in the sibling repo `../jobsight-backend` (branch `worklog-register` off its default branch). The hosted JobSight project `nxlznnrocrffnbzjaaae` is **shared with another app**. Shared-state classes: (a) **replace-forbidden** — existing secrets' values, existing template keys, GoTrue Site URL, any slug another tenant could own; (b) **append-permitted** — list-shaped config (GoTrue `uri_allow_list`), recorded-before-change for rollback. **Default to namespaced artifacts:** the function deploys as slug `worklog-register-company` (the generic `register-company` slug is never claimed — a shared-name grab is a replace-forbidden-class hazard even when the slug is currently vacant); the app seam changes accordingly (see Task 2b). Spec: `docs/superpowers/specs/2026-08-07-punchlog-auth-parity-design.md` (§7, A1–A3, A6, Resolved decisions).
 
-**Tech Stack:** Supabase (Deno edge functions, GoTrue, Postgres), Supabase MCP tools + management API, `../jobsight-backend` repo.
+**Tech Stack:** Supabase (Deno edge functions, GoTrue, Postgres), Supabase MCP + management API, `../jobsight-backend`, WorkLog app repo (one seam commit).
 
 ## Global Constraints
 
-- **Shared-tenant rule:** replace-forbidden vs append-permitted per the Architecture paragraph. Every production change records the pre-change state (function version numbers, allowlist value, secret names) in the audit doc for rollback.
-- **A1 (hard, fail-closed):** the WorkLog-deployed `register-company` must contain no `punchlist://` or any custom-scheme fallback — mechanically enforced (T2 grep gate), covering BOTH redirect sites: `appConfirmUrl()` (index.ts:133-135, incl. deleting `APP_CONFIRM_FALLBACK_URL`) and the `client:'web'` branch (index.ts:267-272). Both read `WORKLOG_WEBSITE_URL`; if it is unset the function returns 503 **before** creating any user or link.
-- **Deployed-source rule:** the live `send-email` (v20) has drifted from the repo. Any send-email change is based on the **deployed source captured in Task 1**, never the repo file, and adds only new template keys `worklog_confirm_signup` / `worklog_account_exists` (exact names, used everywhere). Redeploying it is still a whole-unit replace of a shared function — it is called that in the Task 4 approval, with version-pinned rollback, not "additive".
-- **Production gate:** Tasks 3, 4, 5 each require explicit user approval naming the specific actions (T3 creates a paid branch AND can deliver real email through the shared Resend account; T4 changes the live shared project; T5 sends real production email).
-- **A2 gate (unconditional):** Task 1 ends with the user deciding whether WorkLog registrants may enter the shared `auth.users` pool — even if the audit finds no mechanical collision. No Task 2+ work before that decision.
-- Client contract stays: the app invokes slug `register-company` with `{companyName, fullName, email, client:'app'|'web'}`, expects `{error, field}` 400s, byte-identical 200s (no account enumeration), 429 rate limit. If Task 1 finds the slug already deployed and owned by the other tenant: automatic escalation — options are a namespaced slug + one-line app seam change (`src/auth/registration.ts` invoke string) or stop.
-- **ALLOWED_ORIGINS / A6:** no WorkLog web app is deployed anywhere today (the Expo web build is CI-export only), so there is no WorkLog origin to allow; native-app calls are not CORS-gated. Decision recorded here: DEFER appending to `ALLOWED_ORIGINS` until a WorkLog web deployment exists; the `client:'web'` contract path is still validated server-side via curl (no browser CORS involved).
+- **A1 (hard, mechanically fail-closed):** the WorkLog function must contain no `punchlist://` or custom-scheme fallback on ANY path. Enforced three ways: (1) both redirect sites — `appConfirmUrl()` (register-company/index.ts:133-135, `APP_CONFIRM_FALLBACK_URL` deleted) and the `client:'web'` ternary (index.ts:267-272) — read `WORKLOG_WEBSITE_URL`; (2) the function **URL-parses** `WORKLOG_WEBSITE_URL` at startup and 503s before any quota RPC / GoTrue call / link generation unless `protocol === 'https:'` and host `worklog-site.vercel.app`; (3) the Task 2 grep gate (scoped to the WorkLog function's directory only — see gate definition there).
+- **A3 (mechanically fail-closed):** register-company has **FOUR** `sendEmail` call sites (index.ts:313 confirm_signup resend, 341 account_exists, **395 account_exists in the signup-race branch**, 424 confirm_signup fresh). All four must request `worklog_confirm_signup` / `worklog_account_exists`; the gate greps the WorkLog function for bare `"confirm_signup"` / `"account_exists"` string literals — must be zero.
+- **Deployed-source rule:** the live `send-email` (v20) has drifted from the repo. The WorkLog template addition is applied ON TOP of the deployed source obtained verbatim in Task 1 (via MCP `get_edge_function` body, or `supabase functions download send-email`; **if the deployed source cannot be obtained verbatim, the audit verdict is NO-GO**). The patched artifact lives at `supabase/functions/send-email/index.ts` on the `worklog-register` branch — that exact file is what T3/T4 deploy. Existing template keys/copy byte-identical (they legitimately contain PunchLog strings — the A1 grep gate does NOT run over send-email; A3's template-key gate covers the WorkLog function's requests instead).
+- **Template content rule:** `worklog_*` templates link ONLY routes that exist on the WorkLog site (`/welcome`, `/terms`, `/privacy` — `website/lib/welcome-copy.test.ts:41-47` forbids `/forgot-password`, `/download`, `/register`). "Lost your password" copy says to use the app's Forgot password button — no web recovery link.
+- **Deploy flags (both environments):** `worklog-register-company` with `verify_jwt=true` (client calls carry the anon JWT; curls in T3/T5 must send `Authorization: Bearer <anon key>` + `apikey` headers); patched `send-email` with `verify_jwt=false` (authenticates via `x-email-secret`).
+- **Production gate:** Tasks 3, 4, 5 each require explicit user approval naming the specific actions (T3: paid branch + may send real email via shared Resend; T4: live shared-project changes; T5: real production email).
+- **User-decision gate ending Task 1 (unconditional, two questions):** (1) A2 — may WorkLog registrants enter the shared `auth.users` pool, given the audit's evidence of what the other app would see? (2) A6 — the spec calls for `ALLOWED_ORIGINS` web origins and a functional `check:web` registration pass, but no WorkLog web app is deployed anywhere (the Expo web build is CI-export only), so there is no origin to allow and no deployed surface to test: approve deferring both A6 halves (recorded as a spec amendment) or name a web deployment to bring in scope. No Task 2+ work before both answers.
+- **Email quota:** `EMAIL_DAILY_LIMIT` = 3/day per address (index.ts:101) — validation runs rotate `+` aliases; never reset quota rows in production.
 
 ---
 
@@ -24,51 +25,55 @@
 
 Produce `docs/superpowers/specs/2026-08-11-backend-audit.md` with SQL/MCP evidence per bullet:
 
-- [ ] **Function inventory:** MCP `list_edge_functions` — record every deployed slug + version. Explicitly: does `register-company` already exist (whose?), and capture the **full deployed source of `send-email` v20** into the audit doc's appendix (basis for T2's template additions). Any slug collision on `register-company` → escalation per Global Constraints.
-- [ ] **Schema:** `profiles` (columns incl. `email`, `full_name`), `companies` (`created_by`), company-membership table, triggers `handle_new_user` (does it populate `profiles.email`?) and **`bootstrap_company_creator`** (the function depends on it at index.ts:68 — absent means registrants get a clean 200 and no company). Compare shapes against migrations `20260712000001_companies.sql` / `20260712000002_registration_rate_limit.sql` and the function's assumptions. (`list_tables` + read-only `execute_sql` over `information_schema`, `pg_trigger`.)
-- [ ] **RPC:** `consume_registration_quota` exists with the expected signature.
-- [ ] **Other-tenant lifecycle:** list ALL triggers on `auth.users`; characterize the approve/reject-user flow — would a WorkLog self-serve registrant enter that app's approval queue, tables, or UI?
-- [ ] **Secrets (names only, never values):** which of `WEBSITE_URL`, `ALLOWED_ORIGINS`, `EMAIL_SHARED_SECRET`, `RESEND_API_KEY`, `RESEND_FROM` exist on the project.
-- [ ] **send-email v20 contents:** which template keys exist; whose branding; where the shared `WEBSITE_URL` is interpolated (recovery links in `confirm_signup`/`account_exists` bodies — the reason WorkLog variants must read `WORKLOG_WEBSITE_URL`).
-- [ ] **GoTrue config:** current Site URL + `uri_allow_list` via management API (`GET /v1/projects/{ref}/config/auth`); record verbatim for the T4 append + rollback.
-- [ ] **Verdict:** GO / NO-GO with each collision named. **Then, regardless of verdict: present the A2 product decision to the user (WorkLog registrants entering the shared auth.users pool — with the audit's evidence about what the other app would see). STOP until answered.**
+- [ ] **Function inventory:** `list_edge_functions` (slugs + versions). Confirm `worklog-register-company` is vacant; note whether `register-company` exists (informational — we don't claim it either way). Obtain the **verbatim deployed `send-email` v20 source** (`get_edge_function`; fallback `supabase functions download send-email`) into the audit appendix. Unobtainable ⇒ NO-GO.
+- [ ] **Schema:** `profiles` (incl. `email`, `full_name`), `companies` (`created_by`), company-membership table, triggers `handle_new_user` (populates `profiles.email`?) and **`bootstrap_company_creator`** (index.ts:68 depends on it; absent ⇒ registrants get 200 and no company). Compare against migrations `20260712000001_companies.sql` / `20260712000002_registration_rate_limit.sql` and the function's assumptions.
+- [ ] **RPC:** `consume_registration_quota(p_key, p_limit)` exists.
+- [ ] **Other-tenant lifecycle:** ALL triggers on `auth.users`; characterize the approve/reject-user flow — would a WorkLog registrant enter that app's approval queue/tables/UI?
+- [ ] **Secrets (names only, never values):** existence of `WEBSITE_URL`, `ALLOWED_ORIGINS`, `EMAIL_SHARED_SECRET`, `RESEND_API_KEY`, `RESEND_FROM`, **and `WORKLOG_WEBSITE_URL`** (if it already exists: record that T4 must not overwrite and rollback must not delete it — escalate instead).
+- [ ] **send-email v20 contents:** template keys present; where shared `WEBSITE_URL` is interpolated (why WorkLog variants must read `WORKLOG_WEBSITE_URL`).
+- [ ] **GoTrue config:** Site URL + `uri_allow_list` verbatim (`GET /v1/projects/{ref}/config/auth`) for the T4 append + rollback.
+- [ ] **Website prerequisite check:** curl `https://worklog-site.vercel.app/welcome`, `/terms`, `/privacy` — all 200 today (recheck; plan 2 validated behavior on 2026-08-10, cite that evidence for fragment handling).
+- [ ] **Verdict:** GO / NO-GO with each collision named. **Then present the two-question user gate (A2 + A6) from Global Constraints. STOP until answered.**
 
 ### Task 2: WorkLog-parameterize the backend (code only, sibling repo)
 
-In `../jobsight-backend`, branch `worklog-register` off its default branch:
+On `../jobsight-backend` branch `worklog-register`:
 
-- [ ] `register-company/index.ts`: BOTH redirect sites read `WORKLOG_WEBSITE_URL` (app path → `/welcome`; web path → `/welcome`); delete `APP_CONFIRM_FALLBACK_URL`; missing `WORKLOG_WEBSITE_URL` → 503 before any GoTrue call. Request template keys `worklog_confirm_signup` / `worklog_account_exists` at every send-email call site (all three: fresh signup, confirmed duplicate, unconfirmed duplicate). Update header comments to WorkLog's contract.
-- [ ] `send-email`: create `send-email-worklog-templates.patch` applied ON TOP of the deployed v20 source (from T1's appendix): adds ONLY the two `worklog_*` keys (WorkLog branding, "choose your password" copy, recovery links built from `WORKLOG_WEBSITE_URL`); existing keys byte-identical. The patched file is what T3/T4 deploy.
-- [ ] **Mechanical A1 gate** (the function has no deno test harness — do not invent one; this is a grep gate, scripted in the repo): `grep -RnE "punchlist://|APP_CONFIRM_FALLBACK_URL" register-company/ send-email-worklog/` → must be empty; `grep -n "WORKLOG_WEBSITE_URL" register-company/index.ts` → ≥2 sites. Record output in the task report.
-- [ ] Commit on the branch; do NOT push/deploy.
+- [ ] Copy `register-company/` → `worklog-register-company/`. In it: both redirect sites read `WORKLOG_WEBSITE_URL`; delete `APP_CONFIRM_FALLBACK_URL`; add the startup HTTPS+host validation (503 pre-side-effect per A1); switch ALL FOUR `sendEmail` call sites (index.ts:313, 341, 395, 424 in the original numbering) to the `worklog_*` keys; update header comments to WorkLog's contract.
+- [ ] Regenerate `supabase/functions/send-email/index.ts` from the T1 appendix (deployed v20 verbatim) + append ONLY the two new keys `worklog_confirm_signup` / `worklog_account_exists` per the Template content rule.
+- [ ] **Mechanical gate (scoped, scripted in repo as `scripts/worklog-a1-gate.sh`):** over `supabase/functions/worklog-register-company/` only: `grep -RnE "punchlist://|APP_CONFIRM_FALLBACK_URL|\"confirm_signup\"|\"account_exists\""` ⇒ empty; `grep -c "WORKLOG_WEBSITE_URL"` ⇒ ≥3 (two redirect sites + validation). Over the send-email diff vs the T1 appendix: additions only, and additions contain no `punchlist://`. Record outputs.
+- [ ] Commit on the branch; do NOT deploy.
 
-### Task 3: Rehearse on a Supabase branch (USER APPROVAL: paid branch + can send real email)
+### Task 2b: App seam commit (WorkLog repo, worktree)
 
-- [ ] Approval ask names: branch cost (`get_cost`/`confirm_cost`), and that the rehearsal sends real email via the shared Resend account to a user-controlled address.
-- [ ] Create the branch (`create_branch`). Note in the audit doc: **a branch is migration-built, NOT a clone of the hosted project's drifted schema — it rehearses the function mechanics, not the collision risks; those are covered only by T1's audit.**
-- [ ] Apply missing WorkLog migrations to the branch only. Deploy `register-company` and the patched send-email to the branch — **send-email with `verify_jwt=false`** (it authenticates via `x-email-secret`, and register-company's call carries no JWT). Set branch secrets: `WORKLOG_WEBSITE_URL=https://worklog-site.vercel.app`, `EMAIL_SHARED_SECRET` = freshly generated ≥32-byte value (never production's) — the **same value** on both functions' env, plus `RESEND_API_KEY`/`RESEND_FROM` (production names exist per T1; branch inherits or user provides a test key — if neither, skip actual delivery and assert the captured outbound payload instead).
-- [ ] Round-trips via curl against the branch, `client:'app'` AND `client:'web'`: fresh registration → 200 `{ok:true}` + profile/company/membership rows + confirm URL on `/welcome` with no `punchlist://`; confirmed-duplicate → byte-identical 200 + `worklog_account_exists` mail; **unconfirmed-duplicate → 200 + magiclink mail whose link lands on `/welcome` (site classifies `type=magiclink` as generic copy — assert password set still works there, PunchLog-parity)**; invalid field → 400 `{error, field}`; rate limit → 429.
-- [ ] Record all evidence in the audit doc; delete the branch (approval).
+- [ ] `src/auth/registration.ts`: invoke string `register-company` → `worklog-register-company`; update `registration.test.ts` expectation. `npm run verify` green. One commit.
+
+### Task 3: Rehearse on a Supabase branch (USER APPROVAL: paid branch + may send real email)
+
+- [ ] Approval names: branch cost (`get_cost`/`confirm_cost`) + possible real email via shared Resend to user-controlled aliases.
+- [ ] Create branch. Caveat recorded: **migration-built, not a clone of the drifted hosted schema — rehearses function mechanics only; collision risk is covered solely by T1.**
+- [ ] Apply missing WorkLog migrations to the branch. Deploy `worklog-register-company` (`verify_jwt=true`) + patched send-email (`verify_jwt=false`). Branch secrets: `WORKLOG_WEBSITE_URL=https://worklog-site.vercel.app`, fresh ≥32-byte `EMAIL_SHARED_SECRET` (generated, never production's) identical on both functions, `RESEND_API_KEY`/`RESEND_FROM` (test key if user provides; else skip delivery and assert the outbound Resend request payload via a branch-only stub of the fetch URL env — if no stub seam exists, capture via Resend test-mode key or accept delivery to user aliases per approval).
+- [ ] Round-trips via curl (with `Authorization: Bearer <branch anon key>` + `apikey` headers), `client:'app'` AND `client:'web'`: fresh → 200 `{ok:true}` + profile/company/membership rows + confirm URL on `https://worklog-site.vercel.app/welcome`, no `punchlist://` anywhere in the captured email payload; confirmed-duplicate → byte-identical 200 + `worklog_account_exists` payload; unconfirmed-duplicate → 200 + magiclink payload landing on `/welcome` (**link-shape assertion only** — the production site posts tokens to production GoTrue, so a branch token cannot complete a password set; the real set-password assertion belongs to T5); invalid field → 400 `{error, field}`; 4th same-alias registration → 429.
+- [ ] Record evidence; delete the branch (approval).
 
 ### Task 4: Production config + deploy (USER APPROVAL naming every change)
 
-Approval ask lists exactly: new secret `WORKLOG_WEBSITE_URL`; deploy `register-company` (new function or versioned replace per T1's inventory); **whole-unit redeploy of shared `send-email`** from the T2 patched-v20 source (framed as the replace it is, with the pre-change version number pinned for rollback); GoTrue `uri_allow_list` append. Then:
+Approval lists exactly: new secret `WORKLOG_WEBSITE_URL` (T1 confirmed absent — else escalate); deploy new function `worklog-register-company` (vacant slug, `verify_jwt=true`); **whole-unit redeploy of shared `send-email`** from the T2 patched-v20 file (labeled as the replace it is; pre-change version pinned); GoTrue `uri_allow_list` append. Pre-condition: T1's website check still green (re-curl `/welcome` 200). Then:
 
 - [ ] Set `WORKLOG_WEBSITE_URL=https://worklog-site.vercel.app`.
-- [ ] Deploy `register-company` (slug per T1 outcome; if renamed, update `src/auth/registration.ts` invoke string + its test in the app repo, one commit).
-- [ ] Deploy patched send-email (`verify_jwt=false` preserved); verify `EMAIL_SHARED_SECRET` already serves both functions (same project-level secret).
-- [ ] GoTrue: `PATCH /v1/projects/{ref}/config/auth` with `uri_allow_list` = T1's recorded value + `https://worklog-site.vercel.app/welcome,worklog://set-password,worklog://confirm` (append; Site URL untouched).
-- [ ] Rollback recorded in the audit doc: redeploy prior send-email version (number from T1), delete/restore `register-company` per T1 inventory, restore T1's verbatim `uri_allow_list`, delete `WORKLOG_WEBSITE_URL`.
+- [ ] Deploy `worklog-register-company` (`verify_jwt=true`).
+- [ ] Deploy patched send-email (`verify_jwt=false` preserved); confirm project-level `EMAIL_SHARED_SECRET` serves both.
+- [ ] GoTrue: PATCH `uri_allow_list` = T1's verbatim value + `https://worklog-site.vercel.app/welcome,worklog://set-password,worklog://confirm` (append; Site URL untouched).
+- [ ] Rollback recorded: redeploy send-email at T1's pinned version; delete `worklog-register-company`; restore T1's verbatim `uri_allow_list`; delete `WORKLOG_WEBSITE_URL` (only because T1 confirmed it did not pre-exist).
 
 ### Task 5: End-to-end production validation (USER APPROVAL: sends real email)
 
-- [ ] Register `kubiknyc+worklogtest@gmail.com` via curl, `client:'app'`: user opens the email — confirm link lands on `https://worklog-site.vercel.app/welcome`, password set succeeds, sign-in works in the app.
-- [ ] Repeat via `client:'web'` with a second `+` alias: same landing, no PunchLog URL anywhere in the mail body.
-- [ ] Duplicate (confirmed) and bad-field paths re-checked in production: byte-identical 200 / 400 shape.
-- [ ] Update memory + spec status; registration LIVE.
+- [ ] Register `kubiknyc+wl1@gmail.com` via curl (anon-key headers), `client:'app'`: user opens the email — WorkLog branding, no PunchLog strings, no dead links; confirm link lands on `/welcome`; password set succeeds; sign-in works in the app.
+- [ ] `client:'web'` with `kubiknyc+wl2@gmail.com`: same assertions.
+- [ ] Confirmed-duplicate (re-register `+wl1`) → byte-identical 200, `worklog_account_exists` email with no `/forgot-password` link; bad-field → 400 shape. (Alias rotation respects the 3/day quota.)
+- [ ] Update memory + spec status (record the A6 amendment per the T1 user decision); registration LIVE.
 
 ## Self-review notes
 
-- Spec coverage: §7 → T1+T4; A1 → Global Constraints + T2 grep gate + T3/T5 assertions (both client paths); A2 → unconditional user gate ending T1; A3 → deployed-source rule + T2 patch discipline; A6 → explicit deferral decision (no WorkLog web origin exists) recorded in Global Constraints.
-- All four reviewer-critical findings from santa round 1 are addressed: deployed-v20 basis for send-email, slug-inventory audit + escalation, both-redirect-sites fail-closure with mechanical grep, bootstrap_company_creator/membership in the audit.
-- Out of scope: hosted-project drift reconciliation beyond what registration touches; universal links; invite flow; ALLOWED_ORIGINS (deferred with rationale).
+- Round-2 santa findings all addressed: 4 call sites enumerated + template-key negative grep (A); no-/forgot-password template rule (A); branch password-set assertion downgraded to link-shape, real one in T5 (A); gate path fixed + patched artifact path named (A); namespaced slug default + seam Task 2b (A); body-returning source capture with NO-GO fallback (A); anon-key headers + quota alias rotation (A); grep never runs over preserved send-email source (B); WORKLOG_WEBSITE_URL https+host validation pre-side-effect (B); verify_jwt stated for both functions in both environments (B); A6 now a user decision at the T1 gate, not a unilateral deferral (B); /welcome live check in T1 + re-check gating T4 (B); WORKLOG_WEBSITE_URL existence audited, rollback conditioned (B).
+- Out of scope: hosted drift reconciliation beyond registration; universal links; invite flow.
