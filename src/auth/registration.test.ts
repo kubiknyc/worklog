@@ -1,5 +1,6 @@
 /**
- * registerCompany — seam behavior around the register-company edge function:
+ * registerCompany — seam behavior around the worklog-register-company edge
+ * function (the WorkLog fork; the shared slug is never invoked from here):
  * the client field, and mapping the {error, field} error contract (carried on
  * FunctionsHttpError.context) into the typed result.
  */
@@ -30,7 +31,7 @@ beforeEach(() => mockInvoke.mockReset());
 it("sends the request with client 'app' on native builds", async () => {
   mockInvoke.mockResolvedValue({ data: { ok: true }, error: null });
   await registerCompany(REQUEST);
-  expect(mockInvoke).toHaveBeenCalledWith('register-company', {
+  expect(mockInvoke).toHaveBeenCalledWith('worklog-register-company', {
     body: { ...REQUEST, client: 'app' },
   });
 });
