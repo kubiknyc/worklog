@@ -178,9 +178,52 @@ readable file), which closes two of the three token-gated bullets without `$SUPA
 
 ### Still blocked on `$SUPABASE_ACCESS_TOKEN`
 
-- **GoTrue full-config baseline** (Site URL, `uri_allow_list`, and the byte-identical comparison
-  set T4 asserts against). Needed before T4's PATCH, NOT before T2.
-- **Branching availability / git-integration** for T3's build inputs.
+- ~~**GoTrue full-config baseline**~~ — **CLOSED**, see the section below.
+- ~~**Secrets name inventory**~~ — **CLOSED**, see the section below.
+- **Branching availability / git-integration** for T3's build inputs. Still open; it is a T3
+  precondition and gates nothing in T2.
+
+---
+
+## T1 closure — GoTrue baseline + secrets, read directly (2026-08-12)
+
+**Method.** No personal access token was created, pasted, or written to disk. The Supabase CLI's
+existing login credential (Windows Credential Manager, `Supabase CLI:supabase`) was read in-process
+and used as the bearer for two **read-only** Management API GETs:
+`/v1/projects/bbhszvdbchxwoxxqaxvh/config/auth` and `.../secrets`. No value from either response is
+recorded here — names and non-secret settings only.
+
+### GoTrue baseline (authoritative; supersedes the row-state inference above)
+
+| Setting | Value | Why it matters |
+|---|---|---|
+| `mailer_autoconfirm` | **`false`** | **The STOP does not fire** — now a config read, not an inference. The `:296` unconfirmed-duplicate/magiclink branch is genuinely reachable. |
+| `disable_signup` | `false` | `generateLink({type:'signup'})` is not blocked at the project level. |
+| `site_url` | `punchlist://` | Replace-forbidden, and it is the OTHER product's scheme. T4 touches it under no circumstances. |
+| `uri_allow_list` | 5 entries: `punchlist://set-password`, `https://punchlog-site.vercel.app/welcome`, `punchlist://confirm`, `https://punchlog-site.vercel.app/forgot-password`, `http://localhost:3000/welcome` | **Neither justified WorkLog entry is present**, so T4's `ADDED` set is both of them: `https://worklog-site.vercel.app/welcome` and `worklog://set-password`. Rollback removes exactly those two and nothing else. |
+| `hook_send_email_enabled` | `false` (uri empty) | GoTrue does not delegate mail to an edge function. `worklog-send-email` is called by the register fork directly, never as a GoTrue hook — the fork owns its own delivery, as designed. |
+| `smtp_host` / `smtp_user` / `smtp_pass` | **all empty** | No custom SMTP: GoTrue's own mail (recovery, invite, email-change) goes through Supabase's built-in mailer at `rate_limit_email_sent = 2`/hour, project-wide and shared with the other tenant. Registration mail is unaffected (it is ours, via Resend), but **the recovery path our copy names as the rescue route is on that 2/hour shared budget** — worth stating in the T5 plan rather than discovering it as a flake. |
+| `mailer_otp_exp` | `3600` | Confirm links expire in one hour. T5's end-to-end timing must fit inside it; an expired link is exactly the state the `:296` resend branch exists for. |
+| `mailer_subjects_*` / `mailer_templates_*` | GoTrue defaults, **brand-neutral** ("Confirm your email address", "Reset your password", "You've been invited") | Shared templates are replace-forbidden. They happen to name no product, so a WorkLog user receiving a GoTrue-sent recovery mail is not shown the other brand. Nothing to change, and nothing that would tempt anyone to. |
+| `security_captcha_enabled` | `false` | The 20/IP + 3/email daily quotas in the fork are the only abuse control on registration. |
+| `password_min_length` / `password_required_characters` | `6` / none | Project-wide floor; the app's own strength meter is stricter. |
+| `external_email_enabled` | `true`; all OAuth providers `false`; `saml_enabled` `false` | Email is the only identity path, on both tenants. |
+
+### Secrets — names only (Management API, 14 entries)
+
+Platform-managed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS`, `SUPABASE_DB_URL`, `SUPABASE_JWKS`.
+
+Project: `ANTHROPIC_API_KEY`, `PUSH_SHARED_SECRET`, **`RESEND_API_KEY`**, `RESEND_FROM`,
+`EMAIL_SHARED_SECRET`, `WEBSITE_URL`, `ALLOWED_ORIGINS`.
+
+- `RESEND_API_KEY` present ✓ — the T3 precondition is satisfiable without asking the user for a key.
+- **No `WORKLOG_*` name exists.** All three targets — `WORKLOG_WEBSITE_URL`,
+  `WORKLOG_EMAIL_SHARED_SECRET`, `WORKLOG_RESEND_FROM` — are vacant, so T4's secret writes are
+  purely additive and no existing value is read or modified. (`WORKLOG_ALLOWED_ORIGINS` is not
+  provisioned: the A6 CORS half is deferred, and the fork falls back to its dev-origin defaults.)
+- Reminder, unchanged by this read: edge-function secrets are **project-global**, so
+  `WORKLOG_EMAIL_SHARED_SECRET` also sits in the other tenant's runtime. Disclosed in T4's approval.
 
 **T2 is therefore unblocked** — it is code-only in the sibling repo, deploys nothing, and touches
 no project state.
