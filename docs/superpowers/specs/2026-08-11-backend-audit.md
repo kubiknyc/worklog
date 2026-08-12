@@ -99,7 +99,7 @@ Punchlist; fix `.env.local.example`.
 | Ref correction | **Approved: target `bbhszvdbchxwoxxqaxvh` (Punchlist).** Spec/plan ref amended; website Vercel env + EAS env repointing approved as T5 prerequisites. |
 | A2 (shared user pool) | **Yes** — WorkLog registrants may enter the shared `auth.users`/`profiles` pool with PunchLog. |
 | A6 (CORS) | **Defer** — `WORKLOG_ALLOWED_ORIGINS` unset; three secrets, not four. |
-| Sender | `worklog@{Resend-verified domain}` — **domain pending** (user to read it off the Resend dashboard; recorded here when supplied). |
+| Sender | **`worklog@dailyjobsight.com`** (Resend-verified domain supplied by user 2026-08-12). |
 
 ## Unrelated security finding (JobSight project, surfaced per MCP advisory, NOT acted on)
 
@@ -149,3 +149,38 @@ evidence of an empty value. Verify via the deployed bundle, as above.
 
 **Still outstanding for `website/.env.local.example:4`** — it still names the JobSight ref
 (doc-level only; the directory is edit-restricted in this session).
+
+---
+
+## T1 completion via CLI + data inference (2026-08-12, no PAT required)
+
+The Supabase CLI is authenticated on this machine (token in Windows Credential Manager, not a
+readable file), which closes two of the three token-gated bullets without `$SUPABASE_ACCESS_TOKEN`.
+
+- **Secrets (names only) — `supabase secrets list --project-ref bbhszvdbchxwoxxqaxvh`:**
+  `RESEND_API_KEY` **present** ✓ (T3 precondition satisfiable); `EMAIL_SHARED_SECRET`,
+  `WEBSITE_URL`, `ALLOWED_ORIGINS`, `RESEND_FROM`, `PUSH_SHARED_SECRET`, `ANTHROPIC_API_KEY`, and
+  the platform `SUPABASE_*` set present for reference. **No `WORKLOG_*` name pre-exists** ✓ — all
+  three target names are vacant, so T4's writes stay purely additive.
+  The CLI returns SHA-256 **digests**, not plaintext — independently confirming the plan's
+  "`GET /secrets` returns digests, not reusable values" correction.
+
+- **`mailer_autoconfirm` — the STOP does NOT fire.** The setting itself needs the Management API,
+  but it is decidable from data: `auth.users` holds 11 rows, **2 with `email_confirmed_at IS NULL`**
+  (9 confirmed; 2 of those confirmed within 2s of creation, consistent with admin/invite paths).
+  **Unconfirmed users cannot exist when autoconfirm is on**, so email confirmations are required
+  ✓. Consequences: `generateLink({type:'signup'})` yields an UNCONFIRMED user, so the anonymous
+  confirmed-account attack the header at `register-company:70-74` guards against is not live; and
+  the unconfirmed-duplicate/magiclink branch at `:296` is reachable, so T3/T5's magiclink
+  assertions exercise a real path.
+  *Caveat:* this is inference from row state, not a config read. Re-confirm directly once the PAT
+  is available, before T4.
+
+### Still blocked on `$SUPABASE_ACCESS_TOKEN`
+
+- **GoTrue full-config baseline** (Site URL, `uri_allow_list`, and the byte-identical comparison
+  set T4 asserts against). Needed before T4's PATCH, NOT before T2.
+- **Branching availability / git-integration** for T3's build inputs.
+
+**T2 is therefore unblocked** — it is code-only in the sibling repo, deploys nothing, and touches
+no project state.
