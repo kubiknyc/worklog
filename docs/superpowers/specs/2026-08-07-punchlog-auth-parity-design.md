@@ -217,9 +217,18 @@ Required by plan 3's "User-decision gate ending Task 1". Evidence:
 - **A6 — CORS half DEFERRED.** No WorkLog web deployment calls the function (`website/` contains
   no edge-function call; `/welcome` hits GoTrue directly). `WORKLOG_ALLOWED_ORIGINS` stays unset
   ⇒ **three** new `WORKLOG_*` secrets, not four.
-- **Sender — verified-domain address.** `WORKLOG_RESEND_FROM = worklog@<domain the user reads off
-  their Resend dashboard>`. `onboarding@resend.dev` was declined, so the T3/T5 owner-address
-  descopes do NOT apply and T5 runs the full alias schedule. **Domain string still outstanding.**
+- **Sender — verified-domain address: `WORKLOG_RESEND_FROM = worklog@dailyjobsight.com`**
+  (user-supplied 2026-08-12). `onboarding@resend.dev` was declined, so the T3/T5 owner-address
+  descopes do NOT apply and T5 runs the full `kubiknyc+wlN@gmail.com` alias schedule and ends LIVE.
+  A new address on an already-verified domain needs no further Resend verification.
+  **Verified only by the user reading their Resend dashboard — not independently confirmed here.**
+  T3's precondition is where this gets tested for real: if the domain is not actually Verified, the
+  first send returns non-ok, `register-company` throws at `:432-434` and rolls back the
+  registration, and every T3 assertion fails for a configuration reason. Treat a first-send failure
+  as "check Resend", not as a fork defect.
+  *Cosmetic, not a blocker:* the sender domain reads `dailyjobsight.com` while the email body is
+  WorkLog-branded, so the From line will not say WorkLog. Raise with the user before T5 if that
+  matters for the store-review trail.
 - **`$SUPABASE_ACCESS_TOKEN` — still outstanding.** Blocks the remaining T1 bullets (GoTrue full
   config + `mailer_autoconfirm`, secret-name inventory, branching availability) and all of T3/T4.
 
