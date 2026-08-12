@@ -1,83 +1,110 @@
 # Backend preflight audit — Task 1 (read-only)
 
-**Project:** `nxlznnrocrffnbzjaaae` · **Date:** 2026-08-12 · **Writes performed:** none
-**Method:** Supabase MCP read-only (`list_edge_functions`, `list_tables`, `execute_sql`)
+**Date:** 2026-08-12 (supersedes the 2026-08-12 NO-GO draft, preserved below) · **Writes performed:** none
+**Method:** Supabase MCP read-only (`list_edge_functions`, `list_tables`, `list_migrations`,
+`execute_sql`, `get_publishable_keys`, `get_project_url`, `list_projects`), `eas env:list`,
+live-site curls, repo greps.
 
-## VERDICT: **NO-GO** — the plan's core premise does not hold against this project
+## VERDICT: **GO against `bbhszvdbchxwoxxqaxvh` (Punchlist)** — the plan's project ref was wrong, its architecture was right
 
-Plan 3 assumes it is forking `register-company` + `send-email` *alongside their originals* on this
-project, and that the fork's duplicate-detection, quota, and company-bootstrap paths land on schema
-that already exists. **None of that is true here.** Four independent blockers, any one of which is a
-STOP.
+The plan (and the 2026-08-07 spec it derives from) names `nxlznnrocrffnbzjaaae` as the shared
+hosted project. That ref is **"JobSight"** — a different product with ~300 tables, `public.users`,
+no `profiles`, no `register-company`, no quota RPC. The earlier NO-GO draft (below) correctly
+found that every plan premise fails against it.
 
-## Blocker 1 — `register-company` is not deployed on this project
+**The project the plan *describes* is `bbhszvdbchxwoxxqaxvh` ("Punchlist")** — the PunchLog+WorkLog
+shared backend. Every plan premise verifies against it (evidence per bullet below), and
+`../jobsight-backend/supabase/.temp/linked-project.json` is linked to exactly this ref. The plan's
+prose already names PunchLog as the other tenant throughout; only the ref string was wrong.
 
-`list_edge_functions` returns 24 functions. `register-company` is **absent**. So are `invite-user`,
-`delete-account`, `ai-describe`, `report-content`, `send-push`.
+### Ref correction — collateral damage found (both are live misconfigurations, independent of plan 3)
 
-The deployed set belongs to a different product: `qb-*` (QuickBooks ×7), `docusign-token-exchange`,
-`approve-user` / `reject-user` / `get-pending-users`, `weather-api`, `ai-proxy`,
-`process-drawing-pdf`, `extract-sheet-metadata`, `build-intelligence-query`, `weekly-timesheet`,
-`email-webhook`, `verify-captcha`, `validate-file-upload`, `find-pattern-matches`,
-`export-material-list`, `extract-document-chunks`.
+| Surface | Current value | Evidence | Impact |
+|---|---|---|---|
+| Website Vercel env (deployed bundle) | `nxlznnrocrffnbzjaaae` baked into `/_next/static/chunks/app/welcome/page-b990f2c3ad94f6c2.js` | curl + grep of live bundle | `/welcome` cannot complete tokens minted by Punchlist GoTrue — T5's confirm flow fails until repointed + redeployed |
+| App EAS `preview` env | `EXPO_PUBLIC_SUPABASE_URL=https://nxlznnrocrffnbzjaaae.supabase.co`, anon key = JobSight legacy JWT | `eas env:list preview` | Preview builds talk to the wrong project entirely |
+| App EAS `production` env | **no vars set** | `eas env:list production` | Production builds have no Supabase config |
+| `website/.env.local.example:4` | `nxlznnrocrffnbzjaaae` | repo grep | Doc-level; misleads future setup |
 
-**`../jobsight-backend` is not the source of truth for this project.** The whole fork-don't-patch
-architecture — and the santa escalation that produced it — reasoned about a coexistence that does
-not exist here.
+Remediation (needs user sign-off at the gate; not plan-3 writes but prerequisites for T5):
+repoint Vercel `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` to Punchlist + redeploy;
+set EAS preview (and production) `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY` to
+Punchlist; fix `.env.local.example`.
 
-## Blocker 2 — the schema the fork depends on is absent
+## Per-bullet evidence (all against `bbhszvdbchxwoxxqaxvh`)
 
-| Object the fork requires | Source ref | Present? |
-|---|---|---|
-| `profiles` table (duplicate lookup) | `register-company:353-356` | **NO** — no `profiles` in any schema |
-| `consume_registration_quota(p_key, p_limit)` | `:232`, `:243` | **NO** |
-| `bootstrap_company_creator` trigger | `:67`, `:412-416` | **NO** |
-| `handle_new_user` | `:63` | yes (trigger `on_auth_user_created` on `auth.users`) |
-| `companies` | `:412-416` | yes |
+- **Function inventory:** `list_edge_functions` → `ai-describe` v15, `send-push` v10,
+  `send-email` **v23, `verify_jwt=false`** (x-email-secret model confirmed live), `delete-account`
+  v9, `invite-user` v14, `register-company` **v16, `verify_jwt=true`**, `report-content` v6.
+  **`worklog-register-company` and `worklog-send-email` are VACANT** ✓. (They are also vacant on
+  the JobSight project.) Deploy provenance: PunchLog repo GitHub CI (`.backend/` paths).
+- **Schema:** `profiles` (12 rows), `companies` (9), `company_members` (9),
+  `registration_attempts` (20), all RLS-enabled; no RLS advisories. Triggers:
+  `on_auth_user_created` → `handle_new_user()` on `auth.users`; `bootstrap_company_creator` on
+  `public.companies` ✓. **`handle_new_user` populates `profiles.email`** (verified via
+  `pg_get_functiondef`: `insert into public.profiles (id, email, full_name) values (new.id,
+  coalesce(new.email,''), …)`) — the duplicate-lookup escalation branch does NOT fire ✓.
+- **RPC:** `consume_registration_quota(p_key text, p_limit integer)` exists ✓.
+- **Allowlist minter search (fixes the justified set at TWO entries):**
+  - `https://worklog-site.vercel.app/welcome` ← minted by both fork redirect sites (A1) ✓
+  - `worklog://set-password` ← `src/auth/AuthProvider.tsx:306` (`resetPasswordForEmail({redirectTo})`) ✓
+  - `worklog://confirm` — **NO minter** in app repo or `website/` (only parsed by
+    `confirmLanding.ts`/`authLink.ts`; grep for setters returned test files only) → **DROPPED**.
+  Justified set = `{https://worklog-site.vercel.app/welcome, worklog://set-password}`. `ADDED` in
+  T3/T4 is computed from this two-entry set.
+- **Key format + existing-function flags:** Punchlist issues a **legacy anon JWT** (enabled) plus an
+  `sb_publishable_…` key. Existing `register-company` is `verify_jwt=true`, so the fork's
+  `verify_jwt=true` matches the live sibling ✓. The app currently ships a JWT-format key (good) but
+  for the wrong project — covered by the EAS remediation above. T5's JWT preflight stays mandatory.
+- **Other-tenant lifecycle:** the only trigger on `auth.users` is `handle_new_user` (shared-by-design
+  with PunchLog: inserts a `profiles` row, nothing else). No approval-queue functions or tables on
+  Punchlist. A WorkLog registrant enters the shared `auth.users` + `profiles` pool — this is
+  exactly gate question A2.
+- **Secrets (names only):** NOT YET CHECKED — requires `$SUPABASE_ACCESS_TOKEN`
+  (`GET /v1/projects/{ref}/secrets`), collected at the gate. To verify: `RESEND_API_KEY` present;
+  no `WORKLOG_*` pre-existing.
+- **Resend readiness:** gate question (user reads verified domain off their Resend dashboard).
+- **Branching availability + build inputs:** NOT YET CHECKED (billing/plan via `get_cost` at T3;
+  token needed for config). Note for T3 approval: Punchlist functions deploy from PunchLog repo CI —
+  whether Supabase-native git integration exists (which branch builds pull migrations from) is
+  unestablished; T3 may need re-scoping per the plan's own fallback (local `supabase start`
+  rehearsal) if no integration exists.
+- **GoTrue config (full-body baseline, `mailer_autoconfirm`, Site URL, `uri_allow_list`):** NOT YET
+  CHECKED — requires `$SUPABASE_ACCESS_TOKEN`. Must be completed before the verdict is acted on
+  (autoconfirm-ON is a STOP).
+- **Website prerequisite:** `/welcome` `/terms` `/privacy` all **200** ✓. `/welcome` calls GoTrue
+  directly (no edge-function call in `website/` source) — grounds the A6 deferral ✓. Vercel env
+  values are the wrong project (see remediation table); `vercel env ls` re-check happens after
+  repointing.
 
-This project uses `public.users`, not `profiles`.
+## Gate questions (plan-mandated, plus the ref correction)
 
-This is the plan's own escalation branch (T1, *Schema*) in its strongest form: it anticipated
-"`handle_new_user` does not populate `profiles.email`" and required a STOP. Here there is no
-`profiles` table at all, so **every duplicate path collapses into the signup-race branch
-(`:382-402`) and both quota RPCs fail outright** — the function could not serve a single successful
-registration against this database.
+0. **Ref correction sign-off:** execute plan 3 against `bbhszvdbchxwoxxqaxvh` (Punchlist), with the
+   spec/plan ref amended, and repoint website Vercel env + EAS env as prerequisites. (All the
+   shared-tenant discipline in the plan applies unchanged — the other tenant is PunchLog, as the
+   plan's prose already says.)
+1. **A2:** may WorkLog registrants enter the shared `auth.users`/`profiles` pool (shared with
+   PunchLog)? "No" kills Tasks 2–5 and escalates to a separate-project design.
+2. **A6:** defer `WORKLOG_ALLOWED_ORIGINS` (no WorkLog web deployment calls the function; verified)
+   — "defer" or STOP.
+3. **Sender:** `WORKLOG_RESEND_FROM` = `worklog@{Resend-verified domain}` or `onboarding@resend.dev`
+   (testing-only; descopes T3/T5 and is NOT a completion path).
+4. **Token:** `$SUPABASE_ACCESS_TOKEN` for the Management API (GoTrue config read, secrets listing,
+   later PATCHes).
 
-## Blocker 3 — deployed `send-email` has `verify_jwt: true`
+## Spec amendment — gate answers (recorded 2026-08-12, before Task 2)
 
-Deployed: `send-email`, version 20, **`verify_jwt: true`**.
+| Question | Answer |
+|---|---|
+| Ref correction | **Approved: target `bbhszvdbchxwoxxqaxvh` (Punchlist).** Spec/plan ref amended; website Vercel env + EAS env repointing approved as T5 prerequisites. |
+| A2 (shared user pool) | **Yes** — WorkLog registrants may enter the shared `auth.users`/`profiles` pool with PunchLog. |
+| A6 (CORS) | **Defer** — `WORKLOG_ALLOWED_ORIGINS` unset; three secrets, not four. |
+| Sender | `worklog@{Resend-verified domain}` — **domain pending** (user to read it off the Resend dashboard; recorded here when supplied). |
 
-The source it would be forked from documents the opposite (`send-email/index.ts:25-27`: "Deploy:
-`supabase functions deploy send-email --no-verify-jwt` … the shared-secret header is the auth
-instead"). The deployed function has drifted from the repo, or was never deployed from it. Either
-way the plan's `x-email-secret`-only auth model does not describe what is running, and the fork's
-`verify_jwt=false` intent becomes a *divergence* from the live sibling rather than parity with it.
+## Unrelated security finding (JobSight project, surfaced per MCP advisory, NOT acted on)
 
-## Blocker 4 — the shared-tenant model was mis-scoped
-
-The plan treats this as "PunchLog's project, which WorkLog is joining additively." The deployed
-surface is a large construction-management product (drawings, submittals, RFIs, lien waivers,
-QuickBooks, DocuSign, agent tooling — roughly 300 tables). Whatever the tenancy story is, it is not
-the two-app model the risk analysis, the rollback rules, and the T4 approval text were written
-against.
-
-## What is still GO
-
-- **Both target slugs are vacant:** no `worklog-register-company`, no `worklog-send-email`. The
-  namespacing would not collide.
-- `companies` exists; `handle_new_user` + `on_auth_user_created` exist.
-
-## Not checked (require `$SUPABASE_ACCESS_TOKEN`, collected at the T1 gate — never reached)
-
-GoTrue Site URL / `uri_allow_list` / `mailer_autoconfirm`; secret name inventory (`RESEND_API_KEY`,
-`WORKLOG_*` vacancy); preview-branch availability and git integration; website `/welcome` `/terms`
-`/privacy` 200s and Vercel env; Resend verified domain.
-
-## Unrelated security finding (surfaced per MCP advisory, NOT acted on)
-
-Two tables have **RLS disabled** and are fully exposed to the `anon` key: `public.spec_sections`,
-`public.build_intelligence_knowledge_chunks`.
-
+Two tables on `nxlznnrocrffnbzjaaae` have **RLS disabled** and are fully exposed to its anon key:
+`public.spec_sections`, `public.build_intelligence_knowledge_chunks`.
 Remediation SQL — **do not run blind; enabling RLS without policies blocks all access**:
 
 ```sql
@@ -85,8 +112,13 @@ ALTER TABLE public.spec_sections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.build_intelligence_knowledge_chunks ENABLE ROW LEVEL SECURITY;
 ```
 
-## Recommendation
+---
 
-Do not proceed to Task 2. Settle first **which project WorkLog registration is actually supposed to
-target**, and whether `../jobsight-backend` is deployed anywhere. Plan 3 cannot be repaired by
-editing its steps; its premise needs re-establishing.
+## Appendix: superseded 2026-08-12 NO-GO draft (audit of the wrong ref, `nxlznnrocrffnbzjaaae`)
+
+Preserved because it is the evidence trail for the ref correction: `register-company` absent; no
+`profiles` (project uses `public.users`); no `consume_registration_quota`; no
+`bootstrap_company_creator`; deployed `send-email` v20 has `verify_jwt=true` (a different product's
+function); deployed surface is a ~300-table construction-management suite (`qb-*`, DocuSign,
+drawings, submittals, `approve-user` queue). Both worklog slugs vacant there too. Conclusion stood:
+"settle which project WorkLog registration actually targets" — settled above.

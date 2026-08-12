@@ -11,7 +11,9 @@ missing is everything around it: a register screen, the invite-style confirmatio
 email → set-password flow, the confirm-link deep-link handling, the brand mark, and
 the legal links. The server side (`register-company` edge function) exists in
 `../jobsight-backend/supabase/functions/` but is **not deployed** to the hosted
-JobSight Supabase project (`nxlznnrocrffnbzjaaae`).
+shared Supabase project **`bbhszvdbchxwoxxqaxvh` ("Punchlist")** — the PunchLog+WorkLog backend.
+(An earlier draft said "JobSight `nxlznnrocrffnbzjaaae`"; that is a different product where none of
+this exists. Corrected 2026-08-12 from the T1 audit.)
 
 ## Approach
 
@@ -89,7 +91,7 @@ Port from PunchLog:
 
 ### 7. Backend + hosted-project config
 
-- Deploy `register-company` to hosted JobSight (`nxlznnrocrffnbzjaaae`); verify
+- Deploy to the hosted shared project (`bbhszvdbchxwoxxqaxvh`, "Punchlist"); verify
   compatibility with the deployed `send-email` (v20).
 - Add confirm/set-password deep-link URLs to Supabase Auth's redirect allowlist.
 - Flagged, out of scope: the hosted project's deployed function set has drifted
@@ -197,3 +199,30 @@ Findings that change the plan (from the risk review):
 - **A8 — `pendingAuthLink`** is a second sanctioned module-stateful exception
   (one-shot, security-motivated) — document it alongside `statusHub.ts` in
   CLAUDE.md so it doesn't get "fixed" into a route param later.
+
+## Amendment — T1 gate answers (2026-08-12, user-recorded before Task 2)
+
+Required by plan 3's "User-decision gate ending Task 1". Evidence:
+`docs/superpowers/specs/2026-08-11-backend-audit.md`.
+
+- **Project ref corrected.** Execute against `bbhszvdbchxwoxxqaxvh` ("Punchlist"), the
+  PunchLog+WorkLog shared backend. `nxlznnrocrffnbzjaaae` ("JobSight") is a different product
+  where every premise fails. **Approved**, together with repointing the website Vercel env and
+  EAS preview/production env to Punchlist — those are live misconfigurations today, independent
+  of plan 3, and T5's confirm flow cannot pass until they are fixed.
+- **A2 — shared `auth.users` / `profiles` pool: YES.** WorkLog registrants may enter the pool
+  shared with PunchLog. Verified at T1 that `handle_new_user` is the only `auth.users` trigger
+  and only inserts a `profiles` row; Punchlist has no approval-queue tables or functions, so a
+  WorkLog registrant has no other-tenant lifecycle side effect.
+- **A6 — CORS half DEFERRED.** No WorkLog web deployment calls the function (`website/` contains
+  no edge-function call; `/welcome` hits GoTrue directly). `WORKLOG_ALLOWED_ORIGINS` stays unset
+  ⇒ **three** new `WORKLOG_*` secrets, not four.
+- **Sender — verified-domain address.** `WORKLOG_RESEND_FROM = worklog@<domain the user reads off
+  their Resend dashboard>`. `onboarding@resend.dev` was declined, so the T3/T5 owner-address
+  descopes do NOT apply and T5 runs the full alias schedule. **Domain string still outstanding.**
+- **`$SUPABASE_ACCESS_TOKEN` — still outstanding.** Blocks the remaining T1 bullets (GoTrue full
+  config + `mailer_autoconfirm`, secret-name inventory, branching availability) and all of T3/T4.
+
+**T1 is NOT complete.** Outstanding before Task 2: the Resend domain, the access token, and the
+three token-gated audit bullets — including the `mailer_autoconfirm` check, which is a STOP if
+autoconfirm is enabled.
