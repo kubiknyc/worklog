@@ -122,3 +122,30 @@ Preserved because it is the evidence trail for the ref correction: `register-com
 function); deployed surface is a ~300-table construction-management suite (`qb-*`, DocuSign,
 drawings, submittals, `approve-user` queue). Both worklog slugs vacant there too. Conclusion stood:
 "settle which project WorkLog registration actually targets" — settled above.
+
+---
+
+## Env remediation — DONE and verified (2026-08-12, user-approved at the gate)
+
+Prerequisite for T5; these were live misconfigurations independent of plan 3.
+
+| Surface | Before | After | Verification |
+|---|---|---|---|
+| EAS `preview` | `nxlznnrocrffnbzjaaae` + JobSight anon JWT | `bbhszvdbchxwoxxqaxvh` + Punchlist legacy anon JWT | `eas env:list preview` ✓ |
+| EAS `production` | **unset** | Punchlist URL + anon JWT | `eas env:list production` ✓ |
+| Vercel `worklog-site` production | JobSight ref baked into the deployed bundle | Punchlist | live-bundle grep ✓ |
+
+Website redeployed to production. Ground-truth check on `https://worklog-site.vercel.app`:
+`/welcome` `/terms` `/privacy` all **200**; the welcome chunk
+(`/_next/static/chunks/app/welcome/page-e2cc0605816a64a1.js`) contains **1** occurrence of
+`bbhszvdbchxwoxxqaxvh` and **0** of `nxlznnrocrffnbzjaaae`.
+
+Key choice: the **legacy anon JWT**, not the `sb_publishable_…` key — `register-company` (and the
+planned fork) run `verify_jwt=true`, which requires a JWT-format key. This is what T5's JWT
+preflight curl exists to confirm.
+
+Note: `vercel env pull` renders these as `""` because they are stored **Sensitive**; that is not
+evidence of an empty value. Verify via the deployed bundle, as above.
+
+**Still outstanding for `website/.env.local.example:4`** — it still names the JobSight ref
+(doc-level only; the directory is edit-restricted in this session).
