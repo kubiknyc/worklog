@@ -55,8 +55,14 @@ async function parseErrorBody(
 }
 
 /**
+ * The invoked slug is the WorkLog FORK, `worklog-register-company` — the
+ * shared `register-company` is another product's function on the same
+ * project and is never called from here. RELEASE ORDERING: this seam must
+ * not reach users before that slug is deployed, or every registration hits
+ * a function that does not exist.
+ *
  * `client` picks which surface the emailed confirm link opens. Per spec
- * amendment A1, `register-company` never mints a `punchlist://` URL for a
+ * amendment A1, the fork never mints a `punchlist://` URL for a
  * WorkLog registration — that was PunchLog's fallback and, delivered to a
  * device with PunchLog also installed, would hand a WorkLog auth token to
  * the wrong app. Both `'app'` and `'web'` land the confirm link on the
@@ -69,7 +75,7 @@ async function parseErrorBody(
 export async function registerCompany(
   request: RegisterCompanyRequest,
 ): Promise<RegisterCompanyResult> {
-  const { error } = await supabase.functions.invoke('register-company', {
+  const { error } = await supabase.functions.invoke('worklog-register-company', {
     body: { ...request, client: Platform.OS === 'web' ? 'web' : 'app' },
   });
   if (!error) return { kind: 'ok' };
