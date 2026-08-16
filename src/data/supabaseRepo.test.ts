@@ -78,8 +78,10 @@ afterEach(() => {
   warnSpy.mockRestore();
 });
 
-/** The generic message every failure is masked to — raw PostgREST leaks schema. */
+/** The generic message a READ failure is masked to — raw PostgREST leaks schema. */
 const GENERIC = 'Unable to load data. Please try again.';
+/** Same masking on the write paths, worded for what the user actually attempted. */
+const WRITE_MASKED = 'Unable to save your changes. Please try again.';
 
 describe('SupabaseRepository read path', () => {
   it('listProjects selects the project columns ordered by name', async () => {
@@ -308,7 +310,7 @@ describe('SupabaseRepository.createReport', () => {
 
     // Without this guard the missing id flows into getReport as `undefined`
     // and the caller navigates to a report route that does not exist.
-    await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(GENERIC);
+    await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(WRITE_MASKED);
     expect(warnSpy).toHaveBeenCalledWith('[supabaseRepo] createReport failed:', {
       message: 'create_report returned no report id',
     });
@@ -318,7 +320,7 @@ describe('SupabaseRepository.createReport', () => {
     mockRpc.mockImplementation(() => Promise.resolve({ data: [{ report_id: 'r1' }], error: null }));
     tableResults.set('daily_reports', { data: null, error: null });
 
-    await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(GENERIC);
+    await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(WRITE_MASKED);
     expect(warnSpy).toHaveBeenCalledWith('[supabaseRepo] createReport failed:', {
       message: 'created report not found',
     });
@@ -329,7 +331,7 @@ describe('SupabaseRepository.createReport', () => {
       Promise.resolve({ data: null, error: { message: 'permission denied for create_report' } }),
     );
 
-    await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(GENERIC);
+    await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(WRITE_MASKED);
   });
 });
 
@@ -394,7 +396,7 @@ describe('SupabaseRepository.updateSection', () => {
 
     await expect(
       supabaseRepository.updateSection('report-1', 'crew', { headcount: 3 }, true),
-    ).rejects.toThrow(GENERIC);
+    ).rejects.toThrow(WRITE_MASKED);
   });
 });
 
@@ -432,7 +434,7 @@ describe('SupabaseRepository.submitReport', () => {
         signerTitle: null,
         signaturePngBase64: 'UE5H',
       }),
-    ).rejects.toThrow(GENERIC);
+    ).rejects.toThrow(WRITE_MASKED);
   });
 });
 
@@ -448,6 +450,6 @@ describe('SupabaseRepository.lockReport', () => {
       Promise.resolve({ data: null, error: { message: 'boom' } }),
     );
 
-    await expect(supabaseRepository.lockReport('report-1')).rejects.toThrow(GENERIC);
+    await expect(supabaseRepository.lockReport('report-1')).rejects.toThrow(WRITE_MASKED);
   });
 });

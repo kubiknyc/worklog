@@ -37,7 +37,7 @@ import { VisitorsSectionSheet } from '../../../src/components/report/VisitorsSec
 import { WeatherSectionSheet } from '../../../src/components/report/WeatherSectionSheet';
 import { useAuth } from '../../../src/auth';
 import { useRepository } from '../../../src/data';
-import { canEditSection } from '../../../src/data/lifecycleGuards';
+import { canEditSection, canLock, canSubmit } from '../../../src/data/lifecycleGuards';
 import type {
   CrewContent,
   DelaysContent,
@@ -113,6 +113,10 @@ export default function ReportDetailScreen() {
       setActionError(null);
       try {
         await repo.submitReport(reportId, {
+          // Client-side surplus (08-phase3-verification §Check 5): the RPC
+          // derives report_signatures.signer_name from profiles itself and
+          // rpcMap deliberately never sends this field, so '' on an unloaded
+          // profile cannot produce an unsigned-looking signature row.
           signerName: profile?.full_name ?? '',
           signerTitle: input.signerTitle,
           signaturePngBase64: input.signaturePngBase64,
@@ -406,7 +410,7 @@ export default function ReportDetailScreen() {
 
           <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />
 
-          {lifecycleActionsAvailable && isSuper && data.report.status === 'draft' ? (
+          {lifecycleActionsAvailable && isSuper && canSubmit(data.report.status) ? (
             <PrimaryButton
               testID="report-submit"
               label="Submit report"
@@ -416,7 +420,7 @@ export default function ReportDetailScreen() {
               }}
             />
           ) : null}
-          {lifecycleActionsAvailable && isSuper && data.report.status === 'submitted' ? (
+          {lifecycleActionsAvailable && isSuper && canLock(data.report.status) ? (
             <PrimaryButton
               testID="report-lock"
               label="Lock report"

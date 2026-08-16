@@ -313,7 +313,10 @@ export async function heldStatusReportIds(db: Db): Promise<ReadonlySet<string>> 
 export async function applyReports(
   db: Db,
   rows: readonly PulledReportBundle[],
-  heldStatusReportIds: ReadonlySet<string> = new Set(),
+  // Named `heldReportIds`, not `heldStatusReportIds`: the latter is the
+  // exported producer above, and shadowing it inside the consumer makes the
+  // two read as one thing.
+  heldReportIds: ReadonlySet<string> = new Set(),
 ): Promise<ApplyResult> {
   let applied = 0;
   const cursorKeys: string[] = [];
@@ -345,7 +348,7 @@ export async function applyReports(
       );
       const localDirty = local !== null && local._dirty === 1;
       const reportNoOp = local !== null && !localDirty && local.updated_at === updatedAt;
-      const held = heldStatusReportIds.has(id);
+      const held = heldReportIds.has(id);
 
       let reportApplied = false;
 
