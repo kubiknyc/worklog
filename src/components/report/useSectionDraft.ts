@@ -75,6 +75,12 @@ export function useSectionDraft<T extends Json>(
   const genRef = useRef(0);
   const repoRef = useRef(repo);
   repoRef.current = repo;
+  // Read through a ref, not the closure: a timer armed while the report was
+  // still a draft would otherwise fire with the stale `readOnly === false` it
+  // captured, and issue a write into a report that has since been submitted.
+  // The server rejects that write (P0001), but the client should not send it.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -85,7 +91,7 @@ export function useSectionDraft<T extends Json>(
 
   /** Queue a write of whatever `contentRef`/`completeRef` hold when it runs. */
   const issueWrite = useCallback(() => {
-    if (readOnly) return;
+    if (readOnlyRef.current) return;
     const gen = (genRef.current += 1);
     chainRef.current = chainRef.current
       .then(() => {
@@ -106,7 +112,7 @@ export function useSectionDraft<T extends Json>(
         // and let the next edit retry.
         console.warn(`[useSectionDraft] updateSection(${section}) failed:`, error);
       });
-  }, [reportId, section, readOnly]);
+  }, [reportId, section]);
 
   const flush = useCallback(() => {
     if (timerRef.current === null) return; // nothing pending

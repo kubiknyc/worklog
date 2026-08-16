@@ -23,11 +23,23 @@ import type {
   WeatherRow,
 } from './types';
 
-function fail(context: string, error: { readonly message: string }): never {
+/**
+ * The screens surface `err.message` verbatim, so the copy has to match what
+ * the user actually attempted: a failed submit told to "try loading again"
+ * names the wrong operation. Reads keep the default; writes pass
+ * WRITE_FAILED.
+ */
+const WRITE_FAILED = 'Unable to save your changes. Please try again.';
+
+function fail(
+  context: string,
+  error: { readonly message: string },
+  userMessage = 'Unable to load data. Please try again.',
+): never {
   // Raw PostgREST messages can leak schema detail — keep them out of the UI,
   // but log them so production failures stay diagnosable.
   console.warn(`[supabaseRepo] ${context} failed:`, error);
-  throw new Error('Unable to load data. Please try again.');
+  throw new Error(userMessage);
 }
 
 const PROJECT_COLUMNS = 'id, name, address, timezone, lat, lng';
@@ -144,11 +156,12 @@ class SupabaseRepository implements Repository {
       p_report_date: reportDate,
       p_client_id: uuidv4(),
     });
-    if (error) fail('createReport', error);
+    if (error) fail('createReport', error, WRITE_FAILED);
     const reportId = data?.[0]?.report_id;
-    if (!reportId) fail('createReport', { message: 'create_report returned no report id' });
+    if (!reportId)
+      fail('createReport', { message: 'create_report returned no report id' }, WRITE_FAILED);
     const report = await this.getReport(reportId);
-    if (!report) fail('createReport', { message: 'created report not found' });
+    if (!report) fail('createReport', { message: 'created report not found' }, WRITE_FAILED);
     return report;
   }
 
@@ -170,7 +183,7 @@ class SupabaseRepository implements Repository {
       p_payload: sectionWirePayload(section, content) as never,
       p_is_complete: isComplete,
     });
-    if (error) fail('updateSection', error);
+    if (error) fail('updateSection', error, WRITE_FAILED);
   }
 
   async setActiveProject(): Promise<void> {
@@ -187,12 +200,12 @@ class SupabaseRepository implements Repository {
       // Same bytea wire encoding as the native push handler (rpcMap.ts).
       p_signature_png: base64ToByteaHex(input.signaturePngBase64),
     });
-    if (error) fail('submitReport', error);
+    if (error) fail('submitReport', error, WRITE_FAILED);
   }
 
   async lockReport(reportId: string): Promise<void> {
     const { error } = await supabase.rpc('lock_report', { p_report_id: reportId });
-    if (error) fail('lockReport', error);
+    if (error) fail('lockReport', error, WRITE_FAILED);
   }
 }
 

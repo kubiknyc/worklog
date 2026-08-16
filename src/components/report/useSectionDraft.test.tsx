@@ -195,6 +195,23 @@ test('readOnly: flush and markComplete are inert', async () => {
   expect(updateSection).not.toHaveBeenCalled();
 });
 
+test('readOnly: a flip mid-debounce cancels the already-armed write', async () => {
+  // The report goes draft -> submitted (elsewhere) inside the 400ms window.
+  // The timer was armed by a closure that captured `readOnly === false`, so
+  // reading it from a ref is what keeps the stale write from being issued.
+  const { result, rerender } = renderHook(
+    ({ readOnly }: { readonly readOnly: boolean }) =>
+      useSectionDraft<Content>('r1', 'crew', { count: 0 }, { readOnly }),
+    { initialProps: { readOnly: false } },
+  );
+
+  act(() => result.current.setDraft({ count: 1 }));
+  rerender({ readOnly: true });
+  await settle();
+
+  expect(updateSection).not.toHaveBeenCalled();
+});
+
 test('readOnly: unmount does not flush the pending tail edit', async () => {
   const { result, unmount } = setup(undefined, { readOnly: true });
   act(() => result.current.setDraft({ count: 9 }));
