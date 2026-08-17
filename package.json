@@ -16,6 +16,7 @@
     "gen:server-columns": "node scripts/gen-server-columns.mjs",
     "check:parity": "npm run gen:server-columns && git diff --exit-code src/db/serverColumns.generated.json",
     "check:web": "expo export --platform web --output-dir .web-export",
+    "gen:icons": "node scripts/gen-icons.mjs",
     "check:submission": "node scripts/check-submission.mjs",
     "submit:ios": "npm run check:submission && eas submit --platform ios",
     "submit:android": "npm run check:submission && eas submit --platform android"

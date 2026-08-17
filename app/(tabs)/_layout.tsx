@@ -1,41 +1,25 @@
 /**
- * Five-slot tab shell (M0): Today · History · [camera] · Photos · Settings.
+ * Tab shell (M0): Today · History · Settings.
  *
  * Follows PunchLog's `(tabs)/_layout.tsx` styling idiom — tab bar colors and
- * fonts from `useTheme()` — with WorkLog's slot order and a raised center
- * camera action. The camera slot is a placeholder tab until the capture flow
- * lands in M5. `app/index.tsx` only gates the `/` route, so a signed-out user
- * deep-linking or web-refreshing directly on a `/(tabs)/*` route would render
- * straight into the tab shell without this guard — mirrors PunchLog's
- * `(tabs)/_layout.tsx` session check.
+ * fonts from `useTheme()`. `app/index.tsx` only gates the `/` route, so a
+ * signed-out user deep-linking or web-refreshing directly on a `/(tabs)/*`
+ * route would render straight into the tab shell without this guard — mirrors
+ * PunchLog's `(tabs)/_layout.tsx` session check.
+ *
+ * The camera and photos slots are hidden (`href: null`) until the capture flow
+ * lands in M5. Both screens are placeholders reading "Photo capture isn't
+ * ready yet" / "No photos yet", and App Store Review 2.1 rejects apps that
+ * ship visibly unfinished features. The routes still exist and still render,
+ * so M5 does not have to rebuild them — the slots, and the raised centre
+ * camera button (recoverable from this commit's parent), come back with it.
  */
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
-import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { useAuth } from '../../src/auth';
 import { useActiveProjectSync } from '../../src/hooks/useActiveProjectSync';
-import { FIXED_COLORS, useTheme } from '../../src/theme';
-
-type RaisedCameraButtonProps = {
-  readonly onPress?: (event: GestureResponderEvent) => void;
-};
-
-function RaisedCameraButton({ onPress }: RaisedCameraButtonProps) {
-  return (
-    <Pressable
-      testID="tab-camera"
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Capture photo"
-      style={styles.cameraWrap}
-    >
-      <View style={styles.cameraCircle}>
-        <MaterialCommunityIcons name="camera" size={28} color="#FFFFFF" />
-      </View>
-    </Pressable>
-  );
-}
+import { useTheme } from '../../src/theme';
 
 export default function TabsLayout() {
   const { status } = useAuth();
@@ -79,23 +63,9 @@ export default function TabsLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="camera"
-        options={{
-          title: '',
-          tabBarButton: (props) => <RaisedCameraButton onPress={props.onPress} />,
-        }}
-      />
-      <Tabs.Screen
-        name="photos"
-        options={{
-          title: 'Photos',
-          tabBarButtonTestID: 'tab-photos',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="image-multiple" color={color} size={size} />
-          ),
-        }}
-      />
+      {/* Hidden until M5 ships capture — see the file header. */}
+      <Tabs.Screen name="camera" options={{ href: null }} />
+      <Tabs.Screen name="photos" options={{ href: null }} />
       <Tabs.Screen
         name="settings"
         options={{
@@ -109,20 +79,3 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  cameraWrap: { top: -18, justifyContent: 'center', alignItems: 'center' },
-  cameraCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28, // >=48px touch target (PRD §9 AC)
-    backgroundColor: FIXED_COLORS.camera,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-});

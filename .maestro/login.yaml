@@ -27,11 +27,10 @@ appId: com.jobsight.worklog
 # navigation.
 - runFlow: _launch-and-signin.yaml
 
-# Tab bar is present and navigable.
+# Tab bar is present and navigable. Camera and Photos are hidden until M5
+# ships capture (app/(tabs)/_layout.tsx), so the bar is Today/History/Settings.
 - assertVisible:
     id: 'tab-history'
-- assertVisible:
-    id: 'tab-photos'
 - assertVisible:
     id: 'tab-settings'
 

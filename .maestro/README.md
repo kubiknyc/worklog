@@ -50,7 +50,7 @@ The convention, applied as screens are built rather than retrofitted:
 | Kind | Pattern | Examples |
 |---|---|---|
 | Screen root | `screen-<route>` | `screen-today`, `screen-history`, `screen-photos`, `screen-settings`, `screen-camera` |
-| Tab bar button | `tab-<route>` | `tab-today`, `tab-history`, `tab-camera`, `tab-photos`, `tab-settings` |
+| Tab bar button | `tab-<route>` | `tab-today`, `tab-history`, `tab-settings` — `tab-camera` / `tab-photos` are gone while those slots are `href: null` (hidden until M5 ships capture); the `screen-camera` / `screen-photos` roots still exist on the routes themselves |
 | Form control | `<screen>-<field>` | `login-email`, `login-password`, `login-submit`, `login-forgot`, `report-submit`, `report-lock` |
 | Confirm dialog | `<action>-confirm` / `<action>-cancel` | `report-lock-confirm`, `report-lock-cancel` |
 | Submit signature sheet | `submit-<field>` | `submit-signer-title`, `submit-signature-canvas`, `submit-clear-signature`, `submit-confirm` |
