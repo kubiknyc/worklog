@@ -53,7 +53,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleTeamId": "KMUN96UMW4"
+        "appleTeamId": "KMUN96UMW4",
+        "ascAppId": "6803787863"
       }
     }
   }
