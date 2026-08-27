@@ -15,6 +15,7 @@ import { first, run, tx, type Db } from '../db/rows.native';
 import { createSyncEngine } from '../sync/engine.native';
 import { createMutationStore } from '../sync/store.native';
 import { supabase } from '../supabase/client';
+import { fillWeather } from './weatherFill';
 import { createSqliteRepo } from './sqliteRepo.native';
 import type { PlatformRepoBundle, Repository } from './types';
 
@@ -132,6 +133,22 @@ export async function createPlatformRepository(
   // trigger. The engine is returned, NOT attached/started here — that happens
   // in RepositoryProvider under its `active` guard, so a stale (superseded)
   // build can't attach or start late.
-  const repo = createSqliteRepo(db, mutations, () => void engine.run());
+  // The "after create_report while online" trigger (M9). `engine.getState()`
+  // is read fresh at call time, not captured — the engine's own `online`
+  // already reconciles NetInfo with real push/pull transport failures (see
+  // engine.native.ts's module doc), so this reuses that verdict instead of
+  // re-deriving one. Offline: do nothing, deliberately — the fill-on-sync
+  // retry sweep (weatherFillSweep.native.ts) picks up any report still at
+  // `weather_source = 'none'` on the next online pull.
+  const repo = createSqliteRepo(
+    db,
+    mutations,
+    () => void engine.run(),
+    (report) => {
+      if (engine.getState().online) {
+        void fillWeather(report.project_id, report.report_date);
+      }
+    },
+  );
   return { repo, engine };
 }

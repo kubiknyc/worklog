@@ -273,6 +273,27 @@ describe('sqliteRepo createReport', () => {
     expect(mutations.map.size).toBe(0);
     expect(db.tables.daily_reports).toHaveLength(1);
   });
+
+  it('(d) fires onReportCreated for a genuinely new report (T13 weather-fill trigger)', async () => {
+    const db = fakeDb();
+    const onReportCreated = jest.fn();
+    const repo = createSqliteRepo(db as never, fakeMutations(), () => {}, onReportCreated);
+    const row = await repo.createReport('p1', '2026-07-20');
+
+    expect(onReportCreated).toHaveBeenCalledTimes(1);
+    expect(onReportCreated).toHaveBeenCalledWith(row);
+  });
+
+  it('(e) does NOT fire onReportCreated on the existing-row short-circuit', async () => {
+    const existing = { id: 'r1', project_id: 'p1', report_date: '2026-07-19', status: 'draft' };
+    const db = fakeDb({ daily_reports: [existing] });
+    const onReportCreated = jest.fn();
+    const repo = createSqliteRepo(db as never, fakeMutations(), () => {}, onReportCreated);
+
+    await repo.createReport('p1', '2026-07-19');
+
+    expect(onReportCreated).not.toHaveBeenCalled();
+  });
 });
 
 describe('sqliteRepo updateSection', () => {

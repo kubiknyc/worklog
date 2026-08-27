@@ -62,6 +62,10 @@ jest.mock('../supabase/client', () => ({
   },
 }));
 jest.mock('../lib/uuid', () => ({ uuidv4: () => 'generated-client-id' }));
+const mockFillWeather = jest.fn();
+jest.mock('./weatherFill', () => ({
+  fillWeather: (...args: unknown[]) => mockFillWeather(...args),
+}));
 
 let warnSpy: jest.SpyInstance;
 
@@ -71,6 +75,7 @@ beforeEach(() => {
   mockFrom.mockClear();
   mockRpc.mockClear();
   mockRpc.mockImplementation(() => Promise.resolve(OK));
+  mockFillWeather.mockClear();
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -303,6 +308,8 @@ describe('SupabaseRepository.createReport', () => {
       p_report_date: '2026-08-03',
       p_client_id: 'generated-client-id',
     });
+    // T13: "after create_report while online" fires on the success path only.
+    expect(mockFillWeather).toHaveBeenCalledWith('p1', '2026-08-03');
   });
 
   it('throws when the RPC returns no rows', async () => {
@@ -314,6 +321,7 @@ describe('SupabaseRepository.createReport', () => {
     expect(warnSpy).toHaveBeenCalledWith('[supabaseRepo] createReport failed:', {
       message: 'create_report returned no report id',
     });
+    expect(mockFillWeather).not.toHaveBeenCalled();
   });
 
   it('throws when the created report cannot be read back', async () => {
@@ -324,6 +332,7 @@ describe('SupabaseRepository.createReport', () => {
     expect(warnSpy).toHaveBeenCalledWith('[supabaseRepo] createReport failed:', {
       message: 'created report not found',
     });
+    expect(mockFillWeather).not.toHaveBeenCalled();
   });
 
   it('masks an RPC error', async () => {
@@ -332,6 +341,7 @@ describe('SupabaseRepository.createReport', () => {
     );
 
     await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(WRITE_MASKED);
+    expect(mockFillWeather).not.toHaveBeenCalled();
   });
 });
 
