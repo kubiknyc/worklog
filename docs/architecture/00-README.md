@@ -1,6 +1,6 @@
 # WorkLog — Phase 2 Architecture (Synthesis & Index)
 
-**Status: DRAFT — awaiting approval.** Produced 2026-07-17 by a five-track parallel design team (planning, modules/nav/sync, mobile subsystems, data model, testing) working from `FABLE5-PROMPT-worklog.md` (final spec) and `docs/PRD.md` rev 3. Per spec §9, Phase 2 is design-only: no app code, no SQL migrations were produced. Phase 1 (PRD rev 3) approval + this document's approval together gate Phase 3.
+**Status: APPROVED (human, 2026-08-27).** Both Phase 1 gate (PRD rev 3) and this Phase 2 architecture document were approved by the human on 2026-08-27. Produced 2026-07-17 by a five-track parallel design team (planning, modules/nav/sync, mobile subsystems, data model, testing) working from `FABLE5-PROMPT-worklog.md` (final spec) and `docs/PRD.md` rev 3. Per spec §9, Phase 2 was design-only: no app code, no SQL migrations were produced at the time of writing — the app has since shipped v1.0.0; see the Reconciliations section below for which design decisions the shipped code settled.
 
 ## Documents
 
@@ -50,10 +50,10 @@ Both tracks agreed on the outcome (draft-window-only, soft-delete tombstone); th
 ### R6 — Photo INSERT window vs the locked cutoff (SETTLED BY CODE)
 Modules track required `report_photos` INSERT to succeed while `status IN ('draft','submitted')` and fail once `locked`. **Shipped exactly as recommended**, via `worklog_photos_guard()` (not a `reject_edit_if_locked` trigger — the actual name shipped is `worklog_photos_guard`) at `20260717000004_worklog_photos.sql:81–88`: "R6: draft AND submitted accept photo inserts (submit/photo race); locked is the true attachment cutoff" — `if v_status = 'locked' then raise exception`.
 
-## Decisions needed from you before Phase 3
+## Decisions needed from you before Phase 3 — ALL RESOLVED
 
-1. **Approve PRD rev 3** (Phase 1 gate — still formally open).
-2. **Approve this Phase 2 architecture** (with or without changes).
+1. **Approve PRD rev 3** (Phase 1 gate) — **APPROVED 2026-08-27** (human).
+2. **Approve this Phase 2 architecture** (with or without changes) — **APPROVED 2026-08-27** (human).
 
 Resolved by shipped code, no longer open (verified 2026-08-27):
 - **Distribution lists scope:** shipped project-scoped. `jobsight-backend/supabase/migrations/20260717000006_worklog_company_settings.sql:64` — `-- report_distribution_lists — PROJECT-scoped (approved 2026-07-17)`; the table (line 67) keys on `project_id`.
