@@ -96,6 +96,16 @@ class SupabaseRepository implements Repository {
     return (data ?? []) as unknown as ReportSectionRow[];
   }
 
+  async listReports(projectId: string): Promise<readonly DailyReportRow[]> {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('id, project_id, report_date, status')
+      .eq('project_id', projectId)
+      .order('report_date', { ascending: false });
+    if (error) fail('listReports', error);
+    return (data ?? []) as DailyReportRow[];
+  }
+
   async getWeather(reportId: string): Promise<WeatherRow | null> {
     const { data, error } = await supabase
       .from('report_weather')

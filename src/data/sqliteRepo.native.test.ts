@@ -119,8 +119,16 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
 
   return {
     tables,
-    getAllAsync: async (sql: string): Promise<Row[]> =>
-      /FROM projects/i.test(sql) ? tables.projects : [],
+    getAllAsync: async (sql: string, params: readonly unknown[] = []): Promise<Row[]> => {
+      if (/FROM projects/i.test(sql)) return tables.projects;
+      if (/FROM daily_reports/i.test(sql)) {
+        const [projectId] = params;
+        return tables.daily_reports
+          .filter((r) => r.project_id === projectId)
+          .sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
+      }
+      return [];
+    },
     getFirstAsync: async (sql: string, params: readonly unknown[] = []): Promise<Row | null> => {
       if (!/FROM daily_reports/i.test(sql)) return null;
       if (/WHERE id = \?/i.test(sql)) {
@@ -235,6 +243,17 @@ describe('sqliteRepo reads', () => {
     expect(await repo.listProjects()).toEqual([
       { id: 'p1', name: 'Site A', address: null, timezone: null, lat: null, lng: null },
     ]);
+  });
+
+  it('listReports returns a project\'s reports newest report_date first', async () => {
+    const older = { id: 'r1', project_id: 'p1', report_date: '2026-07-01', status: 'locked' };
+    const newer = { id: 'r2', project_id: 'p1', report_date: '2026-07-03', status: 'draft' };
+    const otherProject = { id: 'r3', project_id: 'p2', report_date: '2026-07-05', status: 'draft' };
+    const repo = createSqliteRepo(
+      fakeDb({ daily_reports: [older, newer, otherProject] }) as never,
+      fakeMutations(),
+    );
+    expect(await repo.listReports('p1')).toEqual([newer, older]);
   });
 
   it('getReportByDate returns the matching row or null', async () => {

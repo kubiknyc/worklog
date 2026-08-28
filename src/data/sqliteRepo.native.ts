@@ -157,6 +157,14 @@ export function createSqliteRepo(
       }));
     },
 
+    async listReports(projectId: string): Promise<readonly DailyReportRow[]> {
+      return db.getAllAsync<DailyReportRow>(
+        `SELECT id, project_id, report_date, status FROM daily_reports
+         WHERE project_id = ? ORDER BY report_date DESC`,
+        [projectId],
+      );
+    },
+
     async getWeather(reportId: string): Promise<WeatherRow | null> {
       return db.getFirstAsync<WeatherRow>(
         `SELECT report_id, weather_source, auto_condition, auto_temp_f, override_condition, override_temp_f
