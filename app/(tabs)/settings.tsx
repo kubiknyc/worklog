@@ -24,11 +24,13 @@ import { Linking, View } from 'react-native';
 import { useAuth } from '../../src/auth';
 import { ConfirmSheet, SheetRow, useToast } from '../../src/components';
 import { PRIVACY_URL, TERMS_URL } from '../../src/lib/legal';
+import { useActiveProject } from '../../src/project';
 import { useTheme } from '../../src/theme';
 
 export default function SettingsScreen() {
   const { colors, sizes } = useTheme();
   const { signOut, deleteAccount } = useAuth();
+  const { activeProjectId } = useActiveProject();
   const toast = useToast();
 
   const [signOutOpen, setSignOutOpen] = useState(false);
@@ -75,6 +77,15 @@ export default function SettingsScreen() {
           accessibilityLabel="Sync queue"
           onPress={() => router.push('/settings/sync')}
         />
+        {activeProjectId ? (
+          <SheetRow
+            testID="settings-members-link"
+            icon="people-outline"
+            label="Project members"
+            accessibilityLabel="Project members"
+            onPress={() => router.push(`/project/${activeProjectId}/members`)}
+          />
+        ) : null}
         {/* System browser, never a web view — same treatment the register
             screen gives these two URLs (src/lib/legal.ts). */}
         <SheetRow

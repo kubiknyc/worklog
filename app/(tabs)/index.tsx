@@ -113,11 +113,18 @@ export default function TodayScreen() {
             <PrimaryButton testID="today-retry" label="Try again" onPress={reload} />
           </View>
         ) : !activeProjectId || !data?.project ? (
-          <EmptyState
-            icon="business-outline"
-            title="No project yet"
-            subtitle="Create or join a project to start filing daily reports."
-          />
+          <View style={styles.block}>
+            <EmptyState
+              icon="business-outline"
+              title="No project yet"
+              subtitle="Create or join a project to start filing daily reports."
+            />
+            <PrimaryButton
+              testID="today-create-project"
+              label="Create a project"
+              onPress={() => router.push('/project/new')}
+            />
+          </View>
         ) : (
           <>
             <Text style={[styles.date, { color: colors.text, fontFamily: fonts.serif.bold }]}>
