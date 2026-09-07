@@ -1,11 +1,15 @@
 /**
- * Set-password screen — invite, password-recovery AND signup-confirmation
- * deep links land here (ported from PunchLog's app/set-password.tsx):
+ * Set-password screen — invite AND signup-confirmation deep links land here
+ * (ported from PunchLog's app/set-password.tsx):
  * `worklog://set-password#access_token=…&refresh_token=…&type=…`.
- * All GoTrue action links use the same fragment shape; `type` only varies the
- * copy (an invitee/registrant is welcomed, a reset says "reset"). Signup
- * confirmations arrive here because registration is invite-style — no
- * password is collected at sign-up; this screen is where it's chosen.
+ * Password recovery no longer lands here: `resetPassword` (AuthProvider)
+ * points at the site's `/welcome` instead, which exchanges the emailed
+ * token_hash on a button tap so a mail scanner's GET can't burn it, then
+ * lets the user choose a new password in the browser. `type=recovery`
+ * handling below is kept for legacy access_token-style links already in
+ * flight. Signup confirmations arrive here because registration is
+ * invite-style — no password is collected at sign-up; this screen is where
+ * it's chosen.
  *
  * Besides the deep link, the auth fragment can arrive from app/confirm.tsx
  * via the module-scoped one-shot in src/auth/pendingAuthLink.ts. It is NOT a

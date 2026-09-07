@@ -12,6 +12,15 @@ export const TERMS_URL = 'https://worklog-site.vercel.app/terms';
 export const PRIVACY_URL = 'https://worklog-site.vercel.app/privacy';
 
 /**
+ * The site's /welcome page — where a password-reset link now lands (see
+ * AuthProvider's resetPassword). It exchanges the emailed token_hash on a
+ * button tap and lets the user choose a new password in the browser, so a
+ * corporate mail scanner's GET of the link can never spend it. Already in
+ * the GoTrue redirect allow-list.
+ */
+export const SITE_URL = 'https://worklog-site.vercel.app/welcome';
+
+/**
  * Mechanical submission gate. Verified 2026-08-10: production deploy
  * (`vercel deploy --prod`) plus `curl` returning 200 on both /terms and
  * /privacy at the URLs above. `check:submission` live-checks both URLs
