@@ -2,7 +2,14 @@
 // URL-fragment parsing tests with no product-name references to rebrand.
 import { expect, test } from "vitest";
 
-import { classifySaveFailure, hasHashError, readAccessToken, readLinkType } from "./welcomeLink";
+import {
+  classifySaveFailure,
+  hasHashError,
+  readAccessToken,
+  readLinkType,
+  readTokenHash,
+  readVerifyType,
+} from "./welcomeLink";
 
 // /welcome is the only web path to a credential — a web registrant may never
 // install the app.
@@ -64,6 +71,38 @@ test("tolerates a fragment with no leading hash, like readAccessToken", () => {
 test("hasHashError yields a boolean, never attacker-controlled text", () => {
   const result = hasHashError("#error_description=<img src=x onerror=alert(1)>");
   expect(typeof result).toBe("boolean");
+});
+
+// New confirm-link shape: mail scanners GET every link, so GoTrue now emails
+// a fragment token_hash instead of a query-string token — spent only on tap.
+test("reads the token_hash from a confirm-link fragment", () => {
+  expect(readTokenHash("#token_hash=abc123&type=signup")).toBe("abc123");
+});
+
+test("url-decodes the token_hash", () => {
+  expect(readTokenHash("#token_hash=abc%2Bdef&type=signup")).toBe("abc+def");
+});
+
+test("returns null when there is no token_hash to spend", () => {
+  expect(readTokenHash("")).toBeNull();
+  expect(readTokenHash("#")).toBeNull();
+  expect(readTokenHash("#type=signup")).toBeNull();
+  expect(readTokenHash("#token_hash=")).toBeNull();
+});
+
+test("reads each verify type GoTrue's token_hash flow can send", () => {
+  expect(readVerifyType("#token_hash=abc&type=signup")).toBe("signup");
+  expect(readVerifyType("#token_hash=abc&type=invite")).toBe("invite");
+  expect(readVerifyType("#token_hash=abc&type=magiclink")).toBe("magiclink");
+  expect(readVerifyType("#token_hash=abc&type=recovery")).toBe("recovery");
+  expect(readVerifyType("#token_hash=abc&type=email")).toBe("email");
+});
+
+test("readVerifyType collapses anything unrecognised to null", () => {
+  expect(readVerifyType("#token_hash=abc&type=email_change")).toBeNull();
+  expect(readVerifyType("#token_hash=abc")).toBeNull();
+  expect(readVerifyType("")).toBeNull();
+  expect(readVerifyType("#")).toBeNull();
 });
 
 test("401 and 403 mean the one-shot link is spent", () => {

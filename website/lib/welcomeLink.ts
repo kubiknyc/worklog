@@ -39,6 +39,39 @@ export function readAccessToken(hash: string): string | null {
 }
 
 /**
+ * The hashed one-time token from a `token_hash`-style confirm link fragment
+ * (`#token_hash=...&type=...`), GoTrue's replacement for the plain
+ * `/auth/v1/verify?token=...` GET link that a corporate mail scanner would
+ * consume by fetching it. `URLSearchParams.get` already URL-decodes the
+ * value.
+ */
+export function readTokenHash(hash: string): string | null {
+  const value = hash.replace(/^#/, "");
+  if (!value) return null;
+  return new URLSearchParams(value).get("token_hash") || null;
+}
+
+/** The `type` values GoTrue's `POST /auth/v1/verify` accepts for a
+ *  `token_hash` exchange. Anything else is not a type this flow knows how to
+ *  spend, so `readVerifyType` returns null rather than guessing. */
+export type VerifyType = "signup" | "invite" | "magiclink" | "recovery" | "email";
+
+const VERIFY_TYPES: ReadonlySet<string> = new Set<VerifyType>([
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email",
+]);
+
+export function readVerifyType(hash: string): VerifyType | null {
+  const value = hash.replace(/^#/, "");
+  if (!value) return null;
+  const raw = new URLSearchParams(value).get("type");
+  return raw !== null && VERIFY_TYPES.has(raw) ? (raw as VerifyType) : null;
+}
+
+/**
  * Which kind of link brought the reader here. Mirrors `linkTypeOf` in the
  * native app (src/auth/authLink.ts) — keep the two in step.
  *

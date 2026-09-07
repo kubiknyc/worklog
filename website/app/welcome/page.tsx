@@ -36,6 +36,9 @@ import {
   hasHashError,
   readAccessToken,
   readLinkType,
+  readTokenHash,
+  readVerifyType,
+  type VerifyType,
   type WelcomeLinkType,
 } from "@/lib/welcomeLink";
 
@@ -44,11 +47,36 @@ const GENERIC_ERROR = "Something went wrong. Please try again.";
 type Phase =
   | { readonly kind: "loading" }
   | { readonly kind: "error" }
+  /** A token_hash link, waiting on a tap before it is spent — see the module
+   *  comment for why this can never auto-fire. */
+  | { readonly kind: "confirm"; readonly tokenHash: string; readonly verifyType: VerifyType }
   | { readonly kind: "setPassword"; readonly accessToken: string }
   | { readonly kind: "done" }
   /** Confirmed, but no token to set a password with (already-used link, or a
    *  legacy confirm link from before invite-style registration). */
   | { readonly kind: "confirmed" };
+
+/** Copy for the confirm tap, keyed by what GoTrue's `type` says the link is
+ *  for. `magiclink` and `email` both land on the same generic "confirm your
+ *  email" copy — neither promises a company or an invite. */
+function confirmCopy(verifyType: VerifyType): { heading: string; button: string } {
+  if (verifyType === "invite")
+    return { heading: "You're invited to WorkLog", button: "Accept invite" };
+  if (verifyType === "recovery") return { heading: "Reset your password", button: "Continue" };
+  return { heading: "Confirm your email", button: "Confirm email" };
+}
+
+/**
+ * `POST /auth/v1/verify` failure -> outcome, same shape as classifySaveFailure
+ * but not the same rules: GoTrue answers an already-spent or malformed
+ * token_hash with 400 as often as 401/403, so 400 is expired here too (it is
+ * NOT expired in classifySaveFailure, which is about a rejected password).
+ */
+function classifyVerifyFailure(status: number): "expired" | "rateLimited" | "failed" {
+  if (status === 400 || status === 401 || status === 403) return "expired";
+  if (status === 429) return "rateLimited";
+  return "failed";
+}
 
 export default function WelcomePage() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
@@ -80,6 +108,19 @@ export default function WelcomePage() {
       setPhase({ kind: "setPassword", accessToken });
       return;
     }
+    // New shape: a hashed one-time token, exchanged only on a button tap
+    // (never here, never elsewhere in this effect) so a mail scanner's GET of
+    // the emailed link cannot burn it before the recipient sees the page.
+    const tokenHash = readTokenHash(window.location.hash);
+    if (tokenHash) {
+      const verifyType = readVerifyType(window.location.hash);
+      if (verifyType) {
+        setPhase({ kind: "confirm", tokenHash, verifyType });
+        return;
+      }
+      setPhase({ kind: "error" });
+      return;
+    }
     setPhase({ kind: "confirmed" });
   }, []);
 
@@ -106,6 +147,61 @@ export default function WelcomePage() {
         if (seq === strengthSeq.current) setStrength(null);
       });
   }, []);
+
+  // Fires ONLY from the button's onClick below — never on mount, never in an
+  // effect. A corporate mail scanner GETs every link in the email; if this
+  // ran on load it would spend the one-time token before the recipient ever
+  // saw the page.
+  const onConfirmTap = async () => {
+    if (savingRef.current || phase.kind !== "confirm") return;
+    setFormError(null);
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !anonKey) {
+      setFormError(GENERIC_ERROR);
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const response = await fetch(`${supabaseUrl}/auth/v1/verify`, {
+        method: "POST",
+        headers: { apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: phase.verifyType, token_hash: phase.tokenHash }),
+      });
+      if (response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { access_token?: string };
+        // Spent — drop it from the address bar the same way the setPassword
+        // success path does.
+        window.history.replaceState(null, "", window.location.pathname);
+        setPhase(
+          body.access_token
+            ? { kind: "setPassword", accessToken: body.access_token }
+            : { kind: "confirmed" },
+        );
+        return;
+      }
+      // Never render the response body — same phishing guard as
+      // hasHashError/error_description above.
+      const outcome = classifyVerifyFailure(response.status);
+      if (outcome === "expired") {
+        setExpired(true);
+        return;
+      }
+      if (outcome === "rateLimited") {
+        setFormError("Too many attempts — wait a minute and try again.");
+        return;
+      }
+      setFormError(GENERIC_ERROR);
+    } catch {
+      setFormError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
+    }
+  };
 
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -248,6 +344,27 @@ export default function WelcomePage() {
                 Confirmation links can only be used once. Open the WorkLog app and use
                 &quot;Forgot password?&quot; on the sign-in screen to send yourself a new one.
               </p>
+            </div>
+          ) : null}
+
+          {phase.kind === "confirm" && !expired ? (
+            <div>
+              <h1>{confirmCopy(phase.verifyType).heading}</h1>
+              <p style={{ marginTop: 12 }}>
+                Tap the button to continue. This link only works once.
+              </p>
+
+              {formError ? <div className="form-notice err">{formError}</div> : null}
+
+              <button
+                className="btn btn-primary btn-block"
+                type="button"
+                onClick={() => void onConfirmTap()}
+                disabled={saving}
+                style={{ marginTop: 20 }}
+              >
+                {saving ? "Working…" : confirmCopy(phase.verifyType).button}
+              </button>
             </div>
           ) : null}
 

@@ -64,6 +64,12 @@ Port from PunchLog:
 
 - `app/set-password.tsx` — password choice screen reached from the confirm email
   (registration) and recovery email (forgot password).
+  > **Amendment (2026-09-07):** recovery (forgot password) now lands on the
+  > site's `/welcome` instead, which exchanges the emailed `token_hash` on a
+  > button tap rather than on load — see `feat(auth): scanner-proof password
+  > reset`. `set-password.tsx`'s `type=recovery` handling stays for legacy
+  > access_token-style links already in flight; registration confirmation is
+  > unchanged.
 - `app/confirm.tsx` — confirm-link landing.
 - Seams: `passwordChoice.ts`, `passwordStrength.ts`, `setPasswordSession.ts`,
   `confirmLanding.ts`, `pendingAuthLink.ts` (+ their test files).

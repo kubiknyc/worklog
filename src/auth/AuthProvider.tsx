@@ -27,6 +27,7 @@ import type { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { supabase } from '../supabase/client';
+import { SITE_URL } from '../lib/legal';
 import { accountKey, clearAccountCaches, pruneAccountForCache } from './accountCaches';
 import type { Tables, TablesUpdate } from '../supabase/types';
 import { mergeEffectiveMemberships, type CompanyMembership, type Membership } from './roles';
@@ -299,11 +300,17 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   }, []);
 
   const resetPassword = useCallback(async (email: string): Promise<string | null> => {
-    // Same redirect target the invite flow will use once app/set-password.tsx
-    // ships (M2, P2-9). `worklog://set-password` must be in Supabase Auth →
-    // URL Configuration → Redirect URLs before that screen lands.
+    // Points at the site's /welcome instead of the app's custom scheme: a
+    // plain GET /auth/v1/verify?token=... link gets consumed by corporate
+    // mail scanners that pre-fetch every URL in an email, burning the
+    // one-time token before the recipient ever opens it. The emailed link is
+    // now a fragment (#token_hash=...&type=recovery) that /welcome exchanges
+    // only on a button tap, then lets the user choose a new password in the
+    // browser before coming back here to sign in. `worklog://set-password`
+    // stays registered in Supabase Auth → URL Configuration → Redirect URLs
+    // for invite and legacy access_token-style links.
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: 'worklog://set-password',
+      redirectTo: SITE_URL,
     });
     if (!error) return null;
     // authMessage's 400 copy ("Invalid email or password") is wrong here.

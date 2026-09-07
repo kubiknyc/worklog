@@ -7,10 +7,12 @@
  * flips AuthProvider's `status` to 'authed' and the (auth) layout guard
  * redirects into the tabs — no manual navigation here. The two demo rows
  * sign in with the seeded demo accounts (jobsight-backend/supabase/seed.sql).
- * Invite acceptance and password reset land on app/set-password.tsx in a
- * later milestone (M2, P2-9) — "Forgot password?" below only sends the
- * email; it does not link anywhere yet. New companies register via the
- * "Create a company account" link → app/(auth)/register.tsx.
+ * Invite acceptance lands on app/set-password.tsx via a deep link, in a
+ * later milestone (M2, P2-9). A password reset now emails an HTTPS link to
+ * the site's /welcome page, where the user chooses a new password in the
+ * browser before coming back here to sign in — "Forgot password?" below
+ * only sends the email. New companies register via the "Create a company
+ * account" link → app/(auth)/register.tsx.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -110,7 +112,9 @@ export default function LoginScreen() {
       return;
     }
     // GoTrue answers success for unknown emails too — don't confirm accounts.
-    setNotice('If that email has an account, a reset link is on its way. Open it on this phone.');
+    setNotice(
+      'If that email has an account, a reset link is on its way. Open it in your browser to choose a new password, then come back here and sign in.',
+    );
   };
 
   return (
