@@ -68,3 +68,21 @@ test("branding in the rendered copy is WorkLog, no leftover PunchLog/punchlist s
   expect(body).not.toContain("punchlist");
   expect(body).toContain("WorkLog");
 });
+
+// Informed consent: nobody is made the administrator of a company they were
+// never shown. Both halves of that promise are one RPC each, so pin both names
+// — losing the discard call would silently leave the marker parked.
+test("the register flow asks before it creates, and can decline", () => {
+  expect(page).toContain("claim_pending_company");
+  expect(page).toContain("discard_pending_company");
+  expect(page).toContain("Yes, set it up");
+  expect(page).toContain("No, that&apos;s not my company");
+});
+
+// The company name arrives in a URL fragment anyone can craft, so it may only
+// ever be React text. An innerHTML escape hatch here would be a phishing hole
+// under the real logo — the same guard hasHashError exists for.
+test("the company name is rendered as text, never as markup", () => {
+  expect(page).toContain("{phase.company}");
+  expect(page).not.toContain("dangerouslySetInnerHTML");
+});

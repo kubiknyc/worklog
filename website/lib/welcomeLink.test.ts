@@ -7,6 +7,7 @@ import {
   hasHashError,
   readAccessToken,
   readLinkType,
+  readRegisterCompany,
   readRegisterFlow,
   readTokenHash,
   readVerifyType,
@@ -162,4 +163,36 @@ test("an empty fragment is not a register link", () => {
 
 test("readRegisterFlow tolerates a fragment with no leading hash", () => {
   expect(readRegisterFlow("token_hash=abc&type=signup&flow=register")).toBe(true);
+});
+
+// The company name the reader is asked to approve before anything is created.
+// It comes straight out of an attacker-craftable fragment, so the page renders
+// it as React text and this reader caps its length.
+test("reads the company name from a register confirm link", () => {
+  expect(readRegisterCompany("#token_hash=abc&flow=register&company=Keystone")).toBe("Keystone");
+});
+
+test("url-decodes spaces and ampersands in the company name", () => {
+  expect(readRegisterCompany("#flow=register&company=Keystone%20%26%20Sons")).toBe(
+    "Keystone & Sons",
+  );
+  expect(readRegisterCompany("#flow=register&company=Keystone+Build")).toBe("Keystone Build");
+});
+
+// Older mails still in flight carry flow=register with no company. Those fall
+// back to the previous behaviour, so absent must read as null, not "".
+test("returns null when the link carries no company", () => {
+  expect(readRegisterCompany("#token_hash=abc&flow=register")).toBeNull();
+  expect(readRegisterCompany("")).toBeNull();
+  expect(readRegisterCompany("#")).toBeNull();
+});
+
+test("a blank or whitespace-only company is null, not an empty heading", () => {
+  expect(readRegisterCompany("#flow=register&company=")).toBeNull();
+  expect(readRegisterCompany("#flow=register&company=%20%20")).toBeNull();
+});
+
+test("an over-long company name is capped rather than rendered whole", () => {
+  const name = readRegisterCompany(`#flow=register&company=${"a".repeat(500)}`);
+  expect(name).toHaveLength(120);
 });
