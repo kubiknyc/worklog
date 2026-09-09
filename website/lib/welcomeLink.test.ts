@@ -7,6 +7,7 @@ import {
   hasHashError,
   readAccessToken,
   readLinkType,
+  readRegisterFlow,
   readTokenHash,
   readVerifyType,
 } from "./welcomeLink";
@@ -133,4 +134,32 @@ test("only genuine auth failures are ever classified as expired", () => {
   for (const status of [400, 422, 429, 500, 502, 503]) {
     expect(classifySaveFailure(status).kind).not.toBe("expired");
   }
+});
+
+// Register confirm links are tagged `&flow=register` by the register edge
+// function; that tag is the only thing telling this page a company is waiting
+// to be claimed. An invite or a password reset must never trigger the claim,
+// so the match is exact rather than "the key is present".
+test("reads the register flow tag from a confirm-link fragment", () => {
+  expect(readRegisterFlow("#token_hash=abc&type=signup&flow=register")).toBe(true);
+});
+
+test("an untagged link is not a register link", () => {
+  expect(readRegisterFlow("#token_hash=abc&type=invite")).toBe(false);
+  expect(readRegisterFlow("#token_hash=abc&type=recovery")).toBe(false);
+});
+
+test("any other flow value is not a register link", () => {
+  expect(readRegisterFlow("#token_hash=abc&type=signup&flow=invite")).toBe(false);
+  expect(readRegisterFlow("#token_hash=abc&type=signup&flow=")).toBe(false);
+  expect(readRegisterFlow("#token_hash=abc&type=signup&flow=REGISTER")).toBe(false);
+});
+
+test("an empty fragment is not a register link", () => {
+  expect(readRegisterFlow("")).toBe(false);
+  expect(readRegisterFlow("#")).toBe(false);
+});
+
+test("readRegisterFlow tolerates a fragment with no leading hash", () => {
+  expect(readRegisterFlow("token_hash=abc&type=signup&flow=register")).toBe(true);
 });

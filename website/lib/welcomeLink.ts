@@ -117,3 +117,19 @@ export function classifySaveFailure(status: number, message?: string | null): Sa
   if (status === 429) return { kind: "rateLimited" };
   return { kind: "failed" };
 }
+
+/**
+ * Whether this link came from self-serve registration, as opposed to an
+ * invite or a password reset.
+ *
+ * The register confirm link is tagged `&flow=register` by the
+ * `worklog-register-company` edge function. Only that flow has a company
+ * waiting to be created, so only that flow calls `claim_pending_company`
+ * after the token is spent. Invite and recovery links never carry the tag,
+ * and an exact match is required — anything else is not a register link.
+ */
+export function readRegisterFlow(hash: string): boolean {
+  const value = hash.replace(/^#/, "");
+  if (!value) return false;
+  return new URLSearchParams(value).get("flow") === "register";
+}
