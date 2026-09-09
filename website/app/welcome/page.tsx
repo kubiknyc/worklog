@@ -25,8 +25,15 @@
  * A register confirm link (tagged `flow=register`) has one extra step: once
  * the token is spent, this page calls the `claim_pending_company` RPC to turn
  * the parked registration into a real company before asking for a password.
- * The same step is being added to PunchLog's copy of this page — keep the
- * two in step in behaviour.
+ * The same step shipped in PunchLog's copy of this page (kubiknyc/PunchLog#158)
+ * — keep the two in step in behaviour.
+ *
+ * The claim never runs on some paths that reach a credential another way: the
+ * app's "Forgot password?" recovery link is never tagged `flow=register`, so
+ * it never claims, and neither does a legacy `#access_token` fragment (both
+ * skip straight to setPassword). That is safe only because the confirm-time
+ * DB trigger still mints the company independently today — whoever retires
+ * that trigger has to give those paths a claim of their own first.
  */
 import Image from "next/image";
 import Link from "next/link";
@@ -465,9 +472,9 @@ export default function WelcomePage() {
             <div>
               <h1>Setting up your company</h1>
               <p style={{ marginTop: 12 }}>
-                {saving
-                  ? "One moment — we're finishing your company setup."
-                  : "Your email is confirmed, but we couldn't finish setting up your company. Try again."}
+                {formError
+                  ? "Your email is confirmed, but setting up your company didn't finish."
+                  : "One moment — we're finishing your company setup."}
               </p>
 
               {formError ? <div className="form-notice err">{formError}</div> : null}
@@ -481,6 +488,34 @@ export default function WelcomePage() {
               >
                 {saving ? "Working…" : "Try again"}
               </button>
+
+              {/* The claim RPC can fail for reasons "Try again" can't fix (a
+                  5xx, a still-missing migration...) — without an escape hatch
+                  that's a dead end. Safe to skip today: the confirm-time DB
+                  trigger still mints the company independently of this RPC,
+                  so choosing a password without a successful claim still
+                  leaves the account usable. Once that trigger is retired
+                  (jobsight-backend #34 phase 2), this path needs a claim of
+                  its own — this button must not survive that migration
+                  unexamined. */}
+              {formError ? (
+                <button
+                  type="button"
+                  onClick={() => setPhase({ kind: "setPassword", accessToken: phase.accessToken })}
+                  disabled={saving}
+                  style={{
+                    marginTop: 12,
+                    display: "block",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Skip for now and choose your password
+                </button>
+              ) : null}
             </div>
           ) : null}
 
