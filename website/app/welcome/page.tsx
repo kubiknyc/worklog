@@ -21,6 +21,12 @@
  * auth-parity-design.md). Every registrant who reaches this page came from
  * the app's confirm/recovery flow, so the recovery copy below points back at
  * the app instead of at website routes that would 404.
+ *
+ * A register confirm link (tagged `flow=register`) has one extra step: once
+ * the token is spent, this page calls the `claim_pending_company` RPC to turn
+ * the parked registration into a real company before asking for a password.
+ * The same step is being added to PunchLog's copy of this page — keep the
+ * two in step in behaviour.
  */
 import Image from "next/image";
 import Link from "next/link";
@@ -36,6 +42,7 @@ import {
   hasHashError,
   readAccessToken,
   readLinkType,
+  readRegisterFlow,
   readTokenHash,
   readVerifyType,
   type VerifyType,
@@ -50,6 +57,11 @@ type Phase =
   /** A token_hash link, waiting on a tap before it is spent — see the module
    *  comment for why this can never auto-fire. */
   | { readonly kind: "confirm"; readonly tokenHash: string; readonly verifyType: VerifyType }
+  /** Register flow only: the token is already spent and the company is being
+   *  claimed. A failure here must NOT send the reader back to the confirm tap
+   *  — that token is gone — so this phase holds on to the access token and
+   *  offers a retry of the claim alone. */
+  | { readonly kind: "claim"; readonly accessToken: string }
   | { readonly kind: "setPassword"; readonly accessToken: string }
   | { readonly kind: "done" }
   /** Confirmed, but no token to set a password with (already-used link, or a
@@ -90,9 +102,15 @@ export default function WelcomePage() {
   // never changes, but the success copy is chosen in `done`, which is set much
   // later. Threading it through every phase variant would buy nothing.
   const [linkType, setLinkType] = useState<WelcomeLinkType>("other");
+  // Read once, here, from the same fragment read as linkType. The tag is not
+  // needed until after the confirm tap, and the fragment is cleared the moment
+  // the token is spent — re-reading window.location.hash then would find
+  // nothing.
+  const [isRegisterFlow, setIsRegisterFlow] = useState(false);
 
   useEffect(() => {
     setLinkType(readLinkType(window.location.hash));
+    setIsRegisterFlow(readRegisterFlow(window.location.hash));
     if (hasHashError(window.location.hash)) {
       setPhase({ kind: "error" });
       return;
@@ -148,6 +166,73 @@ export default function WelcomePage() {
       });
   }, []);
 
+  /**
+   * Turn the parked registration into a real company. Register flow only, and
+   * only after the confirm tap has spent the token — never on mount.
+   *
+   * Does not manage `saving`/`savingRef` itself: both callers already hold
+   * them, and claiming them a second time here would deadlock the call.
+   *
+   * The RPC is idempotent, so retrying after a timeout that actually
+   * succeeded is harmless. On failure the reader stays in the `claim` phase
+   * with a retry — the one-time confirm token is already spent, so sending
+   * them back to the confirm tap, or to a fresh link, would be worse than a
+   * second try.
+   */
+  const claimPendingCompany = async (accessToken: string) => {
+    setFormError(null);
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !anonKey) {
+      setFormError(GENERIC_ERROR);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/claim_pending_company`, {
+        method: "POST",
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      });
+      if (response.ok) {
+        setPhase({ kind: "setPassword", accessToken });
+        return;
+      }
+      // Never render the response body — the same phishing guard as
+      // everywhere else on this page.
+      if (response.status === 401 || response.status === 403) {
+        setExpired(true);
+        return;
+      }
+      setFormError(
+        response.status === 429
+          ? "Too many attempts — wait a minute and try again."
+          : GENERIC_ERROR,
+      );
+    } catch {
+      setFormError("Couldn't reach the server. Check your connection and try again.");
+    }
+  };
+
+  /** The claim card's "Try again". Retries the RPC with the token already in
+   *  hand — never a second verify. */
+  const onClaimRetry = async () => {
+    if (savingRef.current || phase.kind !== "claim") return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await claimPendingCompany(phase.accessToken);
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
+    }
+  };
+
   // Fires ONLY from the button's onClick below — never on mount, never in an
   // effect. A corporate mail scanner GETs every link in the email; if this
   // ran on load it would spend the one-time token before the recipient ever
@@ -176,11 +261,19 @@ export default function WelcomePage() {
         // Spent — drop it from the address bar the same way the setPassword
         // success path does.
         window.history.replaceState(null, "", window.location.pathname);
-        setPhase(
-          body.access_token
-            ? { kind: "setPassword", accessToken: body.access_token }
-            : { kind: "confirmed" },
-        );
+        if (!body.access_token) {
+          setPhase({ kind: "confirmed" });
+          return;
+        }
+        if (!isRegisterFlow) {
+          setPhase({ kind: "setPassword", accessToken: body.access_token });
+          return;
+        }
+        // A register link: show the claim card, then create the company. On
+        // success claimPendingCompany moves on to setPassword; on failure the
+        // reader stays on the claim card with a retry.
+        setPhase({ kind: "claim", accessToken: body.access_token });
+        await claimPendingCompany(body.access_token);
         return;
       }
       // Never render the response body — same phishing guard as
@@ -364,6 +457,29 @@ export default function WelcomePage() {
                 style={{ marginTop: 20 }}
               >
                 {saving ? "Working…" : confirmCopy(phase.verifyType).button}
+              </button>
+            </div>
+          ) : null}
+
+          {phase.kind === "claim" && !expired ? (
+            <div>
+              <h1>Setting up your company</h1>
+              <p style={{ marginTop: 12 }}>
+                {saving
+                  ? "One moment — we're finishing your company setup."
+                  : "Your email is confirmed, but we couldn't finish setting up your company. Try again."}
+              </p>
+
+              {formError ? <div className="form-notice err">{formError}</div> : null}
+
+              <button
+                className="btn btn-primary btn-block"
+                type="button"
+                onClick={() => void onClaimRetry()}
+                disabled={saving}
+                style={{ marginTop: 20 }}
+              >
+                {saving ? "Working…" : "Try again"}
               </button>
             </div>
           ) : null}
