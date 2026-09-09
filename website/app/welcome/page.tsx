@@ -500,18 +500,14 @@ export default function WelcomePage() {
                   unexamined. */}
               {formError ? (
                 <button
+                  className="btn btn-ghost btn-block"
                   type="button"
-                  onClick={() => setPhase({ kind: "setPassword", accessToken: phase.accessToken })}
-                  disabled={saving}
-                  style={{
-                    marginTop: 12,
-                    display: "block",
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    color: "var(--accent)",
-                    cursor: "pointer",
+                  onClick={() => {
+                    setFormError(null);
+                    setPhase({ kind: "setPassword", accessToken: phase.accessToken });
                   }}
+                  disabled={saving}
+                  style={{ marginTop: 12 }}
                 >
                   Skip for now and choose your password
                 </button>
