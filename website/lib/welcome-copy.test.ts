@@ -79,6 +79,16 @@ test("the register flow asks before it creates, and can decline", () => {
   expect(page).toContain("No, that&apos;s not my company");
 });
 
+// A signup-link reader who declined the parked company, or whose claim went
+// stale, still lands on the "done" card. Without a guard, that card would
+// tell them their company is ready when none was ever created — a promise
+// they can't act on. Pin both: the guard on the existing sentence, and the
+// honest fallback that replaces it.
+test("the done card's company-ready copy is guarded against a declined or stale claim", () => {
+  expect(page).toContain('linkType === "signup" && !declinedCompany && !claimStale');
+  expect(page).toContain("You can register your company from the WorkLog app whenever");
+});
+
 // The company name arrives in a URL fragment anyone can craft, so it may only
 // ever be React text. An innerHTML escape hatch here would be a phishing hole
 // under the real logo — the same guard hasHashError exists for.

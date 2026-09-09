@@ -747,7 +747,7 @@ export default function WelcomePage() {
                 🎉
               </div>
               <h1>You&apos;re all set</h1>
-              {linkType === "signup" ? (
+              {linkType === "signup" && !declinedCompany && !claimStale ? (
                 <p>
                   Your password is saved and your company is ready. Open the WorkLog app on your
                   phone and sign in — then create your first project and invite your team.
@@ -758,6 +758,17 @@ export default function WelcomePage() {
                   projects will be waiting.
                 </p>
               )}
+              {/* A signup-link reader who declined the parked company, or whose
+                  claim went stale, still hit "done" — the branch above already
+                  routes them to the honest fallback copy, but that copy talks
+                  as if they were never offered a company at all. Say the true
+                  thing: no company exists yet, and registering one is still an
+                  option from the app. */}
+              {linkType === "signup" && (declinedCompany || claimStale) ? (
+                <p style={{ marginTop: 12 }}>
+                  You can register your company from the WorkLog app whenever you&apos;re ready.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
