@@ -623,6 +623,7 @@ export default function WelcomePage() {
                   type="button"
                   onClick={() => {
                     setFormError(null);
+                    setDeclinedCompany(true);
                     setPhase({ kind: "setPassword", accessToken: phase.accessToken });
                   }}
                   disabled={saving}
@@ -764,7 +765,7 @@ export default function WelcomePage() {
                   as if they were never offered a company at all. Say the true
                   thing: no company exists yet, and registering one is still an
                   option from the app. */}
-              {linkType === "signup" && (declinedCompany || claimStale) ? (
+              {declinedCompany || claimStale ? (
                 <p style={{ marginTop: 12 }}>
                   You can register your company from the WorkLog app whenever you&apos;re ready.
                 </p>
