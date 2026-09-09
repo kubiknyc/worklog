@@ -68,3 +68,31 @@ test("branding in the rendered copy is WorkLog, no leftover PunchLog/punchlist s
   expect(body).not.toContain("punchlist");
   expect(body).toContain("WorkLog");
 });
+
+// Informed consent: nobody is made the administrator of a company they were
+// never shown. Both halves of that promise are one RPC each, so pin both names
+// — losing the discard call would silently leave the marker parked.
+test("the register flow asks before it creates, and can decline", () => {
+  expect(page).toContain("claim_pending_company");
+  expect(page).toContain("discard_pending_company");
+  expect(page).toContain("Yes, set it up");
+  expect(page).toContain("No, that&apos;s not my company");
+});
+
+// A signup-link reader who declined the parked company, or whose claim went
+// stale, still lands on the "done" card. Without a guard, that card would
+// tell them their company is ready when none was ever created — a promise
+// they can't act on. Pin both: the guard on the existing sentence, and the
+// honest fallback that replaces it.
+test("the done card's company-ready copy is guarded against a declined or stale claim", () => {
+  expect(page).toContain('linkType === "signup" && !declinedCompany && !claimStale');
+  expect(page).toContain("You can register your company from the WorkLog app whenever");
+});
+
+// The company name arrives in a URL fragment anyone can craft, so it may only
+// ever be React text. An innerHTML escape hatch here would be a phishing hole
+// under the real logo — the same guard hasHashError exists for.
+test("the company name is rendered as text, never as markup", () => {
+  expect(page).toContain("{phase.company}");
+  expect(page).not.toContain("dangerouslySetInnerHTML");
+});

@@ -23,10 +23,20 @@
  * the app instead of at website routes that would 404.
  *
  * A register confirm link (tagged `flow=register`) has one extra step: once
- * the token is spent, this page calls the `claim_pending_company` RPC to turn
- * the parked registration into a real company before asking for a password.
- * The same step shipped in PunchLog's copy of this page (kubiknyc/PunchLog#158)
- * — keep the two in step in behaviour.
+ * the token is spent, this page turns the parked registration into a real
+ * company before asking for a password. The same step shipped in PunchLog's
+ * copy of this page (kubiknyc/PunchLog#158) — keep the two in step in
+ * behaviour.
+ *
+ * That step now asks first. A register link also carries the parked company
+ * name (`&company=...`), and the page shows it back to the reader before
+ * anything is created: "Yes, set it up" calls `claim_pending_company` with the
+ * name from the link, "No, that's not my company" calls
+ * `discard_pending_company`, which clears the marker and mints nothing. Nobody
+ * ends up administrating a company they never agreed to. Older mails still in
+ * flight carry `flow=register` with no name; those keep the previous
+ * behaviour — a zero-argument claim with no consent card, because there is no
+ * name to show and asking about an unnamed company helps no one.
  *
  * The claim never runs on some paths that reach a credential another way: the
  * app's "Forgot password?" recovery link is never tagged `flow=register`, so
@@ -49,6 +59,7 @@ import {
   hasHashError,
   readAccessToken,
   readLinkType,
+  readRegisterCompany,
   readRegisterFlow,
   readTokenHash,
   readVerifyType,
@@ -64,11 +75,22 @@ type Phase =
   /** A token_hash link, waiting on a tap before it is spent — see the module
    *  comment for why this can never auto-fire. */
   | { readonly kind: "confirm"; readonly tokenHash: string; readonly verifyType: VerifyType }
+  /* A failure in `claim` must NOT send the reader back to the confirm tap —
+     that token is gone — so the phase holds on to the access token and offers
+     a retry of the claim alone. */
+  /** Register flow only: the token is spent and the reader is being asked
+   *  whether the company named in the link is really theirs. Nothing has been
+   *  created yet — both answers below are one tap away. */
+  | { readonly kind: "consent"; readonly accessToken: string; readonly company: string }
   /** Register flow only: the token is already spent and the company is being
-   *  claimed. A failure here must NOT send the reader back to the confirm tap
-   *  — that token is gone — so this phase holds on to the access token and
-   *  offers a retry of the claim alone. */
-  | { readonly kind: "claim"; readonly accessToken: string }
+   *  claimed. `expectedName` is the name the reader approved on the consent
+   *  card, sent so the server can refuse a claim whose link has gone stale;
+   *  null for an older link that carried no name. */
+  | {
+      readonly kind: "claim";
+      readonly accessToken: string;
+      readonly expectedName: string | null;
+    }
   | { readonly kind: "setPassword"; readonly accessToken: string }
   | { readonly kind: "done" }
   /** Confirmed, but no token to set a password with (already-used link, or a
@@ -114,10 +136,19 @@ export default function WelcomePage() {
   // the token is spent — re-reading window.location.hash then would find
   // nothing.
   const [isRegisterFlow, setIsRegisterFlow] = useState(false);
+  // Read from the same one fragment read, for the same reason as the tag.
+  const [pendingCompany, setPendingCompany] = useState<string | null>(null);
+  // The claim was refused because the link names a company that is no longer
+  // parked. Retrying cannot fix that, so it gets its own copy and no retry.
+  const [claimStale, setClaimStale] = useState(false);
+  // The reader said the company wasn't theirs. Only changes what the password
+  // card tells them next.
+  const [declinedCompany, setDeclinedCompany] = useState(false);
 
   useEffect(() => {
     setLinkType(readLinkType(window.location.hash));
     setIsRegisterFlow(readRegisterFlow(window.location.hash));
+    setPendingCompany(readRegisterCompany(window.location.hash));
     if (hasHashError(window.location.hash)) {
       setPhase({ kind: "error" });
       return;
@@ -185,9 +216,16 @@ export default function WelcomePage() {
    * with a retry — the one-time confirm token is already spent, so sending
    * them back to the confirm tap, or to a fresh link, would be worse than a
    * second try.
+   *
+   * `expectedName` is the name the reader approved. Sending it lets the
+   * server refuse the claim (400) when the link no longer matches what is
+   * parked, rather than handing someone a company they were never shown.
+   * Null for an older link that carried no name — the zero-argument claim
+   * that shipped first.
    */
-  const claimPendingCompany = async (accessToken: string) => {
+  const claimPendingCompany = async (accessToken: string, expectedName: string | null) => {
     setFormError(null);
+    setClaimStale(false);
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -204,7 +242,7 @@ export default function WelcomePage() {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: "{}",
+        body: expectedName === null ? "{}" : JSON.stringify({ expected_name: expectedName }),
       });
       if (response.ok) {
         setPhase({ kind: "setPassword", accessToken });
@@ -214,6 +252,13 @@ export default function WelcomePage() {
       // everywhere else on this page.
       if (response.status === 401 || response.status === 403) {
         setExpired(true);
+        return;
+      }
+      // The name in the link is not what is parked any more. A second attempt
+      // sends the same name and gets the same answer, so this is not a retry
+      // case — say so plainly and leave the password door open.
+      if (response.status === 400) {
+        setClaimStale(true);
         return;
       }
       setFormError(
@@ -233,7 +278,74 @@ export default function WelcomePage() {
     savingRef.current = true;
     setSaving(true);
     try {
-      await claimPendingCompany(phase.accessToken);
+      await claimPendingCompany(phase.accessToken, phase.expectedName);
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
+    }
+  };
+
+  /** "Yes, set it up" on the consent card. Sends the name the reader was
+   *  actually shown, then hands off to the existing claim card for progress,
+   *  retry and skip. Tap-driven only, like everything else here. */
+  const onAcceptCompany = async () => {
+    if (savingRef.current || phase.kind !== "consent") return;
+    const { accessToken, company } = phase;
+    savingRef.current = true;
+    setSaving(true);
+    setPhase({ kind: "claim", accessToken, expectedName: company });
+    try {
+      await claimPendingCompany(accessToken, company);
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
+    }
+  };
+
+  /** "No, that's not my company". Clears the parked marker — this mints
+   *  nothing — and goes on to the password, which the reader still needs
+   *  either way. On failure they stay on the consent card; both buttons are
+   *  still live, so tapping again is the retry. */
+  const onDeclineCompany = async () => {
+    if (savingRef.current || phase.kind !== "consent") return;
+    setFormError(null);
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !anonKey) {
+      setFormError(GENERIC_ERROR);
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/discard_pending_company`, {
+        method: "POST",
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${phase.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      });
+      if (response.ok) {
+        setDeclinedCompany(true);
+        setPhase({ kind: "setPassword", accessToken: phase.accessToken });
+        return;
+      }
+      // Never render the response body.
+      if (response.status === 401 || response.status === 403) {
+        setExpired(true);
+        return;
+      }
+      setFormError(
+        response.status === 429
+          ? "Too many attempts — wait a minute and try again."
+          : GENERIC_ERROR,
+      );
+    } catch {
+      setFormError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setSaving(false);
       savingRef.current = false;
@@ -276,11 +388,17 @@ export default function WelcomePage() {
           setPhase({ kind: "setPassword", accessToken: body.access_token });
           return;
         }
-        // A register link: show the claim card, then create the company. On
+        // A register link naming a company: ask before creating anything.
+        // Nothing fires here — the consent card is only rendered.
+        if (pendingCompany) {
+          setPhase({ kind: "consent", accessToken: body.access_token, company: pendingCompany });
+          return;
+        }
+        // An older register link with no name to show: claim as before. On
         // success claimPendingCompany moves on to setPassword; on failure the
         // reader stays on the claim card with a retry.
-        setPhase({ kind: "claim", accessToken: body.access_token });
-        await claimPendingCompany(body.access_token);
+        setPhase({ kind: "claim", accessToken: body.access_token, expectedName: null });
+        await claimPendingCompany(body.access_token, null);
         return;
       }
       // Never render the response body — same phishing guard as
@@ -468,26 +586,81 @@ export default function WelcomePage() {
             </div>
           ) : null}
 
-          {phase.kind === "claim" && !expired ? (
+          {/* Consent, before anything is created. The company name is React
+              text, never markup — it arrives in a fragment anyone can craft. */}
+          {phase.kind === "consent" && !expired ? (
             <div>
-              <h1>Setting up your company</h1>
-              <p style={{ marginTop: 12 }}>
-                {formError
-                  ? "Your email is confirmed, but setting up your company didn't finish."
-                  : "One moment — we're finishing your company setup."}
-              </p>
+              <h1>Set up {phase.company} as your company?</h1>
+              <p style={{ marginTop: 12 }}>You&apos;ll be its administrator.</p>
 
               {formError ? <div className="form-notice err">{formError}</div> : null}
 
               <button
                 className="btn btn-primary btn-block"
                 type="button"
-                onClick={() => void onClaimRetry()}
+                onClick={() => void onAcceptCompany()}
                 disabled={saving}
                 style={{ marginTop: 20 }}
               >
-                {saving ? "Working…" : "Try again"}
+                {saving ? "Working…" : "Yes, set it up"}
               </button>
+
+              <button
+                className="btn btn-ghost btn-block"
+                type="button"
+                onClick={() => void onDeclineCompany()}
+                disabled={saving}
+                style={{ marginTop: 12 }}
+              >
+                No, that&apos;s not my company
+              </button>
+
+              {/* Same escape hatch as the claim card: a discard that keeps
+                  failing must not trap someone short of a password. */}
+              {formError ? (
+                <button
+                  className="btn btn-ghost btn-block"
+                  type="button"
+                  onClick={() => {
+                    setFormError(null);
+                    setDeclinedCompany(true);
+                    setPhase({ kind: "setPassword", accessToken: phase.accessToken });
+                  }}
+                  disabled={saving}
+                  style={{ marginTop: 12 }}
+                >
+                  Skip for now and choose your password
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {phase.kind === "claim" && !expired ? (
+            <div>
+              <h1>Setting up your company</h1>
+              <p style={{ marginTop: 12 }}>
+                {claimStale
+                  ? "This link is out of date for that company. Register again from the app to get a fresh one."
+                  : formError
+                    ? "Your email is confirmed, but setting up your company didn't finish."
+                    : "One moment — we're finishing your company setup."}
+              </p>
+
+              {formError ? <div className="form-notice err">{formError}</div> : null}
+
+              {/* No retry when the link is out of date: a second attempt sends
+                  the same name and gets the same refusal. */}
+              {claimStale ? null : (
+                <button
+                  className="btn btn-primary btn-block"
+                  type="button"
+                  onClick={() => void onClaimRetry()}
+                  disabled={saving}
+                  style={{ marginTop: 20 }}
+                >
+                  {saving ? "Working…" : "Try again"}
+                </button>
+              )}
 
               {/* The claim RPC can fail for reasons "Try again" can't fix (a
                   5xx, a still-missing migration...) — without an escape hatch
@@ -498,7 +671,7 @@ export default function WelcomePage() {
                   (jobsight-backend #34 phase 2), this path needs a claim of
                   its own — this button must not survive that migration
                   unexamined. */}
-              {formError ? (
+              {formError || claimStale ? (
                 <button
                   className="btn btn-ghost btn-block"
                   type="button"
@@ -522,6 +695,12 @@ export default function WelcomePage() {
                 Your email is verified. Pick a password to finish setting up your account — you
                 will use it to sign in on the WorkLog app.
               </p>
+              {declinedCompany ? (
+                <p style={{ marginTop: 12 }}>
+                  We haven&apos;t set up a company for you. You can register your own company
+                  from the WorkLog app later.
+                </p>
+              ) : null}
 
               {formError ? <div className="form-notice err">{formError}</div> : null}
 
@@ -569,7 +748,7 @@ export default function WelcomePage() {
                 🎉
               </div>
               <h1>You&apos;re all set</h1>
-              {linkType === "signup" ? (
+              {linkType === "signup" && !declinedCompany && !claimStale ? (
                 <p>
                   Your password is saved and your company is ready. Open the WorkLog app on your
                   phone and sign in — then create your first project and invite your team.
@@ -580,6 +759,17 @@ export default function WelcomePage() {
                   projects will be waiting.
                 </p>
               )}
+              {/* A signup-link reader who declined the parked company, or whose
+                  claim went stale, still hit "done" — the branch above already
+                  routes them to the honest fallback copy, but that copy talks
+                  as if they were never offered a company at all. Say the true
+                  thing: no company exists yet, and registering one is still an
+                  option from the app. */}
+              {declinedCompany || claimStale ? (
+                <p style={{ marginTop: 12 }}>
+                  You can register your company from the WorkLog app whenever you&apos;re ready.
+                </p>
+              ) : null}
             </div>
           ) : null}
 

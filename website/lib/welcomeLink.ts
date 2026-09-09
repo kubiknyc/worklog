@@ -133,3 +133,31 @@ export function readRegisterFlow(hash: string): boolean {
   if (!value) return false;
   return new URLSearchParams(value).get("flow") === "register";
 }
+
+/** Longest company name this page will render. The column is longer than
+ *  anything a heading can hold, and the link is attacker-craftable, so the
+ *  name is capped rather than trusted to be short. */
+const MAX_COMPANY_NAME = 120;
+
+/**
+ * The company name a register confirm link parks for the reader to approve.
+ *
+ * Register links now carry `&company=<urlencoded name>` alongside
+ * `flow=register`, so the page can ask "set up <name> as your company?"
+ * before creating anything. `URLSearchParams.get` already URL-decodes it.
+ *
+ * Null when the key is absent or blank: older mails still in flight carry
+ * `flow=register` with no company, and those keep the previous behaviour (a
+ * zero-argument claim, no consent step).
+ *
+ * The value is never trusted as markup — the page renders it as React text
+ * — but it is capped here so a very long name cannot wreck the card.
+ */
+export function readRegisterCompany(hash: string): string | null {
+  const value = hash.replace(/^#/, "");
+  if (!value) return null;
+  const raw = new URLSearchParams(value).get("company");
+  if (!raw) return null;
+  const name = raw.trim().slice(0, MAX_COMPANY_NAME).trim();
+  return name || null;
+}
