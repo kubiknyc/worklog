@@ -245,7 +245,7 @@ describe('sqliteRepo reads', () => {
     ]);
   });
 
-  it('listReports returns a project\'s reports newest report_date first', async () => {
+  it("listReports returns a project's reports newest report_date first", async () => {
     const older = { id: 'r1', project_id: 'p1', report_date: '2026-07-01', status: 'locked' };
     const newer = { id: 'r2', project_id: 'p1', report_date: '2026-07-03', status: 'draft' };
     const otherProject = { id: 'r3', project_id: 'p2', report_date: '2026-07-05', status: 'draft' };

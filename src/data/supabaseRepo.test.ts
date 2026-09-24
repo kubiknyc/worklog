@@ -179,6 +179,29 @@ describe('SupabaseRepository read path', () => {
     await expect(supabaseRepository.listSections('r1')).resolves.toEqual([]);
   });
 
+  it('listReports scopes to the project and orders newest-first for the History tab', async () => {
+    tableResults.set('daily_reports', {
+      data: [{ id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'draft' }],
+      error: null,
+    });
+
+    const rows = await supabaseRepository.listReports('p1');
+
+    expect(rows).toEqual([
+      { id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'draft' },
+    ]);
+    expect(argsOf('daily_reports', 'eq')).toEqual(['project_id', 'p1']);
+    // Newest-first: reversing this silently buries the current report at the
+    // bottom of the History list.
+    expect(argsOf('daily_reports', 'order')).toEqual(['report_date', { ascending: false }]);
+  });
+
+  it('listReports returns an empty list when PostgREST returns null data', async () => {
+    tableResults.set('daily_reports', { data: null, error: null });
+
+    await expect(supabaseRepository.listReports('p1')).resolves.toEqual([]);
+  });
+
   it('getWeather reads the override and auto columns for the report', async () => {
     tableResults.set('report_weather', {
       data: { report_id: 'r1', weather_source: 'auto', auto_condition: 'Sunny', auto_temp_f: 72 },
@@ -359,6 +382,7 @@ describe('SupabaseRepository error masking', () => {
       () => supabaseRepository.getReportByDate('p1', '2026-08-03'),
     ],
     ['listSections', 'report_sections', () => supabaseRepository.listSections('r1')],
+    ['listReports', 'daily_reports', () => supabaseRepository.listReports('p1')],
     ['getWeather', 'report_weather', () => supabaseRepository.getWeather('r1')],
   ])('%s masks a query error but logs the raw one', async (context, table, call) => {
     tableResults.set(table, { data: null, error: { message: 'column x does not exist' } });

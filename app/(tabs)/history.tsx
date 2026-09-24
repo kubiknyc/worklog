@@ -9,7 +9,13 @@ import { useCallback } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EmptyState, ListSkeleton, PrimaryButton, ReportStatusChip, SheetRow } from '../../src/components';
+import {
+  EmptyState,
+  ListSkeleton,
+  PrimaryButton,
+  ReportStatusChip,
+  SheetRow,
+} from '../../src/components';
 import { useRepository } from '../../src/data';
 import type { DailyReportRow } from '../../src/data/types';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
