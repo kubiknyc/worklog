@@ -17,7 +17,9 @@ import { SECTION_DRAFT_DEBOUNCE_MS } from './useSectionDraft';
 // lazily requiring the RN/Expo component stack during its first `render`.
 // Waiting the 400ms debounce on the wall clock puts both inside one jest test
 // budget, which a cold transform cache blows through. Repo precedent:
-// CrewWorkSheet.test.tsx and useSectionDraft.test.tsx.
+// CrewWorkSheet.test.tsx and useSectionDraft.test.tsx. `advanceTimersByTimeAsync`
+// flushes the promise chain `issueWrite` kicks off, so the test does not encode
+// how many microtask ticks that chain happens to be deep.
 test('choosing a condition writes the weather override', async () => {
   jest.useFakeTimers();
   try {
@@ -27,11 +29,7 @@ test('choosing a condition writes the weather override', async () => {
       </ThemeProvider>,
     );
     fireEvent.press(getByLabelText('Rain'));
-    jest.advanceTimersByTime(SECTION_DRAFT_DEBOUNCE_MS);
-    // Flush the microtask chain the debounced callback kicks off (issueWrite
-    // chains through a Promise) — fake timers don't do this for us.
-    await Promise.resolve();
-    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(SECTION_DRAFT_DEBOUNCE_MS);
     expect(mockUpdateSection).toHaveBeenCalledWith(
       'r1',
       'weather',
