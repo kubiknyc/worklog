@@ -47,6 +47,13 @@ export function createSqliteRepo(
   db: Db,
   mutations: MutationStore,
   nudge: () => void = noop,
+  // The "after create_report while online" weather-fill trigger (M9,
+  // jobsight-backend worklog-weather header). Only the true-creation branch
+  // below fires it — a local hit needing a(nother) fill attempt is still
+  // covered by the fill-on-sync retry sweep (weatherFillSweep.native.ts),
+  // which is keyed off `report_weather.weather_source = 'none'` regardless of
+  // how the row was created.
+  onReportCreated: (report: DailyReportRow) => void = noop,
 ): Repository {
   // Serializes get-or-create per (project, date). The existence SELECT and the
   // INSERT in createReport must be atomic against a concurrent createReport for
@@ -101,6 +108,7 @@ export function createSqliteRepo(
       );
     });
     nudge();
+    onReportCreated(row);
     return row;
   }
 
@@ -147,6 +155,14 @@ export function createSqliteRepo(
         is_complete: r.is_complete === 1,
         updated_at: r.updated_at,
       }));
+    },
+
+    async listReports(projectId: string): Promise<readonly DailyReportRow[]> {
+      return db.getAllAsync<DailyReportRow>(
+        `SELECT id, project_id, report_date, status FROM daily_reports
+         WHERE project_id = ? ORDER BY report_date DESC`,
+        [projectId],
+      );
     },
 
     async getWeather(reportId: string): Promise<WeatherRow | null> {

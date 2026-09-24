@@ -102,6 +102,8 @@ export interface Repository {
   getReport(reportId: string): Promise<DailyReportRow | null>;
   /** All non-weather section rows for a report, ordered by section. */
   listSections(reportId: string): Promise<readonly ReportSectionRow[]>;
+  /** Every report for a project, newest report_date first (History tab, M10). */
+  listReports(projectId: string): Promise<readonly DailyReportRow[]>;
   getWeather(reportId: string): Promise<WeatherRow | null>;
   listMembers(projectId: string): Promise<readonly MemberRow[]>;
   /**

@@ -75,6 +75,7 @@ import {
   type PulledSection,
 } from './pullTables.native';
 import { evictProjects, sweepProject } from './pullSweep.native';
+import { runWeatherFillSweep } from './weatherFillSweep.native';
 import { reportSyncIncident } from '../lib/observability.native';
 import { errorMessage, isLikelyOffline } from '../lib/errors';
 
@@ -472,6 +473,20 @@ export function createPuller(
       // Belt and braces: the never-throws contract holds even for a failure in
       // the orchestration scaffolding itself (meta read, planning).
       failWith('pull', err);
+    }
+
+    // Fill-on-sync retry sweep (worklog-weather header): a plain best-effort
+    // side effect, run once we know we're online and this run wasn't
+    // abandoned — never allowed to affect `ok`/`error`/`committed`/`offline`.
+    // A successful fill only touches the SERVER row; the local mirror picks
+    // it up on the next pull via the normal report_weather ride-along, so
+    // there is nothing to fold into `committed` here.
+    if (!cancelled && !offline) {
+      try {
+        await runWeatherFillSweep(db);
+      } catch {
+        // runWeatherFillSweep never throws; stay defensive anyway.
+      }
     }
 
     return cancelled ? cancelledOutcome() : { ok, committed, offline, error };

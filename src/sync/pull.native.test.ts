@@ -31,6 +31,7 @@ import {
   applyAmendments,
 } from './pullTables.native';
 import { evictProjects, sweepProject } from './pullSweep.native';
+import { runWeatherFillSweep } from './weatherFillSweep.native';
 import { reportSyncIncident } from '../lib/observability.native';
 
 // babel-jest hoists these above the imports (store.native.test.ts precedent).
@@ -45,6 +46,9 @@ jest.mock('./pullTables.native', () => ({
 jest.mock('./pullSweep.native', () => ({
   evictProjects: jest.fn(async () => undefined),
   sweepProject: jest.fn(async () => 0),
+}));
+jest.mock('./weatherFillSweep.native', () => ({
+  runWeatherFillSweep: jest.fn(async () => undefined),
 }));
 jest.mock('../lib/observability.native', () => ({
   reportSyncIncident: jest.fn(),
@@ -74,6 +78,9 @@ const mockSweepProject = sweepProject as jest.MockedFunction<
   (db: Db, projectId: string, r: readonly string[], p: readonly string[]) => Promise<number>
 >;
 const mockIncident = reportSyncIncident as jest.MockedFunction<(a: string, b: unknown) => void>;
+const mockRunWeatherFillSweep = runWeatherFillSweep as jest.MockedFunction<
+  (db: Db) => Promise<void>
+>;
 
 // ---------------------------------------------------------------------------
 // Fake Db — sync_meta / sync_cursors / COUNT(*) floors only
@@ -987,6 +994,63 @@ describe('sweeps', () => {
     expect(mockSweepProject).not.toHaveBeenCalled();
     expect(metaValue(db, SWEEP_DUE)).toBe('2026-07-01T00:00:00Z');
     expect(outcome.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fill-on-sync weather retry sweep (T13)
+// ---------------------------------------------------------------------------
+
+describe('weather fill sweep', () => {
+  it('runs once, after a normal online pull completes', async () => {
+    tier1(['p1']);
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+
+    await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    expect(mockRunWeatherFillSweep).toHaveBeenCalledTimes(1);
+    expect(mockRunWeatherFillSweep).toHaveBeenCalledWith(db);
+  });
+
+  it('does NOT run when the pull is offline — nothing to sweep with', async () => {
+    tier1(['p1']);
+    const db = tier2Db();
+    const { client } = fakeClient({
+      tables: tier2Tables(),
+      throwOn: { daily_reports: new TypeError('Network request failed') },
+    });
+
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    expect(outcome.offline).toBe(true);
+    expect(mockRunWeatherFillSweep).not.toHaveBeenCalled();
+  });
+
+  it('does NOT run when the pull was cancelled', async () => {
+    tier1(['p1']);
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+    let calls = 0;
+    const isCancelled = () => {
+      calls += 1;
+      return calls > 1; // let the first check pass, then cancel
+    };
+
+    await createPuller(client, db as unknown as Db, isCancelled)({ sessionUserId: USER });
+
+    expect(mockRunWeatherFillSweep).not.toHaveBeenCalled();
+  });
+
+  it('a throw from the sweep never affects the pull outcome', async () => {
+    tier1(['p1']);
+    mockRunWeatherFillSweep.mockRejectedValueOnce(new Error('sweep boom'));
+    const db = tier2Db();
+    const { client } = fakeClient({ tables: tier2Tables() });
+
+    const outcome = await createPuller(client, db as unknown as Db)({ sessionUserId: USER });
+
+    expect(outcome).toEqual({ ok: true, committed: false, offline: false, error: null });
   });
 });
 

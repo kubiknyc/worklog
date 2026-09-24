@@ -62,6 +62,10 @@ jest.mock('../supabase/client', () => ({
   },
 }));
 jest.mock('../lib/uuid', () => ({ uuidv4: () => 'generated-client-id' }));
+const mockFillWeather = jest.fn();
+jest.mock('./weatherFill', () => ({
+  fillWeather: (...args: unknown[]) => mockFillWeather(...args),
+}));
 
 let warnSpy: jest.SpyInstance;
 
@@ -71,6 +75,7 @@ beforeEach(() => {
   mockFrom.mockClear();
   mockRpc.mockClear();
   mockRpc.mockImplementation(() => Promise.resolve(OK));
+  mockFillWeather.mockClear();
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -172,6 +177,29 @@ describe('SupabaseRepository read path', () => {
     tableResults.set('report_sections', { data: null, error: null });
 
     await expect(supabaseRepository.listSections('r1')).resolves.toEqual([]);
+  });
+
+  it('listReports scopes to the project and orders newest-first for the History tab', async () => {
+    tableResults.set('daily_reports', {
+      data: [{ id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'draft' }],
+      error: null,
+    });
+
+    const rows = await supabaseRepository.listReports('p1');
+
+    expect(rows).toEqual([
+      { id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'draft' },
+    ]);
+    expect(argsOf('daily_reports', 'eq')).toEqual(['project_id', 'p1']);
+    // Newest-first: reversing this silently buries the current report at the
+    // bottom of the History list.
+    expect(argsOf('daily_reports', 'order')).toEqual(['report_date', { ascending: false }]);
+  });
+
+  it('listReports returns an empty list when PostgREST returns null data', async () => {
+    tableResults.set('daily_reports', { data: null, error: null });
+
+    await expect(supabaseRepository.listReports('p1')).resolves.toEqual([]);
   });
 
   it('getWeather reads the override and auto columns for the report', async () => {
@@ -303,6 +331,8 @@ describe('SupabaseRepository.createReport', () => {
       p_report_date: '2026-08-03',
       p_client_id: 'generated-client-id',
     });
+    // T13: "after create_report while online" fires on the success path only.
+    expect(mockFillWeather).toHaveBeenCalledWith('p1', '2026-08-03');
   });
 
   it('throws when the RPC returns no rows', async () => {
@@ -314,6 +344,7 @@ describe('SupabaseRepository.createReport', () => {
     expect(warnSpy).toHaveBeenCalledWith('[supabaseRepo] createReport failed:', {
       message: 'create_report returned no report id',
     });
+    expect(mockFillWeather).not.toHaveBeenCalled();
   });
 
   it('throws when the created report cannot be read back', async () => {
@@ -324,6 +355,7 @@ describe('SupabaseRepository.createReport', () => {
     expect(warnSpy).toHaveBeenCalledWith('[supabaseRepo] createReport failed:', {
       message: 'created report not found',
     });
+    expect(mockFillWeather).not.toHaveBeenCalled();
   });
 
   it('masks an RPC error', async () => {
@@ -332,6 +364,7 @@ describe('SupabaseRepository.createReport', () => {
     );
 
     await expect(supabaseRepository.createReport('p1', '2026-08-03')).rejects.toThrow(WRITE_MASKED);
+    expect(mockFillWeather).not.toHaveBeenCalled();
   });
 });
 
@@ -349,6 +382,7 @@ describe('SupabaseRepository error masking', () => {
       () => supabaseRepository.getReportByDate('p1', '2026-08-03'),
     ],
     ['listSections', 'report_sections', () => supabaseRepository.listSections('r1')],
+    ['listReports', 'daily_reports', () => supabaseRepository.listReports('p1')],
     ['getWeather', 'report_weather', () => supabaseRepository.getWeather('r1')],
   ])('%s masks a query error but logs the raw one', async (context, table, call) => {
     tableResults.set(table, { data: null, error: { message: 'column x does not exist' } });

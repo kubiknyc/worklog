@@ -11,6 +11,7 @@ import { uuidv4 } from '../lib/uuid';
 import { base64ToByteaHex, sectionWirePayload } from '../sync/rpcMap';
 import type { Mutation } from '../sync/types';
 import { supabase } from '../supabase/client';
+import { fillWeather } from './weatherFill';
 import type {
   DailyReportRow,
   Json,
@@ -95,6 +96,16 @@ class SupabaseRepository implements Repository {
     return (data ?? []) as unknown as ReportSectionRow[];
   }
 
+  async listReports(projectId: string): Promise<readonly DailyReportRow[]> {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('id, project_id, report_date, status')
+      .eq('project_id', projectId)
+      .order('report_date', { ascending: false });
+    if (error) fail('listReports', error);
+    return (data ?? []) as DailyReportRow[];
+  }
+
   async getWeather(reportId: string): Promise<WeatherRow | null> {
     const { data, error } = await supabase
       .from('report_weather')
@@ -162,6 +173,10 @@ class SupabaseRepository implements Repository {
       fail('createReport', { message: 'create_report returned no report id' }, WRITE_FAILED);
     const report = await this.getReport(reportId);
     if (!report) fail('createReport', { message: 'created report not found' }, WRITE_FAILED);
+    // "After create_report while online" (M9) — the web build is online-only,
+    // and reaching this line already proves the RPC round-trip above
+    // succeeded, so no separate online check is needed here.
+    void fillWeather(projectId, reportDate);
     return report;
   }
 
