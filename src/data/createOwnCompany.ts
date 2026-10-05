@@ -33,9 +33,9 @@ export const CREATE_COMPANY_COPY = {
   expired: 'Your sign-in has expired. Sign out, sign back in, and try again.',
   notConfirmed: 'Confirm your email first. Open the link in your sign-up email, then try again.',
   alreadyAffiliated:
-    "Your account is already linked to a company on WorkLog. If you just set one up, it's ready — otherwise ask them to invite you to a project.",
+    "Your account is already linked to a company, so you can't set up another one here. Ask that company's administrator to invite you to a project.",
   invalidName: `Enter your company's name (up to ${COMPANY_NAME_MAX} characters).`,
-  refusedCharacters: 'Remove hidden or special characters from the company name.',
+  refusedCharacters: 'The company name has hidden characters. Clear the field and type it again.',
   rateLimited: 'Too many tries. Wait a minute, then try again.',
   offline:
     "You appear to be offline. Setting up a company needs a connection — try again once you're back online.",
@@ -53,22 +53,33 @@ export type CreateOwnCompanyResult =
   | { readonly kind: 'failed'; readonly message: string };
 
 // Mirrors the server's NAME RULE (jobsight-backend create_own_company,
-// 20261005000001). Keep the three sets below in step with that header.
+// 20261005000201). Keep the three sets below in step with that header.
 //
-// Trimmed from both ends: JS `\s` already covers [[:space:]], N\P, U+1680,
+// Trimmed from both ends: a set that equals the server's explicit trim list
+// (JS `\s` plus U+200B). JS `\s` is U+0009–U+000D, space, NBSP, U+1680,
 // U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF; U+200B is
-// added because JS does not count it as whitespace but the server trims it.
+// added because JS does not count it as whitespace. U+001C–U+001F and U+0085
+// are NOT trimmed — they fall in the refused set below.
 const EDGE_SPACE = /^[\s\u200B]+|[\s\u200B]+$/g;
 // Refused ANYWHERE: C0/C1 controls and DEL, soft hyphen, grapheme joiner, ALM,
-// Hangul fillers, Khmer inherent vowels, Mongolian selectors/separator,
-// zero-width chars and LRM/RLM, line/paragraph separators, bidi embeddings and
-// overrides, word joiner/invisible operators/bidi isolates, BOM, specials.
+// Hangul fillers, Khmer inherent vowels, Mongolian selectors (U+180E–180F;
+// 180B–180D are the free variation selectors, allowed inside — see below),
+// zero-width space and LRM/RLM (ZWNJ U+200C and ZWJ U+200D are allowed inside,
+// for joined scripts and ZWJ emoji), line/paragraph separators, bidi
+// embeddings and overrides, word joiner/invisible operators/bidi isolates,
+// BOM, specials, and two supplementary-plane format-control ranges.
 const REFUSED =
-  /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0\uFFF0-\uFFF8]/;
-// Refused as the WHOLE name: nothing but whitespace, refused characters,
-// variation selectors U+FE00–U+FE0F and the Braille blank U+2800 — it renders
-// blank. (Variation selectors are fine inside a name: an emoji needs one.)
-const INVISIBLE_ONLY = /^[\s\u200B\uFE00-\uFE0F\u2800]+$/;
+  /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u180F\u200B\u200E\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0\uFFF0-\uFFF8\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}]/u;
+// Refused as the WHOLE name: nothing but whitespace, variation selectors
+// U+FE00–U+FE0F, the Braille blank U+2800, ZWNJ/ZWJ, the Mongolian free
+// variation selectors, and the tag characters + VS17–256 block — each is fine
+// inside a real name (an emoji needs a selector, a joined script needs ZWJ/
+// ZWNJ, a flag-with-subdivision needs tag characters) but renders blank alone.
+const INVISIBLE_ONLY =
+  /^[\s\u200B\uFE00-\uFE0F\u2800\u200C\u200D\u180B-\u180D\u{E0000}-\u{E0FFF}]+$/u;
+// A lone UTF-16 surrogate (a high one not followed by a low one, or a low one
+// not preceded by a high one): not a character, and not valid JSON text.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 export type CompanyNameCheck =
   | { readonly ok: true; readonly name: string }
@@ -80,6 +91,9 @@ export function checkCompanyName(raw: string): CompanyNameCheck {
   const name = raw.replace(EDGE_SPACE, '');
   const length = [...name].length;
   if (length < 1 || length > COMPANY_NAME_MAX) return { ok: false, reason: 'length' };
+  // A lone surrogate isn't a character someone typed on purpose to strip out
+  // of an otherwise-fine name — it's malformed input, same bucket as empty.
+  if (LONE_SURROGATE.test(name)) return { ok: false, reason: 'length' };
   if (REFUSED.test(name) || INVISIBLE_ONLY.test(name)) return { ok: false, reason: 'characters' };
   return { ok: true, name };
 }

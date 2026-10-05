@@ -154,32 +154,61 @@ describe('checkCompanyName (mirrors the server NAME RULE)', () => {
     );
   });
 
-  it('refuses every character in the server refuse class anywhere in the name', () => {
+  it('refuses every character in the server refuse-anywhere class', () => {
     const refused = [
       0x0000, 0x0009, 0x000a, 0x001f, 0x007f, 0x0085, 0x009f, 0x00ad, 0x034f, 0x061c, 0x115f,
-      0x1160, 0x17b4, 0x17b5, 0x180b, 0x180e, 0x180f, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f,
-      0x2028, 0x2029, 0x202a, 0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0x206f, 0x3164, 0xfeff,
-      0xffa0, 0xfff0, 0xfff8,
+      0x1160, 0x17b4, 0x17b5, 0x180e, 0x180f, 0x200b, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a,
+      0x202e, 0x2060, 0x2061, 0x2064, 0x2066, 0x2069, 0x206f, 0x3164, 0xfeff, 0xffa0, 0xfff0,
+      0xfff8, 0x1bca0, 0x1bca3, 0x1d173, 0x1d17a,
     ];
     for (const cp of refused) {
       expect(checkCompanyName(`Ac${ch(cp)}me`)).toEqual(bad('characters'));
     }
   });
 
-  it('refuses a name made only of invisible characters', () => {
+  it('refuses a name made only of invisible characters (refuse-anywhere or blank-only)', () => {
     expect(checkCompanyName(ch(0x2800))).toEqual(bad('characters'));
     expect(checkCompanyName(`${ch(0xfe0f)}${ch(0xfe00)}`)).toEqual(bad('characters'));
     expect(checkCompanyName(`${ch(0x2800)} ${ch(0x2800)}`)).toEqual(bad('characters'));
+    expect(checkCompanyName(ch(0x200d))).toEqual(bad('characters'));
+    expect(checkCompanyName(ch(0x180b))).toEqual(bad('characters'));
+    expect(checkCompanyName(ch(0xe0020))).toEqual(bad('characters'));
+    expect(checkCompanyName(ch(0xe0100))).toEqual(bad('characters'));
   });
 
-  it('allows a variation selector inside a real name', () => {
+  it('refuses a name containing a supplementary-plane format control anywhere', () => {
+    expect(checkCompanyName(`Ac${ch(0x1d173)}me`)).toEqual(bad('characters'));
+    expect(checkCompanyName(`Ac${ch(0x1bca0)}me`)).toEqual(bad('characters'));
+  });
+
+  it('allows a variation selector, ZWJ or ZWNJ inside a real name', () => {
     const coffee = `${ch(0x2615)}${ch(0xfe0f)}`;
     expect(checkCompanyName(`${coffee} Cafe Builders`)).toEqual(ok(`${coffee} Cafe Builders`));
+
+    // ZWJ emoji: construction worker + ZWJ + female sign + variation selector.
+    const zwjEmoji = `${ch(0x1f477)}${ch(0x200d)}${ch(0x2640)}${ch(0xfe0f)}`;
+    expect(checkCompanyName(`Acme ${zwjEmoji}`)).toEqual(ok(`Acme ${zwjEmoji}`));
+
+    // ZWNJ Persian: "mikhwaham" with a non-joining join.
+    const zwnjPersian = `\u0645\u06cc${ch(0x200c)}\u062e\u0648\u0627\u0647\u0645`;
+    expect(checkCompanyName(zwnjPersian)).toEqual(ok(zwnjPersian));
+
+    // England flag + subdivision tag sequence, alongside an ordinary word.
+    const englandFlag = [0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f]
+      .map(ch)
+      .join('');
+    expect(checkCompanyName(`${englandFlag} Crew`)).toEqual(ok(`${englandFlag} Crew`));
   });
 
-  it('accepts ordinary letters, digits, punctuation and accents', () => {
+  it('refuses a name consisting only of a lone surrogate, as a length problem', () => {
+    expect(checkCompanyName(ch(0x1f3d7)[0])).toEqual(bad('length'));
+    expect(checkCompanyName(`Ac${ch(0x1f3d7)[0]}me`)).toEqual(bad('length'));
+  });
+
+  it('accepts ordinary letters, digits, punctuation, accents and CJK', () => {
     expect(checkCompanyName("O'Brien & Sons, Béton-Armé Co. #2")).toEqual(
       ok("O'Brien & Sons, Béton-Armé Co. #2"),
     );
+    expect(checkCompanyName('\u682a\u5f0f\u4f1a\u793e')).toEqual(ok('\u682a\u5f0f\u4f1a\u793e'));
   });
 });
