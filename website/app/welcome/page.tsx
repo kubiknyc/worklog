@@ -39,10 +39,19 @@
  * jobsight-backend 20260909000301), so no claim is sent: the page says there
  * is nothing to set up from that link and goes on to the password.
  *
- * A reader who says no is still someone without a company, and registering
- * again only sends an account-exists email to a confirmed address. So the done
- * card offers them an optional "Run your own company?" form, which calls
- * `create_own_company` with a name they type themselves (CreateCompanyForm).
+ * Any reader from a register link who reaches the done card without a
+ * company — declined, skipped after a failed claim, out-of-date link, or a
+ * nameless link — is offered an optional "Run your own company?" form, which
+ * calls `create_own_company` with a name they type themselves
+ * (CreateCompanyForm); the server clears any leftover parked marker. For a
+ * declined reader it is the only way forward: the marker is gone, and
+ * registering again only sends an account-exists email. (An account whose
+ * marker is still unspent would be re-parked and mailed a fresh consent link
+ * by worklog-register-company, but the form is quicker.)
+ *
+ * The access token is held on the done card only while that form is live,
+ * and dropped the moment it ends: created, expired, not confirmed, already
+ * affiliated, or "Not now". Every other reader's done card holds no token.
  *
  * The confirm-time DB trigger that used to mint the company is retired
  * (20260909000301), so only a successful claim creates one. The app's
@@ -103,8 +112,10 @@ type Phase =
    *  the card only offers the password step. */
   | { readonly kind: "noName"; readonly accessToken: string }
   | { readonly kind: "setPassword"; readonly accessToken: string }
-  /** The token is kept for the declined reader's optional create form. */
-  | { readonly kind: "done"; readonly accessToken: string }
+  /** `accessToken` is non-null only while the optional create form is live
+   *  (a register-flow reader with no company); it is nulled when that form
+   *  ends, so no ended outcome keeps a live token around. */
+  | { readonly kind: "done"; readonly accessToken: string | null }
   /** Confirmed, but no token to set a password with (already-used link, or a
    *  legacy confirm link from before invite-style registration). */
   | { readonly kind: "confirmed" };
@@ -154,12 +165,21 @@ export default function WelcomePage() {
   // parked. Retrying cannot fix that, so it gets its own copy and no retry.
   const [claimStale, setClaimStale] = useState(false);
   // The reader said the company wasn't theirs. Changes what the password card
-  // tells them, and offers them the create form on the done card.
+  // tells them; the done card's create form is gated on the register flow.
   const [declinedCompany, setDeclinedCompany] = useState(false);
   // Only a successful claim creates a company, so only this earns the "your
   // company is ready" copy. Every other path (skipped, declined, out of date,
   // a nameless link, a recovery link) has no company to promise.
   const [claimedCompany, setClaimedCompany] = useState(false);
+  // What the create form ended with (created, refused, or "Not now"); shown in
+  // its place once the token is dropped.
+  const [createEnded, setCreateEnded] = useState<string | null>(null);
+
+  /** The create form is over: drop the token and close the form. */
+  const endCreateCompany = (message: string) => {
+    setCreateEnded(message);
+    setPhase({ kind: "done", accessToken: null });
+  };
 
   useEffect(() => {
     setLinkType(readLinkType(window.location.hash));
@@ -507,7 +527,12 @@ export default function WelcomePage() {
         // Only now is it safe to drop the token from the address bar — it has
         // been spent and the password is saved.
         window.history.replaceState(null, "", window.location.pathname);
-        setPhase({ kind: "done", accessToken: phase.accessToken });
+        // Keep the token only for the create form (register flow, no company);
+        // every other reader's done card holds none.
+        setPhase({
+          kind: "done",
+          accessToken: isRegisterFlow && !claimedCompany ? phase.accessToken : null,
+        });
         return;
       }
       // Distinguish the failures: reporting everything as "expired" sends a
@@ -656,7 +681,7 @@ export default function WelcomePage() {
               <h1>Setting up your company</h1>
               <p style={{ marginTop: 12 }}>
                 {claimStale
-                  ? "This link doesn't match the company on your account. Skip this step and choose your password."
+                  ? "This link is out of date, so there's nothing to set up from it. Skip this step and choose your password — you can set up your company after."
                   : formError
                     ? "Your email is confirmed, but setting up your company didn't finish."
                     : "One moment — we're finishing your company setup."}
@@ -794,10 +819,17 @@ export default function WelcomePage() {
                     : "Your password is saved. Open the WorkLog app on your phone and sign in — your projects will be waiting."}
                 </p>
               )}
-              {/* Declining cleared the parked company, and registering again
-                  only sends an account-exists email, so this is the way to a
-                  company for someone who does run one. Optional. */}
-              {declinedCompany ? <CreateCompanyForm accessToken={phase.accessToken} /> : null}
+              {/* A register-flow reader with no company: declined, skipped,
+                  out of date, or a nameless link. Optional. The token is set
+                  only for them (see the setPassword success branch). */}
+              {phase.accessToken !== null ? (
+                <CreateCompanyForm accessToken={phase.accessToken} onEnded={endCreateCompany} />
+              ) : null}
+              {createEnded ? (
+                <p role="status" style={{ marginTop: 12 }}>
+                  {createEnded}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

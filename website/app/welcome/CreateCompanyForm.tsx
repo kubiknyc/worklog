@@ -1,31 +1,44 @@
 "use client";
 
 /**
- * "Run your own company?" on the /welcome done card, shown only to a reader
- * who declined the parked company. Optional: the password is already saved,
- * and ignoring this leaves the account exactly as it was.
+ * "Run your own company?" on the /welcome done card, for a reader from a
+ * register link who has no company yet (see the gate in page.tsx). Optional:
+ * the password is already saved, and "Not now" leaves the account as it was.
  *
  * Calls `create_own_company` with the page's access token and a name the
  * reader types. Failure copy comes from lib/createOwnCompany, which reads only
- * the error's `code` — server text is never rendered. Errors stay inline: the
- * page-level "expired" card would replace the success card with password-reset
- * advice, which is wrong once the password is saved.
+ * the error's `code` — server text is never rendered.
+ *
+ * Every outcome a retry cannot fix (created, expired, notConfirmed,
+ * alreadyAffiliated, or "Not now") goes through `onEnded`: the page drops its
+ * access token and replaces this form with the message, so no submit button
+ * stays live. Only invalidName, rateLimited and failed keep the form here.
+ * Errors never reach the page-level "expired" card, which would replace the
+ * success card with password-reset advice — wrong once the password is saved.
  */
 import { useRef, useState } from "react";
 
 import {
   classifyCreateCompanyFailure,
   cleanCompanyName,
-  COMPANY_NAME_MAX,
+  CREATE_COMPANY_DECLINED,
+  CREATE_COMPANY_DONE,
   CREATE_COMPANY_MESSAGES,
+  endsCreateCompany,
   readErrorCode,
 } from "@/lib/createOwnCompany";
 
-export function CreateCompanyForm({ accessToken }: { readonly accessToken: string }) {
+export function CreateCompanyForm({
+  accessToken,
+  onEnded,
+}: {
+  readonly accessToken: string;
+  /** Drop the token and show `message` in place of the form. */
+  readonly onEnded: (message: string) => void;
+}) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [created, setCreated] = useState(false);
   // Same double-submit guard as the password form: state is not synchronous,
   // so two same-tick taps would both read `saving === false`.
   const savingRef = useRef(false);
@@ -60,10 +73,14 @@ export function CreateCompanyForm({ accessToken }: { readonly accessToken: strin
         body: JSON.stringify({ company_name: companyName }),
       });
       if (response.ok) {
-        setCreated(true);
+        onEnded(CREATE_COMPANY_DONE);
         return;
       }
       const outcome = classifyCreateCompanyFailure(response.status, await readErrorCode(response));
+      if (endsCreateCompany(outcome)) {
+        onEnded(CREATE_COMPANY_MESSAGES[outcome]);
+        return;
+      }
       setError(CREATE_COMPANY_MESSAGES[outcome]);
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
@@ -73,20 +90,15 @@ export function CreateCompanyForm({ accessToken }: { readonly accessToken: strin
     }
   };
 
-  if (created) {
-    return (
-      <p role="status" style={{ marginTop: 12 }}>
-        Your company is set up. Sign in to the WorkLog app — then create your first project and
-        invite your team.
-      </p>
-    );
-  }
-
   return (
     <form onSubmit={onSubmit} noValidate style={{ marginTop: 24, textAlign: "left" }}>
       <p>Run your own company? Set it up here.</p>
 
-      {error ? <div className="form-notice err">{error}</div> : null}
+      {error ? (
+        <div className="form-notice err" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       <div className="field">
         <label htmlFor="companyName">Company name</label>
@@ -95,7 +107,6 @@ export function CreateCompanyForm({ accessToken }: { readonly accessToken: strin
           name="companyName"
           type="text"
           autoComplete="organization"
-          maxLength={COMPANY_NAME_MAX}
           value={name}
           onChange={(event) => setName(event.target.value)}
           disabled={saving}
@@ -104,6 +115,16 @@ export function CreateCompanyForm({ accessToken }: { readonly accessToken: strin
 
       <button className="btn btn-primary btn-block" type="submit" disabled={saving}>
         {saving ? "Setting up…" : "Set up my company"}
+      </button>
+
+      <button
+        className="btn btn-ghost btn-block"
+        type="button"
+        onClick={() => onEnded(CREATE_COMPANY_DECLINED)}
+        disabled={saving}
+        style={{ marginTop: 12 }}
+      >
+        Not now
       </button>
     </form>
   );

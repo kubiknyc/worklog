@@ -91,29 +91,76 @@ test("only a successful claim earns the company-ready copy", () => {
   expect(page).toMatch(/if \(response\.ok\) \{\s*setClaimedCompany\(true\);/);
 });
 
-// Registering again only sends an account-exists email to a confirmed address,
-// so nothing shown after the confirm tap may send a reader back to register.
-// (The bad-link card may: that reader may never have confirmed.)
+// No reader shown a post-confirm card is ever sent back to register: for a
+// declined reader the parked marker is gone and registering again only sends
+// an account-exists email; every register-flow reader without a company gets
+// the create form instead. (The bad-link card may say it: that reader may
+// never have confirmed.)
 test("no post-confirm copy tells a reader to register again", () => {
   const afterConfirm = page.split('phase.kind === "consent"')[1] ?? "";
   expect(afterConfirm.length).toBeGreaterThan(0);
   expect(afterConfirm).not.toMatch(/register (again|your (own )?company)/i);
 });
 
-test("a declined reader is offered the create form on the done card", () => {
+const form = readFileSync(join(process.cwd(), "app/welcome/CreateCompanyForm.tsx"), "utf8");
+
+// Every register-flow reader who reaches done without a company is offered the
+// form: declined, skipped after a failed claim, out of date (22023), nameless.
+test("the create form is gated on the register flow without a claimed company", () => {
   expect(page).toContain(
-    "{declinedCompany ? <CreateCompanyForm accessToken={phase.accessToken} /> : null}",
+    "accessToken: isRegisterFlow && !claimedCompany ? phase.accessToken : null,",
   );
-  const form = readFileSync(join(process.cwd(), "app/welcome/CreateCompanyForm.tsx"), "utf8");
+  expect(page).toContain(
+    "<CreateCompanyForm accessToken={phase.accessToken} onEnded={endCreateCompany} />",
+  );
+  expect(page).toContain("{phase.accessToken !== null ? (");
+  // `kind: "done"` appears three times: the Phase type, the gated setPhase
+  // above, and endCreateCompany's null-token setPhase. A fourth would be a new
+  // way into done that bypasses the gate.
+  expect(page.split('kind: "done"').length).toBe(4);
+  expect(page).not.toContain("{declinedCompany ? <CreateCompanyForm");
+});
+
+// The token must not outlive the form. Every ended path — created, expired,
+// notConfirmed, alreadyAffiliated, "Not now" — goes through onEnded, which
+// nulls it; only invalidName, rateLimited and failed keep the form live.
+test("every ended create-form path drops the token and closes the form", () => {
+  expect(page).toMatch(
+    /const endCreateCompany = \(message: string\) => \{\s*setCreateEnded\(message\);\s*setPhase\(\{ kind: "done", accessToken: null \}\);/,
+  );
+  expect(form).toMatch(/if \(response\.ok\) \{\s*onEnded\(CREATE_COMPANY_DONE\);\s*return;/);
+  expect(form).toMatch(
+    /if \(endsCreateCompany\(outcome\)\) \{\s*onEnded\(CREATE_COMPANY_MESSAGES\[outcome\]\);\s*return;/,
+  );
+  expect(form).toContain("onClick={() => onEnded(CREATE_COMPANY_DECLINED)}");
+  expect(form).toContain("Not now");
+});
+
+// The form's errors stay inline: the page-level expired card would replace
+// the success card with password-reset advice after the password is saved.
+test("the create form never raises the page-level expired card", () => {
+  expect(form).not.toContain("setExpired");
+  expect(form).not.toContain("expired(");
+  const doneCard = page.split('phase.kind === "done"')[1]?.split('phase.kind === "confirmed"')[0];
+  expect(doneCard).toBeDefined();
+  expect(doneCard).not.toContain("setExpired");
+});
+
+test("the create form reads only the error code and renders only plain copy", () => {
   expect(form).toContain("Run your own company? Set it up here.");
   expect(form).toContain("/rest/v1/rpc/create_own_company");
-  // Failure copy comes only from the lib mapping, keyed on the error's code;
-  // the response body's text is never read.
   expect(form).toContain("CREATE_COMPANY_MESSAGES[outcome]");
   expect(form).toContain(
     "classifyCreateCompanyFailure(response.status, await readErrorCode(response))",
   );
   expect(form).not.toMatch(/\.message\b|\.msg\b|\.text\(\)|innerHTML/);
+});
+
+test("the out-of-date claim copy promises no existing company", () => {
+  expect(page).toContain(
+    "This link is out of date, so there's nothing to set up from it. Skip this step and choose your password — you can set up your company after.",
+  );
+  expect(page).not.toContain("match the company on your account");
 });
 
 // A register link with no company name: the server refuses the zero-argument
