@@ -1,6 +1,7 @@
 export { AuthProvider, useAuth } from './AuthProvider';
 export {
   roleForProject,
+  canCreateOwnCompany,
   isSuperOnAnyProject,
   isCompanyAdmin,
   isProfileComplete,

@@ -1,4 +1,5 @@
 import {
+  canCreateOwnCompany,
   isCompanyAdmin,
   isProfileComplete,
   isSuperOnAnyProject,
@@ -141,5 +142,24 @@ describe('validateCredentials', () => {
   it('flags a too-short password', () => {
     const result = validateCredentials('super@keystonebuild.com', '123');
     expect(result?.field).toBe('password');
+  });
+});
+
+describe('canCreateOwnCompany', () => {
+  const company: CompanyMembership[] = [{ company_id: 'c1', role: 'member' }];
+
+  it('offers the card to someone with no membership and no parked company', () => {
+    expect(canCreateOwnCompany([], [], {})).toBe(true);
+    expect(canCreateOwnCompany([], [], undefined)).toBe(true);
+    expect(canCreateOwnCompany([], [], { pending_company: '   ' })).toBe(true);
+  });
+
+  it('never offers it to anyone in a project or a company', () => {
+    expect(canCreateOwnCompany(memberships, [], {})).toBe(false);
+    expect(canCreateOwnCompany([], company, {})).toBe(false);
+  });
+
+  it('holds it back while a parked company is still waiting to be claimed', () => {
+    expect(canCreateOwnCompany([], [], { pending_company: 'Acme Builders' })).toBe(false);
   });
 });

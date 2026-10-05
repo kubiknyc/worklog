@@ -12,8 +12,10 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { canCreateOwnCompany, useAuth } from '../../src/auth';
 import {
   ConnectedSyncStatusBanner,
+  CreateCompanyCard,
   DetailSkeleton,
   EmptyState,
   PrimaryButton,
@@ -36,6 +38,7 @@ function formatToday(reportDate: string): string {
 
 export default function TodayScreen() {
   const { activeProjectId, ready } = useActiveProject();
+  const { memberships, companyMemberships, session, refresh } = useAuth();
   const { colors, fonts, spacing, sizes, radii } = useTheme();
   const repo = useRepository();
   const toast = useToast();
@@ -119,6 +122,11 @@ export default function TodayScreen() {
               title="No project yet"
               subtitle="Create or join a project to start filing daily reports."
             />
+            {/* Above "Create a project" on purpose: a project membership makes
+                the server refuse a new company for good. */}
+            {canCreateOwnCompany(memberships, companyMemberships, session?.user.app_metadata) ? (
+              <CreateCompanyCard onCreated={refresh} />
+            ) : null}
             <PrimaryButton
               testID="today-create-project"
               label="Create a project"

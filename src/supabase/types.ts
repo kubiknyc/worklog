@@ -1366,6 +1366,7 @@ export type Database = {
         Args: { p_key: string; p_limit: number }
         Returns: boolean
       }
+      create_own_company: { Args: { company_name: string }; Returns: string }
       create_report: {
         Args: {
           p_client_id: string

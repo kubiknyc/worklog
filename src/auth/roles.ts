@@ -64,6 +64,25 @@ export function mergeEffectiveMemberships(
   return merged;
 }
 
+/**
+ * Whether to offer "Run your own company?": only to someone with no project,
+ * no company, and no parked company (`app_metadata.pending_company`) waiting
+ * to be claimed. WorkLog has no card to claim a parked company, so a user who
+ * still holds one sees neither card here; the website's consent step is where
+ * that is answered. The server (`create_own_company`) is the real authority
+ * and refuses anyone already affiliated, phone-book contacts included.
+ */
+export function canCreateOwnCompany(
+  memberships: readonly Membership[],
+  companyMemberships: readonly CompanyMembership[],
+  appMetadata: unknown,
+): boolean {
+  if (memberships.length > 0 || companyMemberships.length > 0) return false;
+  if (typeof appMetadata !== 'object' || appMetadata === null) return true;
+  const pending = (appMetadata as { pending_company?: unknown }).pending_company;
+  return !(typeof pending === 'string' && pending.trim() !== '');
+}
+
 /** Role for a specific project, or `null` if the user is not a member. */
 export function roleForProject(
   memberships: readonly Membership[],
