@@ -54,7 +54,7 @@ test("the invitee copy never claims they have a company", () => {
     page.split('phase.kind === "done" ? (')[1]?.split('phase.kind === "confirmed"')[0] ?? "";
   const elseBranch =
     doneCard
-      .split('linkType === "signup" && claimedCompany ? (')[1]
+      .split("claimedCompany ? (")[1]
       ?.split(") : (")[1]
       ?.split("<CreateCompanyForm")[0] ?? "";
   expect(elseBranch).toContain(
@@ -91,12 +91,24 @@ test("the register flow asks before it creates, and can decline", () => {
 // successful claim creates one. Declined, skipped, out-of-date and nameless
 // readers all reach "done" with no company, and must not be told it is ready.
 test("only a successful claim earns the company-ready copy", () => {
-  expect(page).toContain('linkType === "signup" && claimedCompany ? (');
+  expect(page).toContain("{claimedCompany ? (");
   // The promise appears exactly once, and the flag is set in exactly one
   // place: the claim's success branch.
   expect(page.split("your company is ready").length).toBe(2);
   expect(page.split("setClaimedCompany(true)").length).toBe(2);
   expect(page).toMatch(/if \(response\.ok\) \{\s*setClaimedCompany\(true\);/);
+});
+
+// claimPendingCompany is shared by both the signup-confirm consent card and
+// the register-link (magiclink) consent card — either path can set
+// claimedCompany. Gating the done card on linkType as well as the flag would
+// tell a signup founder "ready" but a register founder whose claim just
+// succeeded only the generic password-saved line, describing the same
+// successful claim two different ways depending on which link they arrived
+// on. The flag alone is both necessary and sufficient.
+test("the company-ready copy is gated on the claim flag alone, not the link type", () => {
+  expect(page).not.toContain('linkType === "signup" && claimedCompany');
+  expect(page).not.toContain('claimedCompany && linkType === "signup"');
 });
 
 // No reader shown a post-confirm card is ever sent back to register: for a

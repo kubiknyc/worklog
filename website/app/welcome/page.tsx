@@ -813,7 +813,7 @@ export default function WelcomePage() {
                 🎉
               </div>
               <h1>You&apos;re all set</h1>
-              {linkType === "signup" && claimedCompany ? (
+              {claimedCompany ? (
                 <p>
                   Your password is saved and your company is ready. Open the WorkLog app on your
                   phone and sign in — then create your first project and invite your team.

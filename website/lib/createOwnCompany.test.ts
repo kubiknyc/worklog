@@ -78,26 +78,66 @@ test("length counts characters, not UTF-16 units: 120 emoji fit, 121 do not", ()
 });
 
 test("every character in the server refuse class is refused anywhere in a name", () => {
+  // U+180B-180D (Mongolian free variation selectors) and U+200C/U+200D
+  // (ZWNJ/ZWJ) moved OUT of REFUSE_ANYWHERE in v3 — they're allowed inside a
+  // real name now (a ligature or a ZWJ emoji sequence needs one), and only
+  // refused when they're the entire name (BLANK_ONLY_EXTRA, tested below).
   const refused = [
     0x0000, 0x0009, 0x000a, 0x001f, 0x007f, 0x0085, 0x009f, 0x00ad, 0x034f, 0x061c, 0x115f,
-    0x1160, 0x17b4, 0x17b5, 0x180b, 0x180e, 0x180f, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f,
-    0x2028, 0x2029, 0x202a, 0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0x206f, 0x3164, 0xfeff,
-    0xffa0, 0xfff0, 0xfff8,
+    0x1160, 0x17b4, 0x17b5, 0x180e, 0x180f, 0x200b, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a,
+    0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0x206f, 0x3164, 0xfeff, 0xffa0, 0xfff0, 0xfff8,
   ];
   for (const cp of refused) {
     expect(cleanCompanyName(`Ac${ch(cp)}me`)).toBeNull();
   }
+  // Two new supplementary-plane format-control ranges.
+  expect(cleanCompanyName(`Ac${ch(0x1bca0)}me`)).toBeNull();
+  expect(cleanCompanyName(`Ac${ch(0x1bca3)}me`)).toBeNull();
+  expect(cleanCompanyName(`Ac${ch(0x1d173)}me`)).toBeNull();
+  expect(cleanCompanyName(`Ac${ch(0x1d17a)}me`)).toBeNull();
 });
 
 test("a name made only of invisible characters is refused, after trimming", () => {
   expect(cleanCompanyName(ch(0x2800))).toBeNull();
   expect(cleanCompanyName(`${ch(0xfe0f)}${ch(0xfe00)}`)).toBeNull();
   expect(cleanCompanyName(` ${ch(0x2800)} ${ch(0x2800)} `)).toBeNull();
+  // Mixed whole-name: Braille blank plus a variation selector, still nothing
+  // but BLANK_ONLY_EXTRA characters.
+  expect(cleanCompanyName(`${ch(0x2800)}${ch(0xfe0f)}`)).toBeNull();
+  // New in v3: ZWJ alone, a Mongolian free variation selector alone, and a
+  // tag character alone (the E0000-E0FFF block) are each the whole name.
+  expect(cleanCompanyName(ch(0x200d))).toBeNull();
+  expect(cleanCompanyName(ch(0x180b))).toBeNull();
+  expect(cleanCompanyName(ch(0xe0020))).toBeNull();
+  expect(cleanCompanyName(ch(0xe0100))).toBeNull();
 });
 
 test("a variation selector inside a real name is allowed", () => {
   const coffee = `${ch(0x2615)}${ch(0xfe0f)}`;
   expect(cleanCompanyName(`${coffee} Cafe Builders`)).toBe(`${coffee} Cafe Builders`);
+});
+
+test("accented and CJK names pass unchanged", () => {
+  expect(cleanCompanyName("Café Ñandú")).toBe("Café Ñandú");
+  expect(cleanCompanyName("株式会社")).toBe("株式会社");
+});
+
+test("a ZWJ emoji sequence inside a name is allowed, not just a bare variation selector", () => {
+  // U+1F477 (construction worker) U+200D (ZWJ) U+2640 (female sign) U+FE0F
+  const zwjEmoji = `${ch(0x1f477)}${ch(0x200d)}${ch(0x2640)}${ch(0xfe0f)}`;
+  expect(cleanCompanyName(`Acme ${zwjEmoji}`)).toBe(`Acme ${zwjEmoji}`);
+});
+
+test("a ZWNJ inside a real (non-Latin) name is allowed", () => {
+  // Persian "می‌خواهم" — contains U+200C (ZWNJ) joining two word parts.
+  const name = `می${ch(0x200c)}خواهم`;
+  expect(cleanCompanyName(name)).toBe(name);
+});
+
+test("an England flag tag-character subdivision sequence inside a name is allowed", () => {
+  // U+1F3F4 (black flag) + U+E0067 U+E0062 U+E0065 U+E006E U+E0067 (gbeng) + U+E007F (cancel tag)
+  const flag = [0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f].map(ch).join("");
+  expect(cleanCompanyName(`${flag} Builders`)).toBe(`${flag} Builders`);
 });
 
 test("a lone surrogate is refused, a proper pair is not", () => {

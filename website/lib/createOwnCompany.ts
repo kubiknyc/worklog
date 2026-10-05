@@ -79,22 +79,33 @@ export function classifyCreateCompanyFailure(
 }
 
 // Mirrors the server's NAME RULE (jobsight-backend create_own_company,
-// 20261005000001). Keep the sets below in step with that header.
+// 20261005000201). Keep the sets below in step with that header.
 //
-// Trimmed from both ends: JS `\s` already covers [[:space:]], N\P, U+1680,
-// U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF; U+200B is
-// added because JS does not count it as whitespace but the server trims it.
+// Trimmed from both ends: JS `\s` already covers U+0009-000D, U+0020,
+// U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and
+// U+FEFF (the server uses its own explicit character list, not Postgres
+// [[:space:]], but lands on the same set); U+200B is added because JS does
+// not count it as whitespace but the server trims it.
 const EDGE_SPACE = /^[\s\u200B]+|[\s\u200B]+$/g;
 // Refused ANYWHERE: C0/C1 controls and DEL, soft hyphen, grapheme joiner, ALM,
-// Hangul fillers, Khmer inherent vowels, Mongolian selectors/separator,
-// zero-width chars and LRM/RLM, line/paragraph separators, bidi embeddings and
-// overrides, word joiner/invisible operators/bidi isolates, BOM, specials.
+// Hangul fillers, Khmer inherent vowels, Mongolian separator (not the free
+// variation selectors — those are fine inside a name, see BLANK_ONLY_EXTRA
+// below), zero-width space and LRM/RLM (not ZWNJ/ZWJ — those join emoji and
+// script ligatures, also allowed inside), line/paragraph separators, bidi
+// embeddings and overrides, word joiner/invisible operators/bidi isolates,
+// BOM, specials, and two supplementary-plane format-control ranges. The `u`
+// flag is required for the \u{...} supplementary ranges to match as single
+// code points instead of lone surrogate halves.
 const REFUSED =
-  /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0\uFFF0-\uFFF8]/;
-// Refused as the WHOLE name: nothing but whitespace, refused characters,
-// variation selectors U+FE00–U+FE0F and the Braille blank U+2800 — it renders
-// blank. (Variation selectors are fine inside a name: an emoji needs one.)
-const INVISIBLE_ONLY = /^[\s\u200B\uFE00-\uFE0F\u2800]+$/;
+  /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F-\u1160\u17B4\u17B5\u180E-\u180F\u200B\u200E-\u200F\u2028-\u2029\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0\uFFF0-\uFFF8\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}]/u;
+// Refused as the WHOLE name (BLANK_ONLY_EXTRA, allowed inside a name):
+// nothing but whitespace, refused characters, variation selectors
+// U+FE00–U+FE0F, the Braille blank U+2800, ZWNJ/ZWJ (U+200C/U+200D),
+// Mongolian free variation selectors (U+180B–U+180D), and the tag
+// characters/VS17–256 block (U+E0000–U+E0FFF) — all render blank alone but
+// are fine inside a name (an emoji or ligature needs one).
+const INVISIBLE_ONLY =
+  /^[\s\u200B\uFE00-\uFE0F\u2800\u200C\u200D\u180B-\u180D\u{E0000}-\u{E0FFF}]+$/u;
 // A lone UTF-16 surrogate (a high one not followed by a low one, or a low one
 // not preceded by a high one): not a character, and not valid JSON text.
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
