@@ -79,14 +79,72 @@ test("the register flow asks before it creates, and can decline", () => {
   expect(page).toContain("No, that&apos;s not my company");
 });
 
-// A signup-link reader who declined the parked company, or whose claim went
-// stale, still lands on the "done" card. Without a guard, that card would
-// tell them their company is ready when none was ever created — a promise
-// they can't act on. Pin both: the guard on the existing sentence, and the
-// honest fallback that replaces it.
-test("the done card's company-ready copy is guarded against a declined or stale claim", () => {
-  expect(page).toContain('linkType === "signup" && !declinedCompany && !claimStale');
-  expect(page).toContain("You can register your company from the WorkLog app whenever");
+// The confirm-time trigger that minted the company is retired, so only a
+// successful claim creates one. Declined, skipped, out-of-date and nameless
+// readers all reach "done" with no company, and must not be told it is ready.
+test("only a successful claim earns the company-ready copy", () => {
+  expect(page).toContain('linkType === "signup" && claimedCompany ? (');
+  // The promise appears exactly once, and the flag is set in exactly one
+  // place: the claim's success branch.
+  expect(page.split("your company is ready").length).toBe(2);
+  expect(page.split("setClaimedCompany(true)").length).toBe(2);
+  expect(page).toMatch(/if \(response\.ok\) \{\s*setClaimedCompany\(true\);/);
+});
+
+// Registering again only sends an account-exists email to a confirmed address,
+// so nothing shown after the confirm tap may send a reader back to register.
+// (The bad-link card may: that reader may never have confirmed.)
+test("no post-confirm copy tells a reader to register again", () => {
+  const afterConfirm = page.split('phase.kind === "consent"')[1] ?? "";
+  expect(afterConfirm.length).toBeGreaterThan(0);
+  expect(afterConfirm).not.toMatch(/register (again|your (own )?company)/i);
+});
+
+test("a declined reader is offered the create form on the done card", () => {
+  expect(page).toContain(
+    "{declinedCompany ? <CreateCompanyForm accessToken={phase.accessToken} /> : null}",
+  );
+  const form = readFileSync(join(process.cwd(), "app/welcome/CreateCompanyForm.tsx"), "utf8");
+  expect(form).toContain("Run your own company? Set it up here.");
+  expect(form).toContain("/rest/v1/rpc/create_own_company");
+  // Failure copy comes only from the lib mapping, keyed on the error's code;
+  // the response body's text is never read.
+  expect(form).toContain("CREATE_COMPANY_MESSAGES[outcome]");
+  expect(form).toContain(
+    "classifyCreateCompanyFailure(response.status, await readErrorCode(response))",
+  );
+  expect(form).not.toMatch(/\.message\b|\.msg\b|\.text\(\)|innerHTML/);
+});
+
+// A register link with no company name: the server refuses the zero-argument
+// claim (pending_company_name_required), so the page must never send it.
+test("a nameless register link sends no claim and only offers the password", () => {
+  expect(page).not.toContain('expectedName === null ? "{}"');
+  expect(page).not.toContain("expectedName === null");
+  expect(page).not.toContain("claimPendingCompany(body.access_token, null)");
+  expect(page).toContain(
+    "const claimPendingCompany = async (accessToken: string, expectedName: string) => {",
+  );
+  expect(page).toMatch(
+    /setPhase\(\{ kind: "noName", accessToken: body\.access_token \}\);\s*return;/,
+  );
+  expect(page).toContain("There&apos;s nothing to set up from this link");
+  expect(page).toContain("Choose your password");
+});
+
+// 22023 is the mismatch only for a named claim; any other 400 is generic and
+// keeps its Try again.
+test("the name mismatch is keyed on the Postgres code, nowhere else", () => {
+  expect(page).toMatch(
+    /if \(isClaimNameMismatch\(response\.status, await readErrorCode\(response\)\)\) \{\s*setClaimStale\(true\);/,
+  );
+  expect(page.split("setClaimStale(true)").length).toBe(2);
+  expect(page).not.toContain("response.status === 400");
+});
+
+test("the confirmed card makes no company claim", () => {
+  const confirmed = page.split('phase.kind === "confirmed"')[1] ?? "";
+  expect(confirmed).not.toContain("company is ready");
 });
 
 // The company name arrives in a URL fragment anyone can craft, so it may only

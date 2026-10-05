@@ -34,16 +34,21 @@
  * name from the link, "No, that's not my company" calls
  * `discard_pending_company`, which clears the marker and mints nothing. Nobody
  * ends up administrating a company they never agreed to. Older mails still in
- * flight carry `flow=register` with no name; those keep the previous
- * behaviour — a zero-argument claim with no consent card, because there is no
- * name to show and asking about an unnamed company helps no one.
+ * flight carry `flow=register` with no name. The server refuses the
+ * zero-argument claim for those (pending_company_name_required,
+ * jobsight-backend 20260909000301), so no claim is sent: the page says there
+ * is nothing to set up from that link and goes on to the password.
  *
- * The claim never runs on some paths that reach a credential another way: the
- * app's "Forgot password?" recovery link is never tagged `flow=register`, so
- * it never claims, and neither does a legacy `#access_token` fragment (both
- * skip straight to setPassword). That is safe only because the confirm-time
- * DB trigger still mints the company independently today — whoever retires
- * that trigger has to give those paths a claim of their own first.
+ * A reader who says no is still someone without a company, and registering
+ * again only sends an account-exists email to a confirmed address. So the done
+ * card offers them an optional "Run your own company?" form, which calls
+ * `create_own_company` with a name they type themselves (CreateCompanyForm).
+ *
+ * The confirm-time DB trigger that used to mint the company is retired
+ * (20260909000301), so only a successful claim creates one. The app's
+ * "Forgot password?" recovery link, a legacy `#access_token` fragment and a
+ * skipped claim all reach the password without one, and the copy on those
+ * paths must not promise a company.
  */
 import Image from "next/image";
 import Link from "next/link";
@@ -54,9 +59,11 @@ import {
   MIN_PASSWORD_LENGTH,
   type PasswordStrength,
 } from "@/lib/passwordStrength";
+import { readErrorCode } from "@/lib/createOwnCompany";
 import {
   classifySaveFailure,
   hasHashError,
+  isClaimNameMismatch,
   readAccessToken,
   readLinkType,
   readRegisterCompany,
@@ -66,6 +73,8 @@ import {
   type VerifyType,
   type WelcomeLinkType,
 } from "@/lib/welcomeLink";
+
+import { CreateCompanyForm } from "./CreateCompanyForm";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
@@ -84,15 +93,18 @@ type Phase =
   | { readonly kind: "consent"; readonly accessToken: string; readonly company: string }
   /** Register flow only: the token is already spent and the company is being
    *  claimed. `expectedName` is the name the reader approved on the consent
-   *  card, sent so the server can refuse a claim whose link has gone stale;
-   *  null for an older link that carried no name. */
+   *  card, sent so the server can refuse a claim whose link has gone stale. */
   | {
       readonly kind: "claim";
       readonly accessToken: string;
-      readonly expectedName: string | null;
+      readonly expectedName: string;
     }
+  /** A register link with no company name (an older mail). Nothing is sent:
+   *  the card only offers the password step. */
+  | { readonly kind: "noName"; readonly accessToken: string }
   | { readonly kind: "setPassword"; readonly accessToken: string }
-  | { readonly kind: "done" }
+  /** The token is kept for the declined reader's optional create form. */
+  | { readonly kind: "done"; readonly accessToken: string }
   /** Confirmed, but no token to set a password with (already-used link, or a
    *  legacy confirm link from before invite-style registration). */
   | { readonly kind: "confirmed" };
@@ -141,9 +153,13 @@ export default function WelcomePage() {
   // The claim was refused because the link names a company that is no longer
   // parked. Retrying cannot fix that, so it gets its own copy and no retry.
   const [claimStale, setClaimStale] = useState(false);
-  // The reader said the company wasn't theirs. Only changes what the password
-  // card tells them next.
+  // The reader said the company wasn't theirs. Changes what the password card
+  // tells them, and offers them the create form on the done card.
   const [declinedCompany, setDeclinedCompany] = useState(false);
+  // Only a successful claim creates a company, so only this earns the "your
+  // company is ready" copy. Every other path (skipped, declined, out of date,
+  // a nameless link, a recovery link) has no company to promise.
+  const [claimedCompany, setClaimedCompany] = useState(false);
 
   useEffect(() => {
     setLinkType(readLinkType(window.location.hash));
@@ -218,12 +234,11 @@ export default function WelcomePage() {
    * second try.
    *
    * `expectedName` is the name the reader approved. Sending it lets the
-   * server refuse the claim (400) when the link no longer matches what is
-   * parked, rather than handing someone a company they were never shown.
-   * Null for an older link that carried no name — the zero-argument claim
-   * that shipped first.
+   * server refuse the claim (400 + 22023) when the link no longer matches
+   * what is parked, rather than handing someone a company they were never
+   * shown. Always a name: the zero-argument claim is refused server-side.
    */
-  const claimPendingCompany = async (accessToken: string, expectedName: string | null) => {
+  const claimPendingCompany = async (accessToken: string, expectedName: string) => {
     setFormError(null);
     setClaimStale(false);
 
@@ -242,9 +257,10 @@ export default function WelcomePage() {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: expectedName === null ? "{}" : JSON.stringify({ expected_name: expectedName }),
+        body: JSON.stringify({ expected_name: expectedName }),
       });
       if (response.ok) {
+        setClaimedCompany(true);
         setPhase({ kind: "setPassword", accessToken });
         return;
       }
@@ -254,10 +270,12 @@ export default function WelcomePage() {
         setExpired(true);
         return;
       }
-      // The name in the link is not what is parked any more. A second attempt
-      // sends the same name and gets the same answer, so this is not a retry
-      // case — say so plainly and leave the password door open.
-      if (response.status === 400) {
+      // The name in the link is not what is parked any more: 400 + 22023 and
+      // nothing else. A second attempt sends the same name and gets the same
+      // answer, so this is not a retry case — say so plainly and leave the
+      // password door open. Any other 400 is a generic failure with a retry.
+      // Only the body's `code` is read, never its message.
+      if (isClaimNameMismatch(response.status, await readErrorCode(response))) {
         setClaimStale(true);
         return;
       }
@@ -394,11 +412,9 @@ export default function WelcomePage() {
           setPhase({ kind: "consent", accessToken: body.access_token, company: pendingCompany });
           return;
         }
-        // An older register link with no name to show: claim as before. On
-        // success claimPendingCompany moves on to setPassword; on failure the
-        // reader stays on the claim card with a retry.
-        setPhase({ kind: "claim", accessToken: body.access_token, expectedName: null });
-        await claimPendingCompany(body.access_token, null);
+        // An older register link with no name: there is nothing to claim and
+        // the server refuses the zero-argument claim, so nothing is sent.
+        setPhase({ kind: "noName", accessToken: body.access_token });
         return;
       }
       // Never render the response body — same phishing guard as
@@ -491,7 +507,7 @@ export default function WelcomePage() {
         // Only now is it safe to drop the token from the address bar — it has
         // been spent and the password is saved.
         window.history.replaceState(null, "", window.location.pathname);
-        setPhase({ kind: "done" });
+        setPhase({ kind: "done", accessToken: phase.accessToken });
         return;
       }
       // Distinguish the failures: reporting everything as "expired" sends a
@@ -640,7 +656,7 @@ export default function WelcomePage() {
               <h1>Setting up your company</h1>
               <p style={{ marginTop: 12 }}>
                 {claimStale
-                  ? "This link is out of date for that company. Register again from the app to get a fresh one."
+                  ? "This link doesn't match the company on your account. Skip this step and choose your password."
                   : formError
                     ? "Your email is confirmed, but setting up your company didn't finish."
                     : "One moment — we're finishing your company setup."}
@@ -663,14 +679,10 @@ export default function WelcomePage() {
               )}
 
               {/* The claim RPC can fail for reasons "Try again" can't fix (a
-                  5xx, a still-missing migration...) — without an escape hatch
-                  that's a dead end. Safe to skip today: the confirm-time DB
-                  trigger still mints the company independently of this RPC,
-                  so choosing a password without a successful claim still
-                  leaves the account usable. Once that trigger is retired
-                  (jobsight-backend #34 phase 2), this path needs a claim of
-                  its own — this button must not survive that migration
-                  unexamined. */}
+                  name mismatch, a stuck 5xx...) — without an escape hatch
+                  that's a dead end. Skipping creates no company (the
+                  confirm-time trigger is retired), so claimedCompany stays
+                  false and the done card promises none. */}
               {formError || claimStale ? (
                 <button
                   className="btn btn-ghost btn-block"
@@ -688,6 +700,25 @@ export default function WelcomePage() {
             </div>
           ) : null}
 
+          {phase.kind === "noName" && !expired ? (
+            <div>
+              <h1>One more step</h1>
+              <p style={{ marginTop: 12 }}>
+                Your email is verified. There&apos;s nothing to set up from this link — choose your
+                password to continue.
+              </p>
+
+              <button
+                className="btn btn-primary btn-block"
+                type="button"
+                onClick={() => setPhase({ kind: "setPassword", accessToken: phase.accessToken })}
+                style={{ marginTop: 20 }}
+              >
+                Choose your password
+              </button>
+            </div>
+          ) : null}
+
           {phase.kind === "setPassword" && !expired ? (
             <form onSubmit={onSubmit} noValidate>
               <h1>Choose your password</h1>
@@ -697,8 +728,8 @@ export default function WelcomePage() {
               </p>
               {declinedCompany ? (
                 <p style={{ marginTop: 12 }}>
-                  We haven&apos;t set up a company for you. You can register your own company
-                  from the WorkLog app later.
+                  We haven&apos;t set up a company for you. If you run your own, you can set it up
+                  after you choose your password.
                 </p>
               ) : null}
 
@@ -748,28 +779,25 @@ export default function WelcomePage() {
                 🎉
               </div>
               <h1>You&apos;re all set</h1>
-              {linkType === "signup" && !declinedCompany && !claimStale ? (
+              {linkType === "signup" && claimedCompany ? (
                 <p>
                   Your password is saved and your company is ready. Open the WorkLog app on your
                   phone and sign in — then create your first project and invite your team.
                 </p>
               ) : (
                 <p>
-                  Your password is saved. Open the WorkLog app on your phone and sign in — your
-                  projects will be waiting.
+                  {/* Someone from a register link with no company (skipped,
+                      declined, out of date, or a nameless link) has no
+                      projects waiting — only an invitee or a reset does. */}
+                  {isRegisterFlow || linkType === "signup"
+                    ? "Your password is saved. Open the WorkLog app on your phone and sign in."
+                    : "Your password is saved. Open the WorkLog app on your phone and sign in — your projects will be waiting."}
                 </p>
               )}
-              {/* A signup-link reader who declined the parked company, or whose
-                  claim went stale, still hit "done" — the branch above already
-                  routes them to the honest fallback copy, but that copy talks
-                  as if they were never offered a company at all. Say the true
-                  thing: no company exists yet, and registering one is still an
-                  option from the app. */}
-              {declinedCompany || claimStale ? (
-                <p style={{ marginTop: 12 }}>
-                  You can register your company from the WorkLog app whenever you&apos;re ready.
-                </p>
-              ) : null}
+              {/* Declining cleared the parked company, and registering again
+                  only sends an account-exists email, so this is the way to a
+                  company for someone who does run one. Optional. */}
+              {declinedCompany ? <CreateCompanyForm accessToken={phase.accessToken} /> : null}
             </div>
           ) : null}
 
@@ -779,19 +807,13 @@ export default function WelcomePage() {
                 🎉
               </div>
               <h1>You&apos;re confirmed</h1>
-              {linkType === "signup" ? (
-                <p>
-                  Your email is verified and your company is ready. Open the WorkLog app on your
-                  phone and sign in. If you haven&apos;t chosen a password yet, use &quot;Forgot
-                  password?&quot; on the sign-in screen to set one.
-                </p>
-              ) : (
-                <p>
-                  Your email is verified. Open the WorkLog app on your phone and sign in. If you
-                  haven&apos;t chosen a password yet, use &quot;Forgot password?&quot; on the
-                  sign-in screen to set one.
-                </p>
-              )}
+              {/* No claim ran on this path, so nothing here can say a company
+                  is ready — the same copy serves every reader. */}
+              <p>
+                Your email is verified. Open the WorkLog app on your phone and sign in. If you
+                haven&apos;t chosen a password yet, use &quot;Forgot password?&quot; on the sign-in
+                screen to set one.
+              </p>
             </div>
           ) : null}
         </div>

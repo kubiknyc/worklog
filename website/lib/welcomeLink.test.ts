@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import {
   classifySaveFailure,
   hasHashError,
+  isClaimNameMismatch,
   readAccessToken,
   readLinkType,
   readRegisterCompany,
@@ -195,4 +196,15 @@ test("a blank or whitespace-only company is null, not an empty heading", () => {
 test("an over-long company name is capped rather than rendered whole", () => {
   const name = readRegisterCompany(`#flow=register&company=${"a".repeat(500)}`);
   expect(name).toHaveLength(120);
+});
+
+// The claim mismatch is Postgres 22023 behind a 400; every other 400 (or a body
+// that did not parse, so no code) is a generic failure.
+test("only HTTP 400 with code 22023 is a claim name mismatch", () => {
+  expect(isClaimNameMismatch(400, "22023")).toBe(true);
+  expect(isClaimNameMismatch(400, "42501")).toBe(false);
+  expect(isClaimNameMismatch(400, "PGRST102")).toBe(false);
+  expect(isClaimNameMismatch(400, null)).toBe(false);
+  expect(isClaimNameMismatch(500, "22023")).toBe(false);
+  expect(isClaimNameMismatch(401, "22023")).toBe(false);
 });

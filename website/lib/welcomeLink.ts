@@ -147,8 +147,10 @@ const MAX_COMPANY_NAME = 120;
  * before creating anything. `URLSearchParams.get` already URL-decodes it.
  *
  * Null when the key is absent or blank: older mails still in flight carry
- * `flow=register` with no company, and those keep the previous behaviour (a
- * zero-argument claim, no consent step).
+ * `flow=register` with no company. That is a normal case, not an error: the
+ * server refuses the zero-argument claim (pending_company_name_required,
+ * jobsight-backend 20260909000301), so /welcome sends no claim for those and
+ * only offers the password step.
  *
  * The value is never trusted as markup — the page renders it as React text
  * — but it is capped here so a very long name cannot wreck the card.
@@ -160,4 +162,18 @@ export function readRegisterCompany(hash: string): string | null {
   if (!raw) return null;
   const name = raw.trim().slice(0, MAX_COMPANY_NAME).trim();
   return name || null;
+}
+
+/**
+ * Is a failed `claim_pending_company(expected_name)` call a name mismatch?
+ * Only HTTP 400 with Postgres code 22023 (raised as pending_company_mismatch)
+ * is. Any other 400 is a generic failure, and `code` is the only field of the
+ * error body that is ever read: the message is never rendered.
+ *
+ * 22023 alone does NOT mean a mismatch: the zero-argument claim also raises it
+ * (pending_company_name_required). This helper is correct only because
+ * /welcome always sends a name — never use it for a zero-argument claim.
+ */
+export function isClaimNameMismatch(status: number, code: string | null): boolean {
+  return status === 400 && code === "22023";
 }
