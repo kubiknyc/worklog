@@ -29,6 +29,8 @@ type Props = {
   readonly multiline?: boolean;
   readonly autoCapitalize?: TextInputProps['autoCapitalize'];
   readonly keyboardType?: KeyboardTypeOptions;
+  readonly returnKeyType?: TextInputProps['returnKeyType'];
+  readonly onSubmitEditing?: TextInputProps['onSubmitEditing'];
   /** Right-side slot — reserved mount point for the M8 voice mic (AC-A3). */
   readonly accessory?: ReactNode;
   /**
@@ -46,6 +48,8 @@ export function TextField({
   multiline = false,
   autoCapitalize = 'sentences',
   keyboardType,
+  returnKeyType,
+  onSubmitEditing,
   accessory,
   testID,
 }: Props) {
@@ -67,6 +71,8 @@ export function TextField({
           multiline={multiline}
           autoCapitalize={autoCapitalize}
           keyboardType={keyboardType}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
           style={[
             styles.input,
             {

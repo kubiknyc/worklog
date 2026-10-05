@@ -44,6 +44,15 @@ export default function TodayScreen() {
   const toast = useToast();
   const { degraded } = useSyncActions();
   const [starting, setStarting] = useState(false);
+  // Set once create_own_company succeeds, so the card stays hidden even when
+  // the account reload falls back to a cached account that predates it.
+  const [companyCreated, setCompanyCreated] = useState(false);
+
+  const onCompanyCreated = useCallback(async () => {
+    setCompanyCreated(true);
+    toast.show('Your company is set up.');
+    await refresh();
+  }, [refresh, toast]);
 
   const load = useCallback(async () => {
     if (!activeProjectId) return { project: null, report: null, reportDate: null };
@@ -97,6 +106,7 @@ export default function TodayScreen() {
         <ConnectedSyncStatusBanner />
       </View>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: sizes.screenPad, gap: spacing.lg }}
         showsVerticalScrollIndicator={false}
       >
@@ -124,8 +134,9 @@ export default function TodayScreen() {
             />
             {/* Above "Create a project" on purpose: a project membership makes
                 the server refuse a new company for good. */}
-            {canCreateOwnCompany(memberships, companyMemberships, session?.user.app_metadata) ? (
-              <CreateCompanyCard onCreated={refresh} />
+            {!companyCreated &&
+            canCreateOwnCompany(memberships, companyMemberships, session?.user.app_metadata) ? (
+              <CreateCompanyCard onCreated={onCompanyCreated} onRecheck={refresh} />
             ) : null}
             <PrimaryButton
               testID="today-create-project"

@@ -9,8 +9,10 @@
  * user a project member, and the server then refuses this for good.
  *
  * Calls the data-layer helper only; failure copy is chosen there from the
- * error code. On success the caller reloads the account (`useAuth().refresh`),
- * which picks up the new admin membership and hides this card.
+ * error code. On success the caller confirms it and reloads the account
+ * (`onCreated`). On PL002 the caller reloads too (`onRecheck`): a create whose
+ * response was lost leaves the account already affiliated, and the reload
+ * then hides this card; otherwise the message stays up.
  */
 import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -22,9 +24,10 @@ import { TextField } from './TextField';
 
 interface Props {
   readonly onCreated: () => Promise<void> | void;
+  readonly onRecheck: () => Promise<void> | void;
 }
 
-export function CreateCompanyCard({ onCreated }: Props) {
+export function CreateCompanyCard({ onCreated, onRecheck }: Props) {
   const { colors, fonts, radii, error: errorColor } = useTheme();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -40,11 +43,12 @@ export function CreateCompanyCard({ onCreated }: Props) {
     setError(null);
     try {
       const result = await createOwnCompany(name);
-      if (result.ok) {
+      if (result.kind === 'created') {
         await onCreated();
         return;
       }
       setError(result.message);
+      if (result.kind === 'alreadyAffiliated') await onRecheck();
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -71,11 +75,14 @@ export function CreateCompanyCard({ onCreated }: Props) {
         value={name}
         onChangeText={setName}
         autoCapitalize="words"
+        returnKeyType="done"
+        onSubmitEditing={() => void submit()}
       />
       {error ? (
         <Text
           testID="today-company-error"
           accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
           style={[styles.body, { color: errorColor, fontFamily: fonts.ui.medium }]}
         >
           {error}
