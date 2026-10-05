@@ -17,7 +17,8 @@
  *   PL002              already linked to a company (member, project seat,
  *                      phone-book contact, or creator — possibly a create
  *                      whose response was lost, so the caller re-checks)
- *   PL003              name fails the server's name rule (cleanCompanyName)
+ *   PL003              name fails the server's name rule (checkCompanyName
+ *                      catches it first; this is the fallback copy)
  *   429                rate limited
  *   anything else (including the function not existing yet) -> generic, or
  *   offline copy for a transport failure
@@ -33,7 +34,8 @@ export const CREATE_COMPANY_COPY = {
   notConfirmed: 'Confirm your email first. Open the link in your sign-up email, then try again.',
   alreadyAffiliated:
     "Your account is already linked to a company on WorkLog. If you just set one up, it's ready — otherwise ask them to invite you to a project.",
-  invalidName: `Enter a company name of up to ${COMPANY_NAME_MAX} characters, using only letters, numbers and punctuation.`,
+  invalidName: `Enter your company's name (up to ${COMPANY_NAME_MAX} characters).`,
+  refusedCharacters: 'Remove hidden or special characters from the company name.',
   rateLimited: 'Too many tries. Wait a minute, then try again.',
   offline:
     "You appear to be offline. Setting up a company needs a connection — try again once you're back online.",
@@ -43,29 +45,43 @@ export const CREATE_COMPANY_COPY = {
 /**
  * `alreadyAffiliated` is its own kind because it may mean the caller's own
  * earlier create succeeded and only the response was lost: the caller reloads
- * the account, and the card hides itself if a membership now exists.
+ * the account and decides (see CreateCompanySection).
  */
 export type CreateOwnCompanyResult =
   | { readonly kind: 'created' }
   | { readonly kind: 'alreadyAffiliated'; readonly message: string }
   | { readonly kind: 'failed'; readonly message: string };
 
-// Mirrors the server's NAME RULE (jobsight-backend create_own_company). JS `\s`
-// already covers [[:space:]], NBSP, U+1680, U+2000–U+200A, U+2028, U+2029,
-// U+202F, U+205F, U+3000 and U+FEFF; U+200B is added because JS does not count
-// it as whitespace but the server trims it.
+// Mirrors the server's NAME RULE (jobsight-backend create_own_company,
+// 20261005000001). Keep the three sets below in step with that header.
+//
+// Trimmed from both ends: JS `\s` already covers [[:space:]], N\P, U+1680,
+// U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF; U+200B is
+// added because JS does not count it as whitespace but the server trims it.
 const EDGE_SPACE = /^[\s\u200B]+|[\s\u200B]+$/g;
-// Refused anywhere: C0/C1 controls and DEL, zero-width and directional marks,
-// bidi embeddings/overrides/isolates, and line/paragraph separators.
-const FORBIDDEN =
-  /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2060\uFEFF\u202A-\u202E\u2066-\u2069\u061C\u2028\u2029]/;
+// Refused ANYWHERE: C0/C1 controls and DEL, soft hyphen, grapheme joiner, ALM,
+// Hangul fillers, Khmer inherent vowels, Mongolian selectors/separator,
+// zero-width chars and LRM/RLM, line/paragraph separators, bidi embeddings and
+// overrides, word joiner/invisible operators/bidi isolates, BOM, specials.
+const REFUSED =
+  /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0\uFFF0-\uFFF8]/;
+// Refused as the WHOLE name: nothing but whitespace, refused characters,
+// variation selectors U+FE00–U+FE0F and the Braille blank U+2800 — it renders
+// blank. (Variation selectors are fine inside a name: an emoji needs one.)
+const INVISIBLE_ONLY = /^[\s\u200B\uFE00-\uFE0F\u2800]+$/;
 
-/** The name the server would accept, trimmed as it trims, or null. */
-export function cleanCompanyName(raw: string): string | null {
+export type CompanyNameCheck =
+  | { readonly ok: true; readonly name: string }
+  | { readonly ok: false; readonly reason: 'length' | 'characters' };
+
+/** Check a typed name the way the server will, returning it trimmed as the
+ *  server trims, or why it would be refused. */
+export function checkCompanyName(raw: string): CompanyNameCheck {
   const name = raw.replace(EDGE_SPACE, '');
   const length = [...name].length;
-  if (length < 1 || length > COMPANY_NAME_MAX || FORBIDDEN.test(name)) return null;
-  return name;
+  if (length < 1 || length > COMPANY_NAME_MAX) return { ok: false, reason: 'length' };
+  if (REFUSED.test(name) || INVISIBLE_ONLY.test(name)) return { ok: false, reason: 'characters' };
+  return { ok: true, name };
 }
 
 /** PostgREST error -> outcome. Exported for the unit tests. */
@@ -87,13 +103,22 @@ export function createCompanyFailure(
 }
 
 export async function createOwnCompany(rawName: string): Promise<CreateOwnCompanyResult> {
-  const name = cleanCompanyName(rawName);
-  if (name === null) return { kind: 'failed', message: CREATE_COMPANY_COPY.invalidName };
+  const check = checkCompanyName(rawName);
+  if (!check.ok) {
+    return {
+      kind: 'failed',
+      message:
+        check.reason === 'length'
+          ? CREATE_COMPANY_COPY.invalidName
+          : CREATE_COMPANY_COPY.refusedCharacters,
+    };
+  }
+  const { name } = check;
   try {
     const { error, status } = await supabase.rpc('create_own_company', { company_name: name });
     if (!error) return { kind: 'created' };
     // Code only: the message is server text and may echo the name.
-    console.warn('[createOwnCompany] rpc failed:', error.code ?? status);
+    console.warn('[createOwnCompany] rpc failed:', error.code || status);
     return createCompanyFailure(error, status);
   } catch (error) {
     // supabase-js resolves network failures into `error`, but a throw from

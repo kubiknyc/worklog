@@ -10,6 +10,7 @@ import {
   accountKey,
   activeProjectKey,
   clearAccountCaches,
+  createCompanyRefusedKey,
   pruneAccountForCache,
 } from './accountCaches';
 
@@ -20,6 +21,7 @@ beforeEach(async () => {
 test('key builders are user-scoped', () => {
   expect(accountKey('u1')).toBe('account:u1');
   expect(activeProjectKey('u1')).toBe('activeProject:u1');
+  expect(createCompanyRefusedKey('u1')).toBe('createCompanyRefused:u1');
 });
 
 test('sweeps account and activeProject keys for every user, leaves others', async () => {
@@ -28,6 +30,7 @@ test('sweeps account and activeProject keys for every user, leaves others', asyn
     [accountKey('u2-stale'), '{}'],
     [activeProjectKey('u1'), 'p-a'],
     [activeProjectKey('u2-stale'), 'p-b'],
+    [createCompanyRefusedKey('u1'), '1'],
     ['theme', 'editorial'], // device-scoped, must survive
   ]);
 
@@ -37,6 +40,7 @@ test('sweeps account and activeProject keys for every user, leaves others', asyn
   expect(await AsyncStorage.getItem(accountKey('u2-stale'))).toBeNull();
   expect(await AsyncStorage.getItem(activeProjectKey('u1'))).toBeNull();
   expect(await AsyncStorage.getItem(activeProjectKey('u2-stale'))).toBeNull();
+  expect(await AsyncStorage.getItem(createCompanyRefusedKey('u1'))).toBeNull();
   expect(await AsyncStorage.getItem('theme')).toBe('editorial');
 });
 

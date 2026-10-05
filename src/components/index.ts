@@ -24,6 +24,7 @@ export { Chip } from './Chip';
 export { ChipRow, type ChipOption } from './ChipRow';
 export { ConfirmSheet } from './ConfirmSheet';
 export { CreateCompanyCard } from './CreateCompanyCard';
+export { CreateCompanySection } from './CreateCompanySection';
 export { EmptyState } from './EmptyState';
 export { ErrorState } from './ErrorState';
 export { PrimaryButton } from './PrimaryButton';

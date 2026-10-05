@@ -1,5 +1,5 @@
 import {
-  cleanCompanyName,
+  checkCompanyName,
   COMPANY_NAME_MAX,
   CREATE_COMPANY_COPY,
   createCompanyFailure,
@@ -30,6 +30,7 @@ beforeEach(() => {
 afterEach(() => warnSpy.mockRestore());
 
 const failed = (message: string) => ({ kind: 'failed', message });
+const ch = (codePoint: number) => String.fromCodePoint(codePoint);
 
 describe('createOwnCompany', () => {
   it('sends the trimmed name and reports a created company', async () => {
@@ -38,11 +39,14 @@ describe('createOwnCompany', () => {
   });
 
   it('refuses a name the server would refuse before touching the network', async () => {
-    for (const name of ['   ', 'x'.repeat(COMPANY_NAME_MAX + 1), 'Acme\u202EBuild']) {
+    for (const name of ['   ', 'x'.repeat(COMPANY_NAME_MAX + 1)]) {
       await expect(createOwnCompany(name)).resolves.toEqual(
         failed(CREATE_COMPANY_COPY.invalidName),
       );
     }
+    await expect(createOwnCompany(`Acme${ch(0x202e)}Build`)).resolves.toEqual(
+      failed(CREATE_COMPANY_COPY.refusedCharacters),
+    );
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
@@ -65,6 +69,12 @@ describe('createOwnCompany', () => {
     await createOwnCompany('Acme');
     expect(warnSpy).toHaveBeenCalledWith(expect.any(String), 'PL003');
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('secret');
+  });
+
+  it('logs the HTTP status when the error carries an empty code', async () => {
+    mockRpc.mockResolvedValueOnce({ error: { code: '', message: 'fetch failed' }, status: 503 });
+    await createOwnCompany('Acme');
+    expect(warnSpy).toHaveBeenCalledWith(expect.any(String), 503);
   });
 
   it('turns a thrown transport failure into offline copy, logging only its name', async () => {
@@ -117,53 +127,59 @@ describe('createCompanyFailure', () => {
   });
 });
 
-describe('cleanCompanyName (mirrors the server NAME RULE)', () => {
+describe('checkCompanyName (mirrors the server NAME RULE)', () => {
+  const ok = (name: string) => ({ ok: true, name });
+  const bad = (reason: 'length' | 'characters') => ({ ok: false, reason });
+
   it('trims JS whitespace plus U+200B from both ends', () => {
-    expect(cleanCompanyName('\u00A0\u3000Acme\uFEFF\u200B ')).toBe('Acme');
-    expect(cleanCompanyName('\u2028Acme\u2029')).toBe('Acme');
-  });
-
-  it('refuses an empty or whitespace-only name', () => {
-    expect(cleanCompanyName('')).toBeNull();
-    expect(cleanCompanyName(' \u200B\u00A0 ')).toBeNull();
-  });
-
-  it('counts characters, not UTF-16 units, so 120 emoji fit and 121 do not', () => {
-    const emoji = '\u{1F3D7}'; // one code point, two UTF-16 units
-    expect(cleanCompanyName(emoji.repeat(COMPANY_NAME_MAX))).toBe(emoji.repeat(COMPANY_NAME_MAX));
-    expect(cleanCompanyName(emoji.repeat(COMPANY_NAME_MAX + 1))).toBeNull();
-    expect(cleanCompanyName('x'.repeat(COMPANY_NAME_MAX))).toHaveLength(COMPANY_NAME_MAX);
-  });
-
-  it('refuses control, zero-width, bidi and separator characters inside the name', () => {
-    const refused = [
-      '\u0000',
-      '\u001F',
-      '\u007F',
-      '\u009F',
-      '\u200B',
-      '\u200D',
-      '\u200E',
-      '\u200F',
-      '\u2060',
-      '\uFEFF',
-      '\u202A',
-      '\u202E',
-      '\u2066',
-      '\u2069',
-      '\u061C',
-      '\u2028',
-      '\u2029',
-      '\n',
-    ];
-    for (const ch of refused) {
-      expect(cleanCompanyName(`Ac${ch}me`)).toBeNull();
+    const edges = [0x00a0, 0x1680, 0x2000, 0x200a, 0x200b, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000];
+    for (const cp of [...edges, 0xfeff]) {
+      expect(checkCompanyName(`${ch(cp)}Acme${ch(cp)}`)).toEqual(ok('Acme'));
     }
   });
 
+  it('refuses an empty or whitespace-only name as a length problem', () => {
+    expect(checkCompanyName('')).toEqual(bad('length'));
+    expect(checkCompanyName(` ${ch(0x200b)}${ch(0x00a0)} `)).toEqual(bad('length'));
+  });
+
+  it('counts characters, not UTF-16 units, so 120 emoji fit and 121 do not', () => {
+    const emoji = ch(0x1f3d7); // one code point, two UTF-16 units
+    expect(checkCompanyName(emoji.repeat(COMPANY_NAME_MAX))).toEqual(
+      ok(emoji.repeat(COMPANY_NAME_MAX)),
+    );
+    expect(checkCompanyName(emoji.repeat(COMPANY_NAME_MAX + 1))).toEqual(bad('length'));
+    expect(checkCompanyName('x'.repeat(COMPANY_NAME_MAX))).toEqual(
+      ok('x'.repeat(COMPANY_NAME_MAX)),
+    );
+  });
+
+  it('refuses every character in the server refuse class anywhere in the name', () => {
+    const refused = [
+      0x0000, 0x0009, 0x000a, 0x001f, 0x007f, 0x0085, 0x009f, 0x00ad, 0x034f, 0x061c, 0x115f,
+      0x1160, 0x17b4, 0x17b5, 0x180b, 0x180e, 0x180f, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f,
+      0x2028, 0x2029, 0x202a, 0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0x206f, 0x3164, 0xfeff,
+      0xffa0, 0xfff0, 0xfff8,
+    ];
+    for (const cp of refused) {
+      expect(checkCompanyName(`Ac${ch(cp)}me`)).toEqual(bad('characters'));
+    }
+  });
+
+  it('refuses a name made only of invisible characters', () => {
+    expect(checkCompanyName(ch(0x2800))).toEqual(bad('characters'));
+    expect(checkCompanyName(`${ch(0xfe0f)}${ch(0xfe00)}`)).toEqual(bad('characters'));
+    expect(checkCompanyName(`${ch(0x2800)} ${ch(0x2800)}`)).toEqual(bad('characters'));
+  });
+
+  it('allows a variation selector inside a real name', () => {
+    const coffee = `${ch(0x2615)}${ch(0xfe0f)}`;
+    expect(checkCompanyName(`${coffee} Cafe Builders`)).toEqual(ok(`${coffee} Cafe Builders`));
+  });
+
   it('accepts ordinary letters, digits, punctuation and accents', () => {
-    expect(cleanCompanyName("O'Brien & Sons, Béton-Arme Co. #2")).toBe(
-      "O'Brien & Sons, Béton-Arme Co. #2",
+    expect(checkCompanyName("O'Brien & Sons, Béton-Armé Co. #2")).toEqual(
+      ok("O'Brien & Sons, Béton-Armé Co. #2"),
     );
   });
 });

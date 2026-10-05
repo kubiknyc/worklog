@@ -12,10 +12,9 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { canCreateOwnCompany, useAuth } from '../../src/auth';
 import {
   ConnectedSyncStatusBanner,
-  CreateCompanyCard,
+  CreateCompanySection,
   DetailSkeleton,
   EmptyState,
   PrimaryButton,
@@ -38,21 +37,11 @@ function formatToday(reportDate: string): string {
 
 export default function TodayScreen() {
   const { activeProjectId, ready } = useActiveProject();
-  const { memberships, companyMemberships, session, refresh } = useAuth();
   const { colors, fonts, spacing, sizes, radii } = useTheme();
   const repo = useRepository();
   const toast = useToast();
   const { degraded } = useSyncActions();
   const [starting, setStarting] = useState(false);
-  // Set once create_own_company succeeds, so the card stays hidden even when
-  // the account reload falls back to a cached account that predates it.
-  const [companyCreated, setCompanyCreated] = useState(false);
-
-  const onCompanyCreated = useCallback(async () => {
-    setCompanyCreated(true);
-    toast.show('Your company is set up.');
-    await refresh();
-  }, [refresh, toast]);
 
   const load = useCallback(async () => {
     if (!activeProjectId) return { project: null, report: null, reportDate: null };
@@ -134,10 +123,7 @@ export default function TodayScreen() {
             />
             {/* Above "Create a project" on purpose: a project membership makes
                 the server refuse a new company for good. */}
-            {!companyCreated &&
-            canCreateOwnCompany(memberships, companyMemberships, session?.user.app_metadata) ? (
-              <CreateCompanyCard onCreated={onCompanyCreated} onRecheck={refresh} />
-            ) : null}
+            <CreateCompanySection />
             <PrimaryButton
               testID="today-create-project"
               label="Create a project"

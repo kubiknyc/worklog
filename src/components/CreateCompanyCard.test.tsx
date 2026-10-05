@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { AccessibilityInfo } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { ThemeProvider } from '../theme';
@@ -13,18 +14,31 @@ function wrapper({ children }: { readonly children: ReactNode }) {
   return <ThemeProvider>{children}</ThemeProvider>;
 }
 
-const onRecheck = jest.fn();
+const onCreated = jest.fn();
+const onAlreadyAffiliated = jest.fn();
+
+function renderCard() {
+  return render(
+    <CreateCompanyCard onCreated={onCreated} onAlreadyAffiliated={onAlreadyAffiliated} />,
+    { wrapper },
+  );
+}
+
+let announceSpy: jest.SpyInstance;
 
 beforeEach(() => {
   mockCreate.mockReset();
-  onRecheck.mockReset();
+  onCreated.mockReset();
+  onAlreadyAffiliated.mockReset();
+  announceSpy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation();
 });
+
+afterEach(() => announceSpy.mockRestore());
 
 describe('CreateCompanyCard', () => {
   it('creates the company with the typed name and tells the caller', async () => {
     mockCreate.mockResolvedValue({ kind: 'created' });
-    const onCreated = jest.fn();
-    render(<CreateCompanyCard onCreated={onCreated} onRecheck={onRecheck} />, { wrapper });
+    renderCard();
 
     expect(screen.getByText('Run your own company?')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('today-company-name'), 'Acme Builders');
@@ -35,10 +49,9 @@ describe('CreateCompanyCard', () => {
     expect(screen.queryByTestId('today-company-error')).toBeNull();
   });
 
-  it('shows the plain failure copy and does not report success', async () => {
+  it('shows the plain failure copy, announces it, and does not report success', async () => {
     mockCreate.mockResolvedValue({ kind: 'failed', message: 'Plain failure copy.' });
-    const onCreated = jest.fn();
-    render(<CreateCompanyCard onCreated={onCreated} onRecheck={onRecheck} />, { wrapper });
+    renderCard();
 
     fireEvent.changeText(screen.getByTestId('today-company-name'), 'Acme');
     fireEvent.press(screen.getByTestId('today-company-submit'));
@@ -46,46 +59,53 @@ describe('CreateCompanyCard', () => {
     expect(await screen.findByTestId('today-company-error')).toHaveTextContent(
       'Plain failure copy.',
     );
+    // iOS ignores accessibilityLiveRegion; the explicit announcement covers it.
+    expect(announceSpy).toHaveBeenCalledWith('Plain failure copy.');
     expect(onCreated).not.toHaveBeenCalled();
   });
 
-  it('sends one request for a double tap', async () => {
-    let resolve: (value: { kind: 'created' }) => void = () => {};
-    mockCreate.mockReturnValue(new Promise((r) => (resolve = r)));
-    const onCreated = jest.fn();
-    render(<CreateCompanyCard onCreated={onCreated} onRecheck={onRecheck} />, { wrapper });
-
-    fireEvent.changeText(screen.getByTestId('today-company-name'), 'Acme');
-    fireEvent.press(screen.getByTestId('today-company-submit'));
-    fireEvent.press(screen.getByTestId('today-company-submit'));
-    resolve({ kind: 'created' });
-
-    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it('on PL002 shows the message and asks the caller to re-check affiliation', async () => {
+  it('hands PL002 to the caller instead of showing it', async () => {
     mockCreate.mockResolvedValue({ kind: 'alreadyAffiliated', message: 'Already linked.' });
-    const onCreated = jest.fn();
-    render(<CreateCompanyCard onCreated={onCreated} onRecheck={onRecheck} />, { wrapper });
+    renderCard();
 
     fireEvent.changeText(screen.getByTestId('today-company-name'), 'Acme');
     fireEvent.press(screen.getByTestId('today-company-submit'));
 
-    expect(await screen.findByTestId('today-company-error')).toHaveTextContent('Already linked.');
-    await waitFor(() => expect(onRecheck).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onAlreadyAffiliated).toHaveBeenCalledWith('Already linked.'));
+    expect(screen.queryByTestId('today-company-error')).toBeNull();
     expect(onCreated).not.toHaveBeenCalled();
   });
 
   it('submits from the keyboard Return key', async () => {
     mockCreate.mockResolvedValue({ kind: 'created' });
-    const onCreated = jest.fn();
-    render(<CreateCompanyCard onCreated={onCreated} onRecheck={onRecheck} />, { wrapper });
+    renderCard();
 
     fireEvent.changeText(screen.getByTestId('today-company-name'), 'Acme');
     fireEvent(screen.getByTestId('today-company-name'), 'submitEditing');
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
     expect(mockCreate).toHaveBeenCalledWith('Acme');
+  });
+
+  // The button shows a spinner while busy, but the field stays editable, so a
+  // Return while the first request is in flight is a real second submit. Only
+  // savingRef stops it.
+  it('sends one request when Return is pressed while a submit is in flight', async () => {
+    let resolve: (value: { kind: 'created' }) => void = () => {};
+    mockCreate.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    renderCard();
+
+    fireEvent.changeText(screen.getByTestId('today-company-name'), 'Acme');
+    fireEvent.press(screen.getByTestId('today-company-submit'));
+    fireEvent(screen.getByTestId('today-company-name'), 'submitEditing');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+
+    resolve({ kind: 'created' });
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });
