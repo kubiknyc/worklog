@@ -146,11 +146,12 @@ const MAX_COMPANY_NAME = 120;
  * `flow=register`, so the page can ask "set up <name> as your company?"
  * before creating anything. `URLSearchParams.get` already URL-decodes it.
  *
- * Null when the key is absent or blank: older mails still in flight carry
- * `flow=register` with no company. That is a normal case, not an error: the
- * server refuses the zero-argument claim (pending_company_name_required,
- * jobsight-backend 20260909000301), so /welcome sends no claim for those and
- * only offers the password step.
+ * Null when the key is absent or blank: worklog-register-company sends
+ * `flow=register` with no company to an unconfirmed account with no parked
+ * marker — a pending invitee. That is a normal case, not an error: the server
+ * refuses the zero-argument claim (pending_company_name_required,
+ * jobsight-backend 20260909000301), so /welcome sends no claim for those,
+ * only offers the password step, and never offers them a company.
  *
  * The value is never trusted as markup — the page renders it as React text
  * — but it is capped here so a very long name cannot wreck the card.

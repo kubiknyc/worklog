@@ -4,7 +4,6 @@ import {
   classifyCreateCompanyFailure,
   cleanCompanyName,
   COMPANY_NAME_MAX,
-  CREATE_COMPANY_DECLINED,
   CREATE_COMPANY_DONE,
   CREATE_COMPANY_MESSAGES,
   endsCreateCompany,
@@ -46,7 +45,7 @@ test("only outcomes a retry cannot fix end the form", () => {
 });
 
 test("every outcome has plain copy that names no internal code", () => {
-  const all = [...Object.values(CREATE_COMPANY_MESSAGES), CREATE_COMPANY_DONE, CREATE_COMPANY_DECLINED];
+  const all = [...Object.values(CREATE_COMPANY_MESSAGES), CREATE_COMPANY_DONE];
   for (const message of all) {
     expect(message.length).toBeGreaterThan(0);
     expect(message).not.toMatch(/PL00\d|42501|create_own_company|PunchLog/);
@@ -78,14 +77,45 @@ test("length counts characters, not UTF-16 units: 120 emoji fit, 121 do not", ()
   expect(cleanCompanyName("x".repeat(COMPANY_NAME_MAX + 1))).toBeNull();
 });
 
-test("control, zero-width, bidi and separator characters are refused inside a name", () => {
+test("every character in the server refuse class is refused anywhere in a name", () => {
   const refused = [
-    0x0000, 0x0009, 0x000a, 0x001f, 0x007f, 0x0085, 0x009f, 0x200b, 0x200c, 0x200d, 0x200e,
-    0x200f, 0x2060, 0xfeff, 0x202a, 0x202e, 0x2066, 0x2069, 0x061c, 0x2028, 0x2029,
+    0x0000, 0x0009, 0x000a, 0x001f, 0x007f, 0x0085, 0x009f, 0x00ad, 0x034f, 0x061c, 0x115f,
+    0x1160, 0x17b4, 0x17b5, 0x180b, 0x180e, 0x180f, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f,
+    0x2028, 0x2029, 0x202a, 0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0x206f, 0x3164, 0xfeff,
+    0xffa0, 0xfff0, 0xfff8,
   ];
   for (const cp of refused) {
     expect(cleanCompanyName(`Ac${ch(cp)}me`)).toBeNull();
   }
+});
+
+test("a name made only of invisible characters is refused, after trimming", () => {
+  expect(cleanCompanyName(ch(0x2800))).toBeNull();
+  expect(cleanCompanyName(`${ch(0xfe0f)}${ch(0xfe00)}`)).toBeNull();
+  expect(cleanCompanyName(` ${ch(0x2800)} ${ch(0x2800)} `)).toBeNull();
+});
+
+test("a variation selector inside a real name is allowed", () => {
+  const coffee = `${ch(0x2615)}${ch(0xfe0f)}`;
+  expect(cleanCompanyName(`${coffee} Cafe Builders`)).toBe(`${coffee} Cafe Builders`);
+});
+
+test("a lone surrogate is refused, a proper pair is not", () => {
+  expect(cleanCompanyName(`Acme${String.fromCharCode(0xd83c)}`)).toBeNull();
+  expect(cleanCompanyName(`${String.fromCharCode(0xdfd7)}Acme`)).toBeNull();
+  expect(cleanCompanyName(`Ac${String.fromCharCode(0xdfd7)}me`)).toBeNull();
+  expect(cleanCompanyName(`Acme ${ch(0x1f3d7)}`)).toBe(`Acme ${ch(0x1f3d7)}`);
+});
+
+test("the plain copy says what to do next", () => {
+  expect(CREATE_COMPANY_MESSAGES.invalidName).toBe(
+    "Enter a company name of up to 120 characters, with no hidden or special characters.",
+  );
+  expect(CREATE_COMPANY_MESSAGES.notConfirmed).toContain("Open the WorkLog app and sign in.");
+  expect(CREATE_COMPANY_MESSAGES.notConfirmed).not.toMatch(/sign-up email/);
+  expect(CREATE_COMPANY_MESSAGES.alreadyAffiliated).toContain(
+    "ask that company's administrator to add you to a project",
+  );
 });
 
 test("ordinary letters, digits, punctuation and accents pass", () => {

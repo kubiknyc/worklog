@@ -47,16 +47,24 @@ test("a non-signup reader is pointed back at the app, not a dead website route",
   expect(page).not.toContain('href="/forgot-password"');
 });
 
+// `linkType === "signup"` now guards two branches, so a generic split would
+// leave one half's assertions vacuous. Pin the done card's else branch itself.
 test("the invitee copy never claims they have a company", () => {
-  // Split on the signup guard and check the fallback halves only — the company
-  // sentence is legitimate above it.
-  const fallbackHalves = page.split('linkType === "signup"').slice(1);
-  expect(fallbackHalves.length).toBeGreaterThan(0);
-  for (const half of fallbackHalves) {
-    const elseBranch = half.split(") : (")[1] ?? "";
-    expect(elseBranch).not.toContain("your company is ready");
-    expect(elseBranch).not.toContain("create your first project");
-  }
+  const doneCard =
+    page.split('phase.kind === "done" ? (')[1]?.split('phase.kind === "confirmed"')[0] ?? "";
+  const elseBranch =
+    doneCard
+      .split('linkType === "signup" && claimedCompany ? (')[1]
+      ?.split(") : (")[1]
+      ?.split("<CreateCompanyForm")[0] ?? "";
+  expect(elseBranch).toContain(
+    '"Your password is saved. Open the WorkLog app on your phone and sign in — your projects will be waiting."',
+  );
+  expect(elseBranch).not.toContain("your company is ready");
+  expect(elseBranch).not.toContain("create your first project");
+  const confirmedCard = page.split('phase.kind === "confirmed"')[1] ?? "";
+  expect(confirmedCard).toContain("Your email is verified. Open the WorkLog app");
+  expect(confirmedCard).not.toContain("your company is ready");
 });
 
 // "PunchLog" itself may still appear inside the file's provenance comment
@@ -104,11 +112,12 @@ test("no post-confirm copy tells a reader to register again", () => {
 
 const form = readFileSync(join(process.cwd(), "app/welcome/CreateCompanyForm.tsx"), "utf8");
 
-// Every register-flow reader who reaches done without a company is offered the
-// form: declined, skipped after a failed claim, out of date (22023), nameless.
-test("the create form is gated on the register flow without a claimed company", () => {
+// Every NAMED-register-link reader who reaches done without a company is
+// offered the form: declined, skipped after a failed claim, out of date (22023).
+test("the create form is gated on a named register link without a claimed company", () => {
+  expect(page).toContain("const isNamedRegister = isRegisterFlow && pendingCompany !== null;");
   expect(page).toContain(
-    "accessToken: isRegisterFlow && !claimedCompany ? phase.accessToken : null,",
+    "accessToken: isNamedRegister && !claimedCompany ? phase.accessToken : null,",
   );
   expect(page).toContain(
     "<CreateCompanyForm accessToken={phase.accessToken} onEnded={endCreateCompany} />",
@@ -126,14 +135,16 @@ test("the create form is gated on the register flow without a claimed company", 
 // nulls it; only invalidName, rateLimited and failed keep the form live.
 test("every ended create-form path drops the token and closes the form", () => {
   expect(page).toMatch(
-    /const endCreateCompany = \(message: string\) => \{\s*setCreateEnded\(message\);\s*setPhase\(\{ kind: "done", accessToken: null \}\);/,
+    /const endCreateCompany = \(message: string \| null\) => \{\s*setCreateEnded\(message\);\s*setPhase\(\{ kind: "done", accessToken: null \}\);/,
   );
   expect(form).toMatch(/if \(response\.ok\) \{\s*onEnded\(CREATE_COMPANY_DONE\);\s*return;/);
   expect(form).toMatch(
     /if \(endsCreateCompany\(outcome\)\) \{\s*onEnded\(CREATE_COMPANY_MESSAGES\[outcome\]\);\s*return;/,
   );
-  expect(form).toContain("onClick={() => onEnded(CREATE_COMPANY_DECLINED)}");
+  // "Not now" closes the form without repeating the done card's sentence.
+  expect(form).toContain("onClick={() => onEnded(null)}");
   expect(form).toContain("Not now");
+  expect(page).toContain("const endCreateCompany = (message: string | null) => {");
 });
 
 // The form's errors stay inline: the page-level expired card would replace
@@ -200,4 +211,23 @@ test("the confirmed card makes no company claim", () => {
 test("the company name is rendered as text, never as markup", () => {
   expect(page).toContain("{phase.company}");
   expect(page).not.toContain("dangerouslySetInnerHTML");
+});
+
+// A nameless register link is a pending invitee's resend (worklog-register-
+// company only omits the name for an unconfirmed account with no marker). They
+// hold a project seat, so the server would refuse them a company: they never
+// get the form, and get the invitee done copy.
+test("nameless register-link readers never get the create form", () => {
+  // The only token-bearing done state is behind isNamedRegister.
+  expect(page).not.toMatch(/accessToken: isRegisterFlow &&/);
+  expect(page).toMatch(/setPhase\(\{ kind: "noName", accessToken: body\.access_token \}\);/);
+  // The done copy's founder branch is keyed on a named link, not the flag alone.
+  expect(page).toContain('{isNamedRegister || linkType === "signup"');
+  expect(page).not.toContain('{isRegisterFlow || linkType === "signup"');
+});
+
+test("the out-of-date claim card has its own heading", () => {
+  expect(page).toContain(
+    '<h1>{claimStale ? "This link is out of date" : "Setting up your company"}</h1>',
+  );
 });

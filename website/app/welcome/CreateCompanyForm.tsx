@@ -10,9 +10,9 @@
  * the error's `code` — server text is never rendered.
  *
  * Every outcome a retry cannot fix (created, expired, notConfirmed,
- * alreadyAffiliated, or "Not now") goes through `onEnded`: the page drops its
- * access token and replaces this form with the message, so no submit button
- * stays live. Only invalidName, rateLimited and failed keep the form here.
+ * alreadyAffiliated, or "Not now", which adds no message) goes through
+ * `onEnded`: the page drops its access token and replaces this form with the
+ * message, so no submit button stays live. Only invalidName, rateLimited and failed keep the form here.
  * Errors never reach the page-level "expired" card, which would replace the
  * success card with password-reset advice — wrong once the password is saved.
  */
@@ -21,7 +21,6 @@ import { useRef, useState } from "react";
 import {
   classifyCreateCompanyFailure,
   cleanCompanyName,
-  CREATE_COMPANY_DECLINED,
   CREATE_COMPANY_DONE,
   CREATE_COMPANY_MESSAGES,
   endsCreateCompany,
@@ -33,8 +32,8 @@ export function CreateCompanyForm({
   onEnded,
 }: {
   readonly accessToken: string;
-  /** Drop the token and show `message` in place of the form. */
-  readonly onEnded: (message: string) => void;
+  /** Drop the token and show `message` (if any) in place of the form. */
+  readonly onEnded: (message: string | null) => void;
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +119,7 @@ export function CreateCompanyForm({
       <button
         className="btn btn-ghost btn-block"
         type="button"
-        onClick={() => onEnded(CREATE_COMPANY_DECLINED)}
+        onClick={() => onEnded(null)}
         disabled={saving}
         style={{ marginTop: 12 }}
       >

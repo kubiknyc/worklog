@@ -1,9 +1,11 @@
 /**
- * The /welcome "Run your own company?" form, for a reader from a register link
- * who reaches the done card without a company: they declined the parked one,
- * skipped after a failed claim, hit an out-of-date link, or came from a
- * nameless link. `create_own_company` accepts all of them (a leftover parked
- * marker is cleared) and refuses anyone already affiliated.
+ * The /welcome "Run your own company?" form, for a reader from a NAMED
+ * register link who reaches the done card without a company: they declined
+ * the parked one, skipped after a failed claim, or hit an out-of-date link.
+ * `create_own_company` accepts all of them (a leftover parked marker is
+ * cleared) and refuses anyone already affiliated. A nameless register link is
+ * a pending invitee's resend — they hold a project seat, the server would
+ * refuse them (PL002), and the page never offers them this form.
  *
  * Why here and not "register again": for a declined reader the marker is gone,
  * and registering again only sends an account-exists email. (A confirmed
@@ -19,13 +21,16 @@
  *   42501 / 401 / 403  not signed in, or the session has gone -> expired
  *   PL001  email not confirmed                                -> notConfirmed
  *   PL002  already in a company, project, or phone book       -> alreadyAffiliated
- *   PL003  name fails the server's name rule                  -> invalidName
+ *   PL003  name fails the server's name rule (cleanCompanyName
+ *          catches it first)                                  -> invalidName
  *   429    too many requests                                  -> rateLimited
  *   anything else (including a 404 before the migration is applied) -> failed
  *
  * expired, notConfirmed and alreadyAffiliated END the form: retrying cannot
  * help, so the page drops its access token and shows the message with no
- * submit button. invalidName, rateLimited and failed keep the form live.
+ * submit button. So do success and "Not now" (which shows nothing extra: the
+ * done card already says the password is saved). invalidName, rateLimited and
+ * failed keep the form live.
  */
 
 /** Same cap as the server's PL003 check, in characters (code points). */
@@ -41,10 +46,11 @@ export type CreateCompanyOutcome =
 
 export const CREATE_COMPANY_MESSAGES: Readonly<Record<CreateCompanyOutcome, string>> = {
   expired: "This page timed out before your company was set up. Open the WorkLog app and sign in.",
-  notConfirmed: "Your email isn't confirmed yet. Open the link in your sign-up email, then try again.",
+  notConfirmed:
+    "Your email isn't confirmed yet, so we couldn't set up your company. Open the WorkLog app and sign in.",
   alreadyAffiliated:
-    "Your account is already linked to a company on WorkLog. If you just set one up, it's ready — otherwise ask them to invite you to a project.",
-  invalidName: `Enter a company name of up to ${COMPANY_NAME_MAX} characters, using only letters, numbers and punctuation.`,
+    "Your account is already linked to a company on WorkLog. If you just set one up, it's ready — otherwise ask that company's administrator to add you to a project.",
+  invalidName: `Enter a company name of up to ${COMPANY_NAME_MAX} characters, with no hidden or special characters.`,
   rateLimited: "Too many attempts — wait a minute and try again.",
   failed: "Something went wrong. Please try again.",
 };
@@ -52,9 +58,6 @@ export const CREATE_COMPANY_MESSAGES: Readonly<Record<CreateCompanyOutcome, stri
 /** Shown when the company was created. Ends the form. */
 export const CREATE_COMPANY_DONE =
   "Your company is set up. Sign in to the WorkLog app — then create your first project and invite your team.";
-
-/** Shown when the reader taps "Not now". Ends the form. */
-export const CREATE_COMPANY_DECLINED = "Your password is saved. Open the WorkLog app and sign in.";
 
 /** Outcomes a retry cannot fix: the form ends and the token is dropped. */
 export function endsCreateCompany(outcome: CreateCompanyOutcome): boolean {
@@ -75,22 +78,35 @@ export function classifyCreateCompanyFailure(
   return "failed";
 }
 
-// Mirrors the server's NAME RULE (jobsight-backend create_own_company). JS `\s`
-// already covers [[:space:]], NBSP, U+1680, U+2000–U+200A, U+2028, U+2029,
-// U+202F, U+205F, U+3000 and U+FEFF; U+200B is added because JS does not count
-// it as whitespace but the server trims it.
+// Mirrors the server's NAME RULE (jobsight-backend create_own_company,
+// 20261005000001). Keep the sets below in step with that header.
+//
+// Trimmed from both ends: JS `\s` already covers [[:space:]], N\P, U+1680,
+// U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF; U+200B is
+// added because JS does not count it as whitespace but the server trims it.
 const EDGE_SPACE = /^[\s\u200B]+|[\s\u200B]+$/g;
-// Refused anywhere: C0/C1 controls and DEL, zero-width and directional marks,
-// bidi embeddings/overrides/isolates, and line/paragraph separators.
-const FORBIDDEN =
-  /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2060\uFEFF\u202A-\u202E\u2066-\u2069\u061C\u2028\u2029]/;
+// Refused ANYWHERE: C0/C1 controls and DEL, soft hyphen, grapheme joiner, ALM,
+// Hangul fillers, Khmer inherent vowels, Mongolian selectors/separator,
+// zero-width chars and LRM/RLM, line/paragraph separators, bidi embeddings and
+// overrides, word joiner/invisible operators/bidi isolates, BOM, specials.
+const REFUSED =
+  /[\u0000-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0\uFFF0-\uFFF8]/;
+// Refused as the WHOLE name: nothing but whitespace, refused characters,
+// variation selectors U+FE00–U+FE0F and the Braille blank U+2800 — it renders
+// blank. (Variation selectors are fine inside a name: an emoji needs one.)
+const INVISIBLE_ONLY = /^[\s\u200B\uFE00-\uFE0F\u2800]+$/;
+// A lone UTF-16 surrogate (a high one not followed by a low one, or a low one
+// not preceded by a high one): not a character, and not valid JSON text.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** The name the server would accept, trimmed as it trims, or null — caught
- *  here so a bad name never costs a round trip. */
+ *  here (after trimming, as the server checks) so a bad name never costs a
+ *  round trip. */
 export function cleanCompanyName(raw: string): string | null {
   const name = raw.replace(EDGE_SPACE, "");
   const length = [...name].length;
-  if (length < 1 || length > COMPANY_NAME_MAX || FORBIDDEN.test(name)) return null;
+  if (length < 1 || length > COMPANY_NAME_MAX) return null;
+  if (REFUSED.test(name) || INVISIBLE_ONLY.test(name) || LONE_SURROGATE.test(name)) return null;
   return name;
 }
 

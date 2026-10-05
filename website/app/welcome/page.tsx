@@ -33,15 +33,19 @@
  * anything is created: "Yes, set it up" calls `claim_pending_company` with the
  * name from the link, "No, that's not my company" calls
  * `discard_pending_company`, which clears the marker and mints nothing. Nobody
- * ends up administrating a company they never agreed to. Older mails still in
- * flight carry `flow=register` with no name. The server refuses the
- * zero-argument claim for those (pending_company_name_required,
- * jobsight-backend 20260909000301), so no claim is sent: the page says there
- * is nothing to set up from that link and goes on to the password.
+ * ends up administrating a company they never agreed to.
  *
- * Any reader from a register link who reaches the done card without a
- * company — declined, skipped after a failed claim, out-of-date link, or a
- * nameless link — is offered an optional "Run your own company?" form, which
+ * A `flow=register` link with NO name is not a founder's mail: worklog-register-
+ * company mints it only for an unconfirmed account with no parked marker —
+ * a pending invitee, who already has a project seat. The server refuses the
+ * zero-argument claim (pending_company_name_required, jobsight-backend
+ * 20260909000301), so no claim is sent: the page says there is nothing to set
+ * up from that link, goes on to the password, and treats the reader as the
+ * invitee they are (no create form; "your projects will be waiting").
+ *
+ * A reader from a NAMED register link who reaches the done card without a
+ * company — declined, skipped after a failed claim, or an out-of-date link —
+ * is offered an optional "Run your own company?" form, which
  * calls `create_own_company` with a name they type themselves
  * (CreateCompanyForm); the server clears any leftover parked marker. For a
  * declined reader it is the only way forward: the marker is gone, and
@@ -108,8 +112,8 @@ type Phase =
       readonly accessToken: string;
       readonly expectedName: string;
     }
-  /** A register link with no company name (an older mail). Nothing is sent:
-   *  the card only offers the password step. */
+  /** A register link with no company name — a pending invitee's resend.
+   *  Nothing is sent: the card only offers the password step. */
   | { readonly kind: "noName"; readonly accessToken: string }
   | { readonly kind: "setPassword"; readonly accessToken: string }
   /** `accessToken` is non-null only while the optional create form is live
@@ -161,22 +165,26 @@ export default function WelcomePage() {
   const [isRegisterFlow, setIsRegisterFlow] = useState(false);
   // Read from the same one fragment read, for the same reason as the tag.
   const [pendingCompany, setPendingCompany] = useState<string | null>(null);
+  // A founder's register link names the parked company. A nameless one is a
+  // pending invitee's resend: they have a project seat, so the server would
+  // refuse them a company (PL002) and they are never offered the form.
+  const isNamedRegister = isRegisterFlow && pendingCompany !== null;
   // The claim was refused because the link names a company that is no longer
   // parked. Retrying cannot fix that, so it gets its own copy and no retry.
   const [claimStale, setClaimStale] = useState(false);
   // The reader said the company wasn't theirs. Changes what the password card
-  // tells them; the done card's create form is gated on the register flow.
+  // tells them; the done card's create form is gated on a named register link.
   const [declinedCompany, setDeclinedCompany] = useState(false);
   // Only a successful claim creates a company, so only this earns the "your
   // company is ready" copy. Every other path (skipped, declined, out of date,
-  // a nameless link, a recovery link) has no company to promise.
+  // an invitee's nameless link, a recovery link) has no company to promise.
   const [claimedCompany, setClaimedCompany] = useState(false);
   // What the create form ended with (created, refused, or "Not now"); shown in
   // its place once the token is dropped.
   const [createEnded, setCreateEnded] = useState<string | null>(null);
 
   /** The create form is over: drop the token and close the form. */
-  const endCreateCompany = (message: string) => {
+  const endCreateCompany = (message: string | null) => {
     setCreateEnded(message);
     setPhase({ kind: "done", accessToken: null });
   };
@@ -432,8 +440,9 @@ export default function WelcomePage() {
           setPhase({ kind: "consent", accessToken: body.access_token, company: pendingCompany });
           return;
         }
-        // An older register link with no name: there is nothing to claim and
-        // the server refuses the zero-argument claim, so nothing is sent.
+        // A register link with no name — a pending invitee's resend: there is
+        // nothing to claim and the server refuses the zero-argument claim, so
+        // nothing is sent.
         setPhase({ kind: "noName", accessToken: body.access_token });
         return;
       }
@@ -527,11 +536,11 @@ export default function WelcomePage() {
         // Only now is it safe to drop the token from the address bar — it has
         // been spent and the password is saved.
         window.history.replaceState(null, "", window.location.pathname);
-        // Keep the token only for the create form (register flow, no company);
-        // every other reader's done card holds none.
+        // Keep the token only for the create form (a named register link with
+        // no company); every other reader's done card holds none.
         setPhase({
           kind: "done",
-          accessToken: isRegisterFlow && !claimedCompany ? phase.accessToken : null,
+          accessToken: isNamedRegister && !claimedCompany ? phase.accessToken : null,
         });
         return;
       }
@@ -678,7 +687,7 @@ export default function WelcomePage() {
 
           {phase.kind === "claim" && !expired ? (
             <div>
-              <h1>Setting up your company</h1>
+              <h1>{claimStale ? "This link is out of date" : "Setting up your company"}</h1>
               <p style={{ marginTop: 12 }}>
                 {claimStale
                   ? "This link is out of date, so there's nothing to set up from it. Skip this step and choose your password — you can set up your company after."
@@ -811,17 +820,18 @@ export default function WelcomePage() {
                 </p>
               ) : (
                 <p>
-                  {/* Someone from a register link with no company (skipped,
-                      declined, out of date, or a nameless link) has no
-                      projects waiting — only an invitee or a reset does. */}
-                  {isRegisterFlow || linkType === "signup"
+                  {/* A founder from a named register link with no company
+                      (skipped, declined, out of date) has no projects waiting;
+                      an invitee (including a nameless register link) or a
+                      reset does. */}
+                  {isNamedRegister || linkType === "signup"
                     ? "Your password is saved. Open the WorkLog app on your phone and sign in."
                     : "Your password is saved. Open the WorkLog app on your phone and sign in — your projects will be waiting."}
                 </p>
               )}
-              {/* A register-flow reader with no company: declined, skipped,
-                  out of date, or a nameless link. Optional. The token is set
-                  only for them (see the setPassword success branch). */}
+              {/* A named-register-link reader with no company: declined,
+                  skipped, or out of date. Optional. The token is set only for
+                  them (see the setPassword success branch). */}
               {phase.accessToken !== null ? (
                 <CreateCompanyForm accessToken={phase.accessToken} onEnded={endCreateCompany} />
               ) : null}
