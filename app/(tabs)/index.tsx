@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   ConnectedSyncStatusBanner,
+  CreateCompanySection,
   DetailSkeleton,
   EmptyState,
   PrimaryButton,
@@ -94,6 +95,7 @@ export default function TodayScreen() {
         <ConnectedSyncStatusBanner />
       </View>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: sizes.screenPad, gap: spacing.lg }}
         showsVerticalScrollIndicator={false}
       >
@@ -119,6 +121,9 @@ export default function TodayScreen() {
               title="No project yet"
               subtitle="Create or join a project to start filing daily reports."
             />
+            {/* Above "Create a project" on purpose: a project membership makes
+                the server refuse a new company for good. */}
+            <CreateCompanySection />
             <PrimaryButton
               testID="today-create-project"
               label="Create a project"
