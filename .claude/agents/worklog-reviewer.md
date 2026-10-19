@@ -62,9 +62,10 @@ defensive over-engineering. Style preferences are not findings.
   magic spacing numbers are HIGH.
 - **Safe areas:** layouts guard safe-area insets explicitly rather than
   assuming screen bounds. (MEDIUM)
-- **testID coverage:** any element a Maestro flow will drive needs a stable
-  `testID`. Flows currently key on visible copy, which collides with the
-  plain-language copy rule — new screens keying on text are a MEDIUM finding.
+- **testID coverage:** any element a Maestro flow drives needs a stable
+  `testID` — flows key on `testID`, never on visible copy
+  (`.claude/rules/maestro-testids.md`). A flow-driven element without a
+  `testID`, or a flow that selects on text, is a MEDIUM finding.
 - **User-facing copy:** plain language only. No internal labels (M6, F4, "phase")
   in any UI string or user-facing doc. (HIGH)
 - **TypeScript strict:** no `any`, no bare `as` casts, no `@ts-ignore` /
@@ -75,10 +76,10 @@ defensive over-engineering. Style preferences are not findings.
 - **OTA safety:** a change to the SQLite schema or a mutation payload shape must
   be flagged as store-build-only — a device offline for days has queued
   mutations written in the old shape. (HIGH)
-- **Open decisions:** `docs/architecture/00-README.md` lists decisions awaiting
-  the owner (R1 photo tag edits, distribution list scope, lock grace window). A
-  diff that silently decides one of these is a HIGH finding regardless of which
-  way it decided.
+- **Open decisions:** `docs/architecture/00-README.md` records which design
+  decisions are settled and which are still open. A diff that silently decides
+  one the index lists as open at review time is a HIGH finding regardless of
+  which way it decided.
 
 ## Output format
 

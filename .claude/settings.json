@@ -30,7 +30,9 @@
       "Bash(git reset --hard:*)",
       "Bash(npm publish:*)",
       "Bash(eas submit:*)",
-      "Bash(eas update --channel production:*)"
+      "Bash(npx eas submit:*)",
+      "Bash(eas update:*)",
+      "Bash(npx eas update:*)"
     ]
   }
 }
