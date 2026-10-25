@@ -16,6 +16,9 @@
  * (e.g. the caller is a company's only administrator). That message is shown
  * verbatim — the user needs to know *why* it was refused, and generic "try
  * again" copy would be wrong advice for a refusal that cannot succeed unaided.
+ *
+ * "Projects" (T23) is the persistent route to switching job sites and to
+ * creating another project — see `app/project/switch.tsx`.
  */
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -70,6 +73,15 @@ export default function SettingsScreen() {
       }}
     >
       <View style={{ width: '100%', paddingHorizontal: sizes.screenPad, gap: 8 }}>
+        {/* Always present (T23): the Today empty state is the only other way
+            to reach /project/new, and it disappears once you have a project. */}
+        <SheetRow
+          testID="settings-projects-link"
+          icon="business-outline"
+          label="Projects"
+          accessibilityLabel="Projects — switch or add a project"
+          onPress={() => router.push('/project/switch')}
+        />
         <SheetRow
           testID="settings-sync-link"
           icon="sync-outline"

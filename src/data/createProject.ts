@@ -27,11 +27,12 @@
  * `useAuth().refresh()` (so the new `super` membership lands in context) →
  * `setActiveProject(newId)`.
  *
- * Geocoding: there is no geocode edge function (that is M9). When the caller
- * supplies a manually dropped pin we record it with
- * `geocode_source: 'manual_pin'` + `geocoded_at`; otherwise both stay null and
- * `timezone` is the DEVICE zone, which `computeReportDate` already treats as
- * the fallback.
+ * Geocoding: when the caller supplies a manually dropped pin we record it
+ * with `geocode_source: 'manual_pin'` + `geocoded_at`; otherwise both stay
+ * null here and the address is geocoded server-side — by `geocodeProject()`
+ * (the `worklog-geocode` edge function) right after create, and lazily by
+ * `worklog-weather` as a fallback. `timezone` is the DEVICE zone, which
+ * `computeReportDate` already treats as the fallback.
  */
 import { isLikelyOffline } from '../lib/errors';
 import { uuidv4 } from '../lib/uuid';

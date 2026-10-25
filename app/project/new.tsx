@@ -6,7 +6,8 @@
  * `useAuth().refresh()` (so the new `super` membership lands in context) ->
  * `setActiveProject(newId)` (so Today and everywhere else picks it up
  * immediately — `useActiveProjectSync` then mirrors it into the repo/pull
- * cursor on its own).
+ * cursor on its own). With an address, `geocodeProject` then fills the
+ * project's coordinates in the background (T24).
  */
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -17,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth';
 import { PrimaryButton, TextField, useToast } from '../../src/components';
 import { createProject } from '../../src/data/createProject';
+import { geocodeProject } from '../../src/data/geocodeProject';
 import { useActiveProject } from '../../src/project';
 import { useTheme } from '../../src/theme';
 import { hitSlopFor } from '../../src/theme/touchTarget';
@@ -41,7 +43,12 @@ export default function NewProjectScreen() {
     }
     setSaving(true);
     try {
-      const projectId = await createProject({ name, address: address.trim() || null });
+      const trimmedAddress = address.trim() || null;
+      const projectId = await createProject({ name, address: trimmedAddress });
+      // Fire-and-forget (T24): fills lat/lng server-side so the weather fill
+      // has coordinates. Never throws, never gates creation; worklog-weather
+      // geocodes lazily too if this one misses.
+      if (trimmedAddress) void geocodeProject(projectId);
       await refresh();
       setActiveProject(projectId);
       router.back();
