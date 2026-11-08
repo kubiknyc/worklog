@@ -22,7 +22,9 @@ import { useCallback, useState } from 'react';
 import { Linking, View } from 'react-native';
 
 import { useAuth } from '../../src/auth';
-import { ConfirmSheet, SheetRow, useToast } from '../../src/components';
+import { deleteAccountMessage } from '../../src/auth/soloCompany';
+import { useDeleteAccountWarning } from '../../src/auth/useDeleteAccountWarning';
+import { ConfirmSheet, SheetRow } from '../../src/components';
 import { PRIVACY_URL, TERMS_URL } from '../../src/lib/legal';
 import { useActiveProject } from '../../src/project';
 import { useTheme } from '../../src/theme';
@@ -31,13 +33,14 @@ export default function SettingsScreen() {
   const { colors, sizes } = useTheme();
   const { signOut, deleteAccount } = useAuth();
   const { activeProjectId } = useActiveProject();
-  const toast = useToast();
 
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   // Guards the double-tap: deletion is a network round-trip, and the sheet
   // stays up until it resolves so a refusal is read in place.
   const [deleting, setDeleting] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const deleteWarning = useDeleteAccountWarning(deleteOpen);
 
   const handleSignOut = useCallback(() => {
     setSignOutOpen(false);
@@ -53,10 +56,9 @@ export default function SettingsScreen() {
       const message = await deleteAccount();
       setDeleting(false);
       if (message === null) return;
-      setDeleteOpen(false);
-      toast.showError(message);
+      setRefusal(message);
     })();
-  }, [deleteAccount, deleting, toast]);
+  }, [deleteAccount, deleting]);
 
   return (
     <View
@@ -131,16 +133,21 @@ export default function SettingsScreen() {
         onClose={() => setSignOutOpen(false)}
       />
 
+      {/* A refusal is shown in the sheet, not a toast: the toast clamps to two
+          lines and vanishes after ~2.6s, which would cut off the reason. */}
       <ConfirmSheet
         visible={deleteOpen}
         testID="settings-delete-account"
-        title="Delete your account?"
-        message="This permanently deletes your account and removes your access to this company's reports. It cannot be undone."
-        confirmLabel={deleting ? 'Deleting…' : 'Delete account'}
-        cancelLabel="Cancel"
+        title={refusal ? "Can't delete your account" : 'Delete your account?'}
+        message={refusal ?? deleteAccountMessage(deleteWarning)}
+        confirmLabel={deleting ? 'Deleting…' : refusal ? 'Try again' : 'Delete account'}
+        cancelLabel={refusal ? 'Close' : 'Cancel'}
         onConfirm={handleDelete}
         onClose={() => {
-          if (!deleting) setDeleteOpen(false);
+          if (!deleting) {
+            setDeleteOpen(false);
+            setRefusal(null);
+          }
         }}
       />
     </View>
