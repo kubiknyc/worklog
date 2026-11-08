@@ -1,0 +1,946 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T20:52:16.877Z",
+  "title": "Design System: WorkLog",
+  "extensions": {
+    "colorMeta": {
+      "blueprint-bg": {
+        "role": "neutral",
+        "displayName": "Blueprint Night",
+        "canonical": "#0C2944",
+        "tonalRamp": [
+          "oklch(15% 0.008 249.7)",
+          "oklch(26% 0.024 249.7)",
+          "oklch(37% 0.041 249.7)",
+          "oklch(48% 0.058 249.7)",
+          "oklch(60% 0.061 249.7)",
+          "oklch(72% 0.043 249.7)",
+          "oklch(84% 0.024 249.7)",
+          "oklch(95% 0.008 249.7)"
+        ]
+      },
+      "blueprint-surface": {
+        "role": "neutral",
+        "displayName": "Plan Blue",
+        "canonical": "#103A5C",
+        "tonalRamp": [
+          "oklch(15% 0.009 247.1)",
+          "oklch(26% 0.030 247.1)",
+          "oklch(37% 0.051 247.1)",
+          "oklch(48% 0.071 247.1)",
+          "oklch(60% 0.075 247.1)",
+          "oklch(72% 0.053 247.1)",
+          "oklch(84% 0.030 247.1)",
+          "oklch(95% 0.009 247.1)"
+        ]
+      },
+      "blueprint-surface2": {
+        "role": "neutral",
+        "displayName": "Sheet Blue",
+        "canonical": "#0E3252",
+        "tonalRamp": [
+          "oklch(15% 0.009 249.1)",
+          "oklch(26% 0.028 249.1)",
+          "oklch(37% 0.048 249.1)",
+          "oklch(48% 0.067 249.1)",
+          "oklch(60% 0.070 249.1)",
+          "oklch(72% 0.049 249.1)",
+          "oklch(84% 0.028 249.1)",
+          "oklch(95% 0.009 249.1)"
+        ]
+      },
+      "blueprint-text": {
+        "role": "neutral",
+        "displayName": "Cold Paper Ink",
+        "canonical": "#EAF4FF",
+        "tonalRamp": [
+          "oklch(15% 0.002 250.6)",
+          "oklch(26% 0.007 250.6)",
+          "oklch(37% 0.012 250.6)",
+          "oklch(48% 0.017 250.6)",
+          "oklch(60% 0.018 250.6)",
+          "oklch(72% 0.013 250.6)",
+          "oklch(84% 0.007 250.6)",
+          "oklch(95% 0.002 250.6)"
+        ]
+      },
+      "blueprint-muted": {
+        "role": "neutral",
+        "displayName": "Faded Line Blue",
+        "canonical": "#8FB6D6",
+        "tonalRamp": [
+          "oklch(15% 0.008 243.4)",
+          "oklch(26% 0.025 243.4)",
+          "oklch(37% 0.042 243.4)",
+          "oklch(48% 0.059 243.4)",
+          "oklch(60% 0.062 243.4)",
+          "oklch(72% 0.044 243.4)",
+          "oklch(84% 0.025 243.4)",
+          "oklch(95% 0.008 243.4)"
+        ]
+      },
+      "blueprint-faint": {
+        "role": "neutral",
+        "displayName": "Ghost Grid Blue",
+        "canonical": "#5E86A6",
+        "tonalRamp": [
+          "oklch(15% 0.008 243.3)",
+          "oklch(26% 0.026 243.3)",
+          "oklch(37% 0.045 243.3)",
+          "oklch(48% 0.063 243.3)",
+          "oklch(60% 0.066 243.3)",
+          "oklch(72% 0.046 243.3)",
+          "oklch(84% 0.026 243.3)",
+          "oklch(95% 0.008 243.3)"
+        ]
+      },
+      "blueprint-border": {
+        "role": "neutral",
+        "displayName": "Blueprint Border",
+        "canonical": "rgba(120,180,220,0.18)",
+        "tonalRamp": [
+          "oklch(15% 0.011 238.6)",
+          "oklch(26% 0.034 238.6)",
+          "oklch(37% 0.057 238.6)",
+          "oklch(48% 0.081 238.6)",
+          "oklch(60% 0.085 238.6)",
+          "oklch(72% 0.059 238.6)",
+          "oklch(84% 0.034 238.6)",
+          "oklch(95% 0.011 238.6)"
+        ]
+      },
+      "blueprint-accent": {
+        "role": "primary",
+        "displayName": "Survey Cyan",
+        "canonical": "#4FC3F7",
+        "tonalRamp": [
+          "oklch(15% 0.016 231.1)",
+          "oklch(26% 0.051 231.1)",
+          "oklch(37% 0.086 231.1)",
+          "oklch(48% 0.120 231.1)",
+          "oklch(60% 0.127 231.1)",
+          "oklch(72% 0.089 231.1)",
+          "oklch(84% 0.051 231.1)",
+          "oklch(95% 0.016 231.1)"
+        ]
+      },
+      "blueprint-accent-ink": {
+        "role": "neutral",
+        "displayName": "Deep Drafting Ink",
+        "canonical": "#06243C",
+        "tonalRamp": [
+          "oklch(15% 0.007 246.8)",
+          "oklch(26% 0.023 246.8)",
+          "oklch(37% 0.039 246.8)",
+          "oklch(48% 0.054 246.8)",
+          "oklch(60% 0.057 246.8)",
+          "oklch(72% 0.040 246.8)",
+          "oklch(84% 0.023 246.8)",
+          "oklch(95% 0.007 246.8)"
+        ]
+      },
+      "blueprint-error": {
+        "role": "tertiary",
+        "displayName": "Blueprint Error",
+        "canonical": "#FF8A8A",
+        "tonalRamp": [
+          "oklch(15% 0.018 20.9)",
+          "oklch(26% 0.057 20.9)",
+          "oklch(37% 0.096 20.9)",
+          "oklch(48% 0.135 20.9)",
+          "oklch(60% 0.142 20.9)",
+          "oklch(72% 0.099 20.9)",
+          "oklch(84% 0.057 20.9)",
+          "oklch(95% 0.018 20.9)"
+        ]
+      },
+      "editorial-bg": {
+        "role": "neutral",
+        "displayName": "Bone Paper",
+        "canonical": "#F0EBE0",
+        "tonalRamp": [
+          "oklch(15% 0.002 86.4)",
+          "oklch(26% 0.006 86.4)",
+          "oklch(37% 0.011 86.4)",
+          "oklch(48% 0.015 86.4)",
+          "oklch(60% 0.016 86.4)",
+          "oklch(72% 0.011 86.4)",
+          "oklch(84% 0.006 86.4)",
+          "oklch(95% 0.002 86.4)"
+        ]
+      },
+      "editorial-surface": {
+        "role": "neutral",
+        "displayName": "Fresh Sheet",
+        "canonical": "#F8F4EB",
+        "tonalRamp": [
+          "oklch(15% 0.002 86.8)",
+          "oklch(26% 0.005 86.8)",
+          "oklch(37% 0.009 86.8)",
+          "oklch(48% 0.012 86.8)",
+          "oklch(60% 0.013 86.8)",
+          "oklch(72% 0.009 86.8)",
+          "oklch(84% 0.005 86.8)",
+          "oklch(95% 0.002 86.8)"
+        ]
+      },
+      "editorial-surface2": {
+        "role": "neutral",
+        "displayName": "Kraft",
+        "canonical": "#EAE3D3",
+        "tonalRamp": [
+          "oklch(15% 0.003 87.2)",
+          "oklch(26% 0.009 87.2)",
+          "oklch(37% 0.015 87.2)",
+          "oklch(48% 0.022 87.2)",
+          "oklch(60% 0.023 87.2)",
+          "oklch(72% 0.016 87.2)",
+          "oklch(84% 0.009 87.2)",
+          "oklch(95% 0.003 87.2)"
+        ]
+      },
+      "editorial-text": {
+        "role": "neutral",
+        "displayName": "Lamp Black",
+        "canonical": "#1F1B14",
+        "tonalRamp": [
+          "oklch(15% 0.002 81.6)",
+          "oklch(26% 0.006 81.6)",
+          "oklch(37% 0.010 81.6)",
+          "oklch(48% 0.014 81.6)",
+          "oklch(60% 0.014 81.6)",
+          "oklch(72% 0.010 81.6)",
+          "oklch(84% 0.006 81.6)",
+          "oklch(95% 0.002 81.6)"
+        ]
+      },
+      "editorial-muted": {
+        "role": "neutral",
+        "displayName": "Pencil Umber",
+        "canonical": "#645B4B",
+        "tonalRamp": [
+          "oklch(15% 0.003 82.0)",
+          "oklch(26% 0.011 82.0)",
+          "oklch(37% 0.018 82.0)",
+          "oklch(48% 0.026 82.0)",
+          "oklch(60% 0.027 82.0)",
+          "oklch(72% 0.019 82.0)",
+          "oklch(84% 0.011 82.0)",
+          "oklch(95% 0.003 82.0)"
+        ]
+      },
+      "editorial-faint": {
+        "role": "neutral",
+        "displayName": "Editorial Faint",
+        "canonical": "#6B6354",
+        "tonalRamp": [
+          "oklch(15% 0.003 83.2)",
+          "oklch(26% 0.010 83.2)",
+          "oklch(37% 0.017 83.2)",
+          "oklch(48% 0.024 83.2)",
+          "oklch(60% 0.025 83.2)",
+          "oklch(72% 0.018 83.2)",
+          "oklch(84% 0.010 83.2)",
+          "oklch(95% 0.003 83.2)"
+        ]
+      },
+      "editorial-border": {
+        "role": "neutral",
+        "displayName": "Editorial Border",
+        "canonical": "rgba(43,36,24,0.14)",
+        "tonalRamp": [
+          "oklch(15% 0.003 80.8)",
+          "oklch(26% 0.009 80.8)",
+          "oklch(37% 0.016 80.8)",
+          "oklch(48% 0.022 80.8)",
+          "oklch(60% 0.023 80.8)",
+          "oklch(72% 0.016 80.8)",
+          "oklch(84% 0.009 80.8)",
+          "oklch(95% 0.003 80.8)"
+        ]
+      },
+      "editorial-accent": {
+        "role": "primary",
+        "displayName": "Oxblood Rubric",
+        "canonical": "#9A3B2E",
+        "tonalRamp": [
+          "oklch(15% 0.016 30.3)",
+          "oklch(26% 0.052 30.3)",
+          "oklch(37% 0.088 30.3)",
+          "oklch(48% 0.124 30.3)",
+          "oklch(60% 0.130 30.3)",
+          "oklch(72% 0.091 30.3)",
+          "oklch(84% 0.052 30.3)",
+          "oklch(95% 0.016 30.3)"
+        ]
+      },
+      "editorial-accent-ink": {
+        "role": "neutral",
+        "displayName": "Editorial Accent Ink",
+        "canonical": "#F5F0E6",
+        "tonalRamp": [
+          "oklch(15% 0.002 84.6)",
+          "oklch(26% 0.006 84.6)",
+          "oklch(37% 0.010 84.6)",
+          "oklch(48% 0.014 84.6)",
+          "oklch(60% 0.014 84.6)",
+          "oklch(72% 0.010 84.6)",
+          "oklch(84% 0.006 84.6)",
+          "oklch(95% 0.002 84.6)"
+        ]
+      },
+      "editorial-error": {
+        "role": "tertiary",
+        "displayName": "Editorial Error",
+        "canonical": "#B42318",
+        "tonalRamp": [
+          "oklch(15% 0.023 29.5)",
+          "oklch(26% 0.073 29.5)",
+          "oklch(37% 0.123 29.5)",
+          "oklch(48% 0.173 29.5)",
+          "oklch(60% 0.182 29.5)",
+          "oklch(72% 0.127 29.5)",
+          "oklch(84% 0.073 29.5)",
+          "oklch(95% 0.023 29.5)"
+        ]
+      },
+      "beton-bg": {
+        "role": "neutral",
+        "displayName": "Poured Concrete",
+        "canonical": "#C9C8C3",
+        "tonalRamp": [
+          "oklch(15% 0.001 97.4)",
+          "oklch(26% 0.003 97.4)",
+          "oklch(37% 0.005 97.4)",
+          "oklch(48% 0.007 97.4)",
+          "oklch(60% 0.007 97.4)",
+          "oklch(72% 0.005 97.4)",
+          "oklch(84% 0.003 97.4)",
+          "oklch(95% 0.001 97.4)"
+        ]
+      },
+      "beton-surface": {
+        "role": "neutral",
+        "displayName": "Trowelled Slab",
+        "canonical": "#D3D2CD",
+        "tonalRamp": [
+          "oklch(15% 0.001 97.4)",
+          "oklch(26% 0.003 97.4)",
+          "oklch(37% 0.005 97.4)",
+          "oklch(48% 0.007 97.4)",
+          "oklch(60% 0.007 97.4)",
+          "oklch(72% 0.005 97.4)",
+          "oklch(84% 0.003 97.4)",
+          "oklch(95% 0.001 97.4)"
+        ]
+      },
+      "beton-surface2": {
+        "role": "neutral",
+        "displayName": "Shadowed Form",
+        "canonical": "#C0BFBA",
+        "tonalRamp": [
+          "oklch(15% 0.001 97.4)",
+          "oklch(26% 0.003 97.4)",
+          "oklch(37% 0.005 97.4)",
+          "oklch(48% 0.007 97.4)",
+          "oklch(60% 0.007 97.4)",
+          "oklch(72% 0.005 97.4)",
+          "oklch(84% 0.003 97.4)",
+          "oklch(95% 0.001 97.4)"
+        ]
+      },
+      "beton-text": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#46453F",
+        "tonalRamp": [
+          "oklch(15% 0.001 99.1)",
+          "oklch(26% 0.004 99.1)",
+          "oklch(37% 0.007 99.1)",
+          "oklch(48% 0.009 99.1)",
+          "oklch(60% 0.010 99.1)",
+          "oklch(72% 0.007 99.1)",
+          "oklch(84% 0.004 99.1)",
+          "oklch(95% 0.001 99.1)"
+        ]
+      },
+      "beton-muted": {
+        "role": "neutral",
+        "displayName": "Beton Muted",
+        "canonical": "#4A4945",
+        "tonalRamp": [
+          "oklch(15% 0.001 95.2)",
+          "oklch(26% 0.003 95.2)",
+          "oklch(37% 0.005 95.2)",
+          "oklch(48% 0.006 95.2)",
+          "oklch(60% 0.007 95.2)",
+          "oklch(72% 0.005 95.2)",
+          "oklch(84% 0.003 95.2)",
+          "oklch(95% 0.001 95.2)"
+        ]
+      },
+      "beton-faint": {
+        "role": "neutral",
+        "displayName": "Beton Faint",
+        "canonical": "#525147",
+        "tonalRamp": [
+          "oklch(15% 0.002 102.4)",
+          "oklch(26% 0.006 102.4)",
+          "oklch(37% 0.011 102.4)",
+          "oklch(48% 0.015 102.4)",
+          "oklch(60% 0.016 102.4)",
+          "oklch(72% 0.011 102.4)",
+          "oklch(84% 0.006 102.4)",
+          "oklch(95% 0.002 102.4)"
+        ]
+      },
+      "beton-border": {
+        "role": "neutral",
+        "displayName": "Beton Border",
+        "canonical": "rgba(28,26,23,0.12)",
+        "tonalRamp": [
+          "oklch(15% 0.001 78.2)",
+          "oklch(26% 0.003 78.2)",
+          "oklch(37% 0.004 78.2)",
+          "oklch(48% 0.006 78.2)",
+          "oklch(60% 0.007 78.2)",
+          "oklch(72% 0.005 78.2)",
+          "oklch(84% 0.003 78.2)",
+          "oklch(95% 0.001 78.2)"
+        ]
+      },
+      "beton-accent": {
+        "role": "primary",
+        "displayName": "Rust Iron",
+        "canonical": "#8A2F0A",
+        "tonalRamp": [
+          "oklch(15% 0.016 39.1)",
+          "oklch(26% 0.053 39.1)",
+          "oklch(37% 0.089 39.1)",
+          "oklch(48% 0.125 39.1)",
+          "oklch(60% 0.132 39.1)",
+          "oklch(72% 0.092 39.1)",
+          "oklch(84% 0.053 39.1)",
+          "oklch(95% 0.016 39.1)"
+        ]
+      },
+      "beton-accent-ink": {
+        "role": "neutral",
+        "displayName": "Beton Accent Ink",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "oklch(15% 0.000 89.9)",
+          "oklch(26% 0.000 89.9)",
+          "oklch(37% 0.000 89.9)",
+          "oklch(48% 0.000 89.9)",
+          "oklch(60% 0.000 89.9)",
+          "oklch(72% 0.000 89.9)",
+          "oklch(84% 0.000 89.9)",
+          "oklch(95% 0.000 89.9)"
+        ]
+      },
+      "beton-error": {
+        "role": "tertiary",
+        "displayName": "Beton Error",
+        "canonical": "#8E1B12",
+        "tonalRamp": [
+          "oklch(15% 0.019 29.5)",
+          "oklch(26% 0.061 29.5)",
+          "oklch(37% 0.102 29.5)",
+          "oklch(48% 0.144 29.5)",
+          "oklch(60% 0.152 29.5)",
+          "oklch(72% 0.106 29.5)",
+          "oklch(84% 0.061 29.5)",
+          "oklch(95% 0.019 29.5)"
+        ]
+      },
+      "blueprint-report-draft": {
+        "role": "neutral",
+        "displayName": "Blueprint Report Draft",
+        "canonical": "#FF6B6F",
+        "tonalRamp": [
+          "oklch(15% 0.023 21.3)",
+          "oklch(26% 0.072 21.3)",
+          "oklch(37% 0.122 21.3)",
+          "oklch(48% 0.172 21.3)",
+          "oklch(60% 0.181 21.3)",
+          "oklch(72% 0.127 21.3)",
+          "oklch(84% 0.072 21.3)",
+          "oklch(95% 0.023 21.3)"
+        ]
+      },
+      "blueprint-report-submitted": {
+        "role": "neutral",
+        "displayName": "Blueprint Report Submitted",
+        "canonical": "#8AA6F7",
+        "tonalRamp": [
+          "oklch(15% 0.015 268.8)",
+          "oklch(26% 0.049 268.8)",
+          "oklch(37% 0.082 268.8)",
+          "oklch(48% 0.116 268.8)",
+          "oklch(60% 0.122 268.8)",
+          "oklch(72% 0.085 268.8)",
+          "oklch(84% 0.049 268.8)",
+          "oklch(95% 0.015 268.8)"
+        ]
+      },
+      "blueprint-report-locked": {
+        "role": "neutral",
+        "displayName": "Blueprint Report Locked",
+        "canonical": "#46C98A",
+        "tonalRamp": [
+          "oklch(15% 0.018 158.5)",
+          "oklch(26% 0.059 158.5)",
+          "oklch(37% 0.099 158.5)",
+          "oklch(48% 0.140 158.5)",
+          "oklch(60% 0.147 158.5)",
+          "oklch(72% 0.103 158.5)",
+          "oklch(84% 0.059 158.5)",
+          "oklch(95% 0.018 158.5)"
+        ]
+      },
+      "blueprint-report-amended": {
+        "role": "neutral",
+        "displayName": "Blueprint Report Amended",
+        "canonical": "#4FC3F7",
+        "tonalRamp": [
+          "oklch(15% 0.016 231.1)",
+          "oklch(26% 0.051 231.1)",
+          "oklch(37% 0.086 231.1)",
+          "oklch(48% 0.120 231.1)",
+          "oklch(60% 0.127 231.1)",
+          "oklch(72% 0.089 231.1)",
+          "oklch(84% 0.051 231.1)",
+          "oklch(95% 0.016 231.1)"
+        ]
+      },
+      "editorial-report-draft": {
+        "role": "neutral",
+        "displayName": "Editorial Report Draft",
+        "canonical": "#E5484D",
+        "tonalRamp": [
+          "oklch(15% 0.024 23.0)",
+          "oklch(26% 0.077 23.0)",
+          "oklch(37% 0.131 23.0)",
+          "oklch(48% 0.184 23.0)",
+          "oklch(60% 0.193 23.0)",
+          "oklch(72% 0.135 23.0)",
+          "oklch(84% 0.077 23.0)",
+          "oklch(95% 0.024 23.0)"
+        ]
+      },
+      "editorial-report-submitted": {
+        "role": "neutral",
+        "displayName": "Editorial Report Submitted",
+        "canonical": "#3E63DD",
+        "tonalRamp": [
+          "oklch(15% 0.024 267.0)",
+          "oklch(26% 0.076 267.0)",
+          "oklch(37% 0.129 267.0)",
+          "oklch(48% 0.181 267.0)",
+          "oklch(60% 0.191 267.0)",
+          "oklch(72% 0.134 267.0)",
+          "oklch(84% 0.076 267.0)",
+          "oklch(95% 0.024 267.0)"
+        ]
+      },
+      "editorial-report-locked": {
+        "role": "neutral",
+        "displayName": "Editorial Report Locked",
+        "canonical": "#1F8A50",
+        "tonalRamp": [
+          "oklch(15% 0.016 154.0)",
+          "oklch(26% 0.052 154.0)",
+          "oklch(37% 0.088 154.0)",
+          "oklch(48% 0.123 154.0)",
+          "oklch(60% 0.130 154.0)",
+          "oklch(72% 0.091 154.0)",
+          "oklch(84% 0.052 154.0)",
+          "oklch(95% 0.016 154.0)"
+        ]
+      },
+      "editorial-report-amended": {
+        "role": "neutral",
+        "displayName": "Editorial Report Amended",
+        "canonical": "#9A3B2E",
+        "tonalRamp": [
+          "oklch(15% 0.016 30.3)",
+          "oklch(26% 0.052 30.3)",
+          "oklch(37% 0.088 30.3)",
+          "oklch(48% 0.124 30.3)",
+          "oklch(60% 0.130 30.3)",
+          "oklch(72% 0.091 30.3)",
+          "oklch(84% 0.052 30.3)",
+          "oklch(95% 0.016 30.3)"
+        ]
+      },
+      "beton-report-draft": {
+        "role": "neutral",
+        "displayName": "Beton Report Draft",
+        "canonical": "#BE3137",
+        "tonalRamp": [
+          "oklch(15% 0.022 23.5)",
+          "oklch(26% 0.071 23.5)",
+          "oklch(37% 0.120 23.5)",
+          "oklch(48% 0.169 23.5)",
+          "oklch(60% 0.177 23.5)",
+          "oklch(72% 0.124 23.5)",
+          "oklch(84% 0.071 23.5)",
+          "oklch(95% 0.022 23.5)"
+        ]
+      },
+      "beton-report-submitted": {
+        "role": "neutral",
+        "displayName": "Beton Report Submitted",
+        "canonical": "#2F50C0",
+        "tonalRamp": [
+          "oklch(15% 0.022 266.8)",
+          "oklch(26% 0.072 266.8)",
+          "oklch(37% 0.121 266.8)",
+          "oklch(48% 0.171 266.8)",
+          "oklch(60% 0.180 266.8)",
+          "oklch(72% 0.126 266.8)",
+          "oklch(84% 0.072 266.8)",
+          "oklch(95% 0.022 266.8)"
+        ]
+      },
+      "beton-report-locked": {
+        "role": "neutral",
+        "displayName": "Beton Report Locked",
+        "canonical": "#1A7745",
+        "tonalRamp": [
+          "oklch(15% 0.014 154.3)",
+          "oklch(26% 0.046 154.3)",
+          "oklch(37% 0.078 154.3)",
+          "oklch(48% 0.110 154.3)",
+          "oklch(60% 0.116 154.3)",
+          "oklch(72% 0.081 154.3)",
+          "oklch(84% 0.046 154.3)",
+          "oklch(95% 0.014 154.3)"
+        ]
+      },
+      "beton-report-amended": {
+        "role": "neutral",
+        "displayName": "Beton Report Amended",
+        "canonical": "#8A2F0A",
+        "tonalRamp": [
+          "oklch(15% 0.016 39.1)",
+          "oklch(26% 0.053 39.1)",
+          "oklch(37% 0.089 39.1)",
+          "oklch(48% 0.125 39.1)",
+          "oklch(60% 0.132 39.1)",
+          "oklch(72% 0.092 39.1)",
+          "oklch(84% 0.053 39.1)",
+          "oklch(95% 0.016 39.1)"
+        ]
+      },
+      "blueprint-priority-medium": {
+        "role": "tertiary",
+        "displayName": "Blueprint Priority Medium",
+        "canonical": "#E8A100",
+        "tonalRamp": [
+          "oklch(15% 0.020 77.1)",
+          "oklch(26% 0.063 77.1)",
+          "oklch(37% 0.107 77.1)",
+          "oklch(48% 0.151 77.1)",
+          "oklch(60% 0.159 77.1)",
+          "oklch(72% 0.111 77.1)",
+          "oklch(84% 0.063 77.1)",
+          "oklch(95% 0.020 77.1)"
+        ]
+      },
+      "editorial-priority-medium": {
+        "role": "tertiary",
+        "displayName": "Editorial Priority Medium",
+        "canonical": "#9E6900",
+        "tonalRamp": [
+          "oklch(15% 0.015 74.4)",
+          "oklch(26% 0.048 74.4)",
+          "oklch(37% 0.080 74.4)",
+          "oklch(48% 0.113 74.4)",
+          "oklch(60% 0.119 74.4)",
+          "oklch(72% 0.083 74.4)",
+          "oklch(84% 0.048 74.4)",
+          "oklch(95% 0.015 74.4)"
+        ]
+      },
+      "beton-priority-medium": {
+        "role": "tertiary",
+        "displayName": "Beton Priority Medium",
+        "canonical": "#855700",
+        "tonalRamp": [
+          "oklch(15% 0.013 73.7)",
+          "oklch(26% 0.042 73.7)",
+          "oklch(37% 0.071 73.7)",
+          "oklch(48% 0.100 73.7)",
+          "oklch(60% 0.105 73.7)",
+          "oklch(72% 0.074 73.7)",
+          "oklch(84% 0.042 73.7)",
+          "oklch(95% 0.013 73.7)"
+        ]
+      },
+      "blueprint-priority-low": {
+        "role": "tertiary",
+        "displayName": "Blueprint Priority Low",
+        "canonical": "#9AA7B4",
+        "tonalRamp": [
+          "oklch(15% 0.003 248.2)",
+          "oklch(26% 0.010 248.2)",
+          "oklch(37% 0.016 248.2)",
+          "oklch(48% 0.023 248.2)",
+          "oklch(60% 0.024 248.2)",
+          "oklch(72% 0.017 248.2)",
+          "oklch(84% 0.010 248.2)",
+          "oklch(95% 0.003 248.2)"
+        ]
+      },
+      "editorial-priority-low": {
+        "role": "tertiary",
+        "displayName": "Editorial Priority Low",
+        "canonical": "#697787",
+        "tonalRamp": [
+          "oklch(15% 0.004 251.8)",
+          "oklch(26% 0.012 251.8)",
+          "oklch(37% 0.020 251.8)",
+          "oklch(48% 0.028 251.8)",
+          "oklch(60% 0.030 251.8)",
+          "oklch(72% 0.021 251.8)",
+          "oklch(84% 0.012 251.8)",
+          "oklch(95% 0.004 251.8)"
+        ]
+      },
+      "beton-priority-low": {
+        "role": "tertiary",
+        "displayName": "Beton Priority Low",
+        "canonical": "#586470",
+        "tonalRamp": [
+          "oklch(15% 0.003 248.3)",
+          "oklch(26% 0.010 248.3)",
+          "oklch(37% 0.016 248.3)",
+          "oklch(48% 0.023 248.3)",
+          "oklch(60% 0.024 248.3)",
+          "oklch(72% 0.017 248.3)",
+          "oklch(84% 0.010 248.3)",
+          "oklch(95% 0.003 248.3)"
+        ]
+      },
+      "camera-blue": {
+        "role": "secondary",
+        "displayName": "Camera Blue",
+        "canonical": "#3FA9F0",
+        "tonalRamp": [
+          "oklch(15% 0.018 242.3)",
+          "oklch(26% 0.056 242.3)",
+          "oklch(37% 0.095 242.3)",
+          "oklch(48% 0.134 242.3)",
+          "oklch(60% 0.141 242.3)",
+          "oklch(72% 0.099 242.3)",
+          "oklch(84% 0.056 242.3)",
+          "oklch(95% 0.018 242.3)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero numerals on Today, when present."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Screen titles; login wordmark at 34px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Report detail title and project name."
+      },
+      "sheet-title": {
+        "displayName": "Sheet Title",
+        "purpose": "Bottom-sheet headers."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Inputs, sheet rows, running copy."
+      },
+      "row-title": {
+        "displayName": "Row Title",
+        "purpose": "Primary line of every list row."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Primary button labels."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Dot-separated secondary details."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase field and section labels."
+      },
+      "tab-label": {
+        "displayName": "Tab Label",
+        "purpose": "Tab bar; the 11px floor."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Codes and numeric counts only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-bar",
+        "value": "0 2px 10px rgba(0,0,0,0.25)",
+        "purpose": "Bulk-action bar in select mode (elevation 8)."
+      },
+      {
+        "name": "toast",
+        "value": "0 4px 12px rgba(0,0,0,0.3)",
+        "purpose": "Toasts (elevation 8)."
+      },
+      {
+        "name": "celebration",
+        "value": "0 4px 16px rgba(0,0,0,0.25)",
+        "purpose": "Close celebration overlay."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press-scale",
+        "value": "scale(0.96–0.985) + opacity 0.9",
+        "purpose": "Every tappable: FAB 0.96, rows 0.985."
+      },
+      {
+        "name": "stagger-reveal",
+        "value": "opacity + translateY, staggered",
+        "purpose": "One orchestrated entrance per screen (dashboard Stagger); off under reduce-motion."
+      },
+      {
+        "name": "native-driver-only",
+        "value": "transform, opacity",
+        "purpose": "No layout-property animation, no bounce or elastic easing."
+      }
+    ],
+    "themes": [
+      "blueprint (default, dark)",
+      "editorial (light)",
+      "beton (light)"
+    ],
+    "density": {
+      "comfortable": {
+        "rowPad": "15px",
+        "listGap": "10px"
+      },
+      "compact": {
+        "rowPad": "11px",
+        "listGap": "7px"
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width 50px accent CTA: sign in, save, next.",
+      "html": "<button class=\"ds-btn-primary\">Assign item</button>",
+      "css": ".ds-btn-primary{height:50px;width:100%;border:none;border-radius:14px;background:#4FC3F7;color:#06243C;font-family:Archivo, system-ui, sans-serif;font-weight:700;font-size:16px;transition:transform .12s,opacity .12s}.ds-btn-primary:active{transform:scale(.97);opacity:.9}.ds-btn-primary:focus-visible{outline:2px solid #EAF4FF;outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Hairline-outlined cancel / secondary action in sheets.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary{height:50px;width:100%;border:1px solid rgba(120,180,220,0.18);border-radius:14px;background:transparent;color:#EAF4FF;font-family:Archivo, system-ui, sans-serif;font-weight:700;font-size:15px;transition:transform .12s,background .12s}.ds-btn-secondary:hover{background:#0E3252}.ds-btn-secondary:active{transform:scale(.97)}.ds-btn-secondary:focus-visible{outline:2px solid #4FC3F7;outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Uppercase label over a 50px hairline field.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Email</span><input class=\"ds-input\" placeholder=\"you@company.com\"></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:6px}.ds-field-label{font-family:Archivo, system-ui, sans-serif;font-weight:600;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:#8FB6D6}.ds-input{height:50px;border-radius:14px;border:1px solid rgba(120,180,220,0.25);background:rgba(255,255,255,0.05);padding:0 14px;color:#EAF4FF;font-family:Archivo, system-ui, sans-serif;font-size:15px;outline:none;transition:border-color .15s}.ds-input::placeholder{color:#5E86A6}.ds-input:focus-visible{border-color:#4FC3F7}"
+    },
+    {
+      "name": "Filter Chips",
+      "kind": "chip",
+      "refersTo": "filter-chip",
+      "description": "Status filter pills on the punch list; active fills with the accent.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip ds-chip-active\">All</button><button class=\"ds-chip\">Open</button><button class=\"ds-chip\">Review</button></div>",
+      "css": ".ds-chips{display:flex;gap:8px}.ds-chip{border:1px solid rgba(120,180,220,0.18);border-radius:12px;padding:7px 13px;background:transparent;color:#8FB6D6;font-family:Archivo, system-ui, sans-serif;font-weight:600;font-size:13px;cursor:pointer}.ds-chip:hover{color:#EAF4FF}.ds-chip-active{background:#4FC3F7;border-color:#4FC3F7;color:#06243C}.ds-chip:focus-visible{outline:2px solid #4FC3F7;outline-offset:2px}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Status dot on a 13% tint, label in theme text ink (never color alone).",
+      "html": "<span class=\"ds-status\"><i class=\"ds-status-dot\"></i>In progress</span>",
+      "css": ".ds-status{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:#8AA6F722;color:#EAF4FF;font-family:Archivo, system-ui, sans-serif;font-weight:600;font-size:12.5px;letter-spacing:.2px}.ds-status-dot{width:7px;height:7px;border-radius:4px;background:#8AA6F7}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Architect's Office",
+    "overview": "WorkLog is a professional instrument, not field equipment and not a dashboard. Its world is the drawing set: fine lines, paper and ink, and editorial serif moments. Precision in the details is the premium signal: hairline borders, aligned mono numerals, deliberate whitespace. Gloss, gradients and depth effects are not. The personality is sharp, precise and considered, and the emotional goal is confidence and control.\n\nThe system ships three themes from one token set. **Blueprint** (deep architectural blue, dark) is the default and the site theme: it is the drawing itself. **Editorial** (warm paper, light) and **Béton** (concrete grey, light) suit indoor and office review. Theme choice follows context, never decoration. Every value in `src/theme/tokens.ts` is per-theme and WCAG-verified, so a new color is never a one-theme decision.\n\nThe work happens on a phone, on site, at the end of a shift. Density is \"glanceable first\": a superintendent sees whether today's report is a draft, submitted or locked in under a second. Confirmed anti-references: Procore-style enterprise density; consumer-social playfulness (emoji, bubbly color); generic SaaS (purple gradients, glass cards, cyan-on-dark sparklines); and bare stock UI with no personality.",
+    "keyCharacteristics": [
+      "Bordered, flat surfaces; depth only where something truly floats.",
+      "Spectral serif for signature moments, Archivo sans for all work, JetBrains Mono only where alignment is functional.",
+      "One accent per theme, rare and load-bearing.",
+      "Status always carried by color **and** a text label.",
+      "Token-driven: color, spacing, radii and fonts come from `src/theme`, never hard-coded."
+    ],
+    "rules": [
+      {
+        "name": "The Load-Bearing Accent Rule",
+        "body": "The theme accent marks the one thing you can act on or the state you're in: primary CTA, active chip, active tab, selection. It never decorates.",
+        "section": "colors"
+      },
+      {
+        "name": "The Color-Plus-Word Rule",
+        "body": "No status or priority is ever color alone. A chip carries the label in theme text ink; a row bar or dot is backed by the accessibility label.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three-Theme Rule",
+        "body": "A new color is three colors. Add it to every palette and verify it against that theme's bg, surface and surface2 before shipping.",
+        "section": "colors"
+      },
+      {
+        "name": "The Signature Serif Rule",
+        "body": "Spectral appears only at moments that matter: wordmark, report title, screen titles, empty-state headline. Never in a button, label, row or field.",
+        "section": "typography"
+      },
+      {
+        "name": "The Functional Mono Rule",
+        "body": "JetBrains Mono is for identity and alignment (codes, counts), never \"techie\" flavor.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Pairing Rule",
+        "body": "Any font change is a whole-app decision made once in `src/theme/fonts.ts`. No per-screen fonts.",
+        "section": "typography"
+      },
+      {
+        "name": "The Float-Only Shadow Rule",
+        "body": "If it doesn't float over content, it has no shadow. Cards, rows, sheets and chips are bordered and flat.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do pull every color, radius, spacing value and font from `src/theme` (`useTheme()`); the pre-auth login's locked Blueprint is the one exception.",
+      "Do pair every status or priority color with a label or accessibility text.",
+      "Do verify any new color against all three themes' bg, surface and surface2 (AA 4.5:1 for text, 3:1 for indicators).",
+      "Do keep motion to transform and opacity on the native driver, with a press-scale on tappables and one staggered reveal per screen at most. Honor reduce-motion.",
+      "Do keep tap targets at 44pt minimum and primary controls at 50px.",
+      "Do take any new shared token from PunchLog's `src/theme/tokens.ts` first, so the two apps never diverge."
+    ],
+    "donts": [
+      "Don't add drop shadows to cards, rows, chips or sheets; only floating elements cast them.",
+      "Don't use gradients, glass, blur effects or decorative sparklines.",
+      "Don't set Spectral in UI controls, or JetBrains Mono for anything but codes and counts.",
+      "Don't give WorkLog an accent of its own, or use the theme accent for decoration.",
+      "Don't put status-colored text on its own status tint; use theme text ink.",
+      "Don't pick a WorkLog-only color where a PunchLog token exists.",
+      "Don't go below 11px for any UI text."
+    ]
+  }
+}
