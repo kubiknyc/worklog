@@ -26,6 +26,10 @@ const mockFrom = jest.fn((..._args: string[]): unknown => {
   throw new Error('account fetch failed');
 });
 
+const mockInvoke = jest.fn(async (..._args: string[]): Promise<{ error: unknown }> => ({
+  error: null,
+}));
+
 jest.mock('../supabase/client', () => ({
   supabase: {
     auth: {
@@ -37,6 +41,7 @@ jest.mock('../supabase/client', () => ({
       getUser: (...args: unknown[]) => mockGetUser(...(args as [])),
     },
     from: (...args: unknown[]) => mockFrom(...(args as [])),
+    functions: { invoke: (...args: unknown[]) => mockInvoke(...(args as [])) },
   },
 }));
 
@@ -344,6 +349,51 @@ describe('AuthProvider revoked-session generation guard', () => {
     expect(result.current.profile).toEqual(user2Profile);
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(mockClearAccountCaches).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthProvider.deleteAccount refusal', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAccountLoadSuccess({ id: 'user-1', full_name: 'User One', email: 'u1@example.com' });
+  });
+
+  async function signedIn() {
+    const hook = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      mockAuthCallback('SIGNED_IN', FAKE_SESSION);
+    });
+    await waitFor(() => expect(hook.result.current.status).toBe('authed'));
+    return hook;
+  }
+
+  test('returns the full server message from a 409 last_admin body and keeps the device signed in', async () => {
+    const message =
+      "You're the only administrator of Harbor Construction, and other people still use it. " +
+      'Make another person an administrator first, then delete your account.';
+    mockInvoke.mockResolvedValueOnce({
+      error: {
+        context: new Response(JSON.stringify({ error: 'last_admin', message }), { status: 409 }),
+      },
+    });
+    const { result } = await signedIn();
+    let returned: string | null = null;
+    await act(async () => {
+      returned = await result.current.deleteAccount();
+    });
+    expect(returned).toBe(message);
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('authed');
+  });
+
+  test('falls back to generic copy when the failure carries no message', async () => {
+    mockInvoke.mockResolvedValueOnce({ error: new Error('network') });
+    const { result } = await signedIn();
+    let returned: string | null = null;
+    await act(async () => {
+      returned = await result.current.deleteAccount();
+    });
+    expect(returned).toMatch(/Couldn't delete your account/);
   });
 });
 

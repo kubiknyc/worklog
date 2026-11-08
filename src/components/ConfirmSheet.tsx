@@ -14,11 +14,13 @@
  * it. Status colours are graphical indicators (3:1) and must not be used as
  * text backgrounds at all.
  */
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useTheme } from '../theme';
 import { onFillColor } from '../theme/contrast';
 import { BottomSheet } from './BottomSheet';
+
+const MESSAGE_MAX_HEIGHT_RATIO = 0.45;
 
 type Props = {
   readonly visible: boolean;
@@ -57,12 +59,23 @@ export function ConfirmSheet({
 }: Props) {
   const { colors, fonts, radii, error } = useTheme();
   const confirmInk = onFillColor(error);
+  const { height } = useWindowDimensions();
   return (
     <BottomSheet visible={visible} onClose={onClose} title={title} testID={testID}>
+      {/* A long message (delete-account warnings run to ~900 chars) must scroll
+          rather than push the title off the top of a small screen; the buttons
+          sit outside the ScrollView so they stay visible. Short messages are
+          content-sized, so other sheets look the same. */}
       {message ? (
-        <Text style={[styles.message, { color: colors.muted, fontFamily: fonts.ui.regular }]}>
-          {message}
-        </Text>
+        <ScrollView
+          style={{ maxHeight: height * MESSAGE_MAX_HEIGHT_RATIO }}
+          persistentScrollbar
+          testID={`${testID}-message`}
+        >
+          <Text style={[styles.message, { color: colors.muted, fontFamily: fonts.ui.regular }]}>
+            {message}
+          </Text>
+        </ScrollView>
       ) : null}
       <View style={styles.actions}>
         <Pressable
