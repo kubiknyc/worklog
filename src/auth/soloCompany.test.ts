@@ -15,6 +15,7 @@ import {
   deleteAccountMessage,
   deleteWarningText,
   loadCompanyNames,
+  loadNoCompanyImpact,
   loadSoloCompanyImpact,
 } from './soloCompany';
 /* eslint-enable import/first */
@@ -135,6 +136,71 @@ describe('loadSoloCompanyImpact', () => {
   });
 });
 
+describe('loadNoCompanyImpact', () => {
+  const rows = (...ids: string[]): Res => ({
+    data: ids.map((project_id) => ({ project_id })),
+    error: null,
+  });
+  const SUPER = new Set(['p1', 'p2']);
+
+  it('counts sole projects and reports when the caller is super on all of them', async () => {
+    mockTables({ project_members: rows(), daily_reports: ok(40) }, ok(12));
+    expect(await loadNoCompanyImpact('me', ['p1', 'p2'], SUPER)).toEqual({
+      projects: 2,
+      reports: 40,
+      sealedReports: 12,
+    });
+  });
+
+  it('excludes projects that have another member', async () => {
+    mockTables({ project_members: rows('p2'), daily_reports: ok(5) }, ok(1));
+    expect(await loadNoCompanyImpact('me', ['p1', 'p2'], SUPER)).toEqual({
+      projects: 1,
+      reports: 5,
+      sealedReports: 1,
+    });
+  });
+
+  it('is zero projects when every project has other members', async () => {
+    mockTables({ project_members: rows('p1', 'p2') });
+    expect(await loadNoCompanyImpact('me', ['p1', 'p2'], SUPER)).toEqual({
+      projects: 0,
+      reports: null,
+      sealedReports: null,
+    });
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops counts, never a low or zero number, when not super on a sole project', async () => {
+    mockTables({ project_members: rows(), daily_reports: ok(0) });
+    expect(await loadNoCompanyImpact('me', ['p1', 'p2'], new Set(['p1']))).toEqual({
+      projects: 2,
+      reports: null,
+      sealedReports: null,
+    });
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a non-super project that has other members when deciding on counts', async () => {
+    mockTables({ project_members: rows('p2'), daily_reports: ok(2) }, ok(0));
+    expect((await loadNoCompanyImpact('me', ['p1', 'p2'], new Set(['p1'])))?.reports).toBe(2);
+  });
+
+  it('returns null (unknown) when the members query fails', async () => {
+    mockTables({ project_members: bad });
+    expect(await loadNoCompanyImpact('me', ['p1'], SUPER)).toBeNull();
+  });
+
+  it('keeps the projects but drops a report count that failed', async () => {
+    mockTables({ project_members: rows(), daily_reports: bad }, ok(1));
+    expect(await loadNoCompanyImpact('me', ['p1'], SUPER)).toEqual({
+      projects: 1,
+      reports: null,
+      sealedReports: 1,
+    });
+  });
+});
+
 describe('loadCompanyNames', () => {
   it('maps ids to names', async () => {
     mockTables({ companies: { data: [{ id: 'co', name: 'Harbor Construction' }], error: null } });
@@ -188,6 +254,50 @@ describe('deleteWarningText', () => {
     );
   });
 
+  it('drops the count parenthetical for a solo company with no projects', () => {
+    const text = deleteWarningText([
+      { name: 'Harbor', state: 'solo', projects: 0, reports: 0, sealedReports: 0 },
+    ]);
+    expect(text).not.toMatch(/\(\d/);
+    expect(text).toContain("You're the only person in Harbor,");
+  });
+
+  it('warns about a sole no-company project (singular) with counts', () => {
+    expect(
+      deleteWarningText([], { state: 'solo', projects: 1, reports: 40, sealedReports: 12 }),
+    ).toBe(
+      "You're the only person on 1 project that isn't part of a company, so deleting your account also " +
+        'permanently deletes it with its daily reports (including locked and signed reports) and photos ' +
+        '(40 daily reports, 12 of them locked or signed).',
+    );
+  });
+
+  it('warns about sole no-company projects (plural) without counts when unreliable', () => {
+    expect(
+      deleteWarningText([], { state: 'solo', projects: 3, reports: null, sealedReports: null }),
+    ).toBe(
+      "You're the only person on 3 projects that aren't part of a company, so deleting your account also " +
+        'permanently deletes them with their daily reports (including locked and signed reports) and photos.',
+    );
+  });
+
+  it('is conditional for no-company projects while unknown', () => {
+    expect(
+      deleteWarningText([], { state: 'maybe', projects: 0, reports: null, sealedReports: null }),
+    ).toBe(
+      "If you're the only person on a project that isn't part of a company, deleting your account also " +
+        'permanently deletes that project with its daily reports (including locked and signed reports) and photos.',
+    );
+  });
+
+  it('joins company and no-company sentences', () => {
+    const text = deleteWarningText(
+      [{ name: 'Harbor', state: 'maybe', projects: 0, reports: null, sealedReports: null }],
+      { state: 'maybe', projects: 0, reports: null, sealedReports: null },
+    );
+    expect(text).toMatch(/photos\. If you're the only person on a project/);
+  });
+
   it('is empty with nothing to warn about', () => {
     expect(deleteWarningText([])).toBe('');
   });
@@ -199,6 +309,20 @@ describe('deleteAccountMessage', () => {
 
   it('is the original text when there is no company warning', () => {
     expect(deleteAccountMessage('')).toBe(ORIGINAL);
+  });
+
+  it('uses the replacement base sentence for a no-company-only warning', () => {
+    const warning = deleteWarningText([], {
+      state: 'solo',
+      projects: 1,
+      reports: null,
+      sealedReports: null,
+    });
+    const msg = deleteAccountMessage(warning);
+    expect(msg).toBe(
+      `${warning}\n\nThis permanently deletes your account and removes your access. It cannot be undone.`,
+    );
+    expect(msg).not.toContain("company's reports");
   });
 
   it('leads with the warning and no longer says the company reports merely become inaccessible', () => {

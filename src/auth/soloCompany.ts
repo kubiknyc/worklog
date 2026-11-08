@@ -21,6 +21,14 @@
  * (20260717000007) writes the signature in the same transaction that sets
  * `submitted`, and `locked` only follows `submitted`. Drafts are unsigned.
  *
+ * No-company projects (WorkLog creates every project without a company): the
+ * server also deletes each project with `company_id IS NULL` where the caller
+ * has a project_members row and NO other user does — any role, with or without
+ * a company. `loadNoCompanyImpact` mirrors that rule. Report counts are only
+ * read for projects where the caller is `super`: `daily_reports_select` is
+ * `private.is_super`, and RLS FILTERS rather than errors, so anyone else would
+ * get a silent, too-low 0. Mixed or non-super => no counts at all.
+ *
  * Failure is never reassurance: an unreadable roster returns `null` (unknown)
  * and the caller keeps showing the conditional warning.
  */
@@ -92,6 +100,54 @@ export async function loadSoloCompanyImpact(
   };
 }
 
+export interface NoCompanyImpact {
+  /** How many of the caller's no-company projects nobody else is a member of. */
+  readonly projects: number;
+  /** null when not reliably countable (caller is not super on every one of them). */
+  readonly reports: number | null;
+  readonly sealedReports: number | null;
+}
+
+/**
+ * The server's no-company rule, client side. `candidateIds` = the caller's own
+ * projects with no company; `superIds` = those where the caller's role is super.
+ * null = could not tell.
+ */
+export async function loadNoCompanyImpact(
+  userId: string,
+  candidateIds: readonly string[],
+  superIds: ReadonlySet<string>,
+): Promise<NoCompanyImpact | null> {
+  const others = await supabase
+    .from('project_members')
+    .select('project_id')
+    .in('project_id', [...candidateIds])
+    .neq('user_id', userId);
+  if (others.error || !others.data) return null;
+  const shared = new Set(others.data.map((r) => r.project_id));
+  const sole = candidateIds.filter((id) => !shared.has(id));
+  if (sole.length === 0) return { projects: 0, reports: null, sealedReports: null };
+  if (!sole.every((id) => superIds.has(id))) {
+    return { projects: sole.length, reports: null, sealedReports: null };
+  }
+  const [reports, sealed] = await Promise.all([
+    supabase
+      .from('daily_reports')
+      .select('id', { count: 'exact', head: true })
+      .in('project_id', sole),
+    supabase
+      .from('daily_reports')
+      .select('id', { count: 'exact', head: true })
+      .in('project_id', sole)
+      .in('status', ['submitted', 'locked']),
+  ]);
+  return {
+    projects: sole.length,
+    reports: reports.error ? null : reports.count,
+    sealedReports: sealed.error ? null : sealed.count,
+  };
+}
+
 /** Company names by id; empty on any failure (the caller falls back to wording without a name). */
 export async function loadCompanyNames(
   companyIds: readonly string[],
@@ -113,32 +169,60 @@ export interface DeleteWarningEntry {
   readonly sealedReports: number | null;
 }
 
+export interface NoCompanyWarning {
+  readonly state: 'solo' | 'maybe';
+  readonly projects: number;
+  readonly reports: number | null;
+  readonly sealedReports: number | null;
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** One sentence per company; empty string when there is nothing to warn about. */
-export function deleteWarningText(entries: readonly DeleteWarningEntry[]): string {
-  return entries
-    .map((e) => {
-      if (e.state === 'maybe') {
-        return (
-          `If you're the only person in ${e.name}, deleting your account also permanently deletes ` +
-          `${e.name} with all its projects, daily reports (including locked and signed reports) and photos.`
-        );
-      }
-      const sealed =
-        e.sealedReports !== null && e.sealedReports > 0
-          ? `, ${e.sealedReports} of them locked or signed`
-          : '';
-      const counts =
-        e.reports !== null
-          ? ` (${plural(e.projects, 'project', 'projects')}, ${plural(e.reports, 'daily report', 'daily reports')}${sealed})`
-          : '';
+const sealedClause = (sealed: number | null) =>
+  sealed !== null && sealed > 0 ? `, ${sealed} of them locked or signed` : '';
+
+function noCompanySentence(w: NoCompanyWarning): string {
+  if (w.state === 'maybe') {
+    return (
+      "If you're the only person on a project that isn't part of a company, deleting your account " +
+      'also permanently deletes that project with its daily reports (including locked and signed reports) and photos.'
+    );
+  }
+  const one = w.projects === 1;
+  const counts =
+    w.reports !== null
+      ? ` (${plural(w.reports, 'daily report', 'daily reports')}${sealedClause(w.sealedReports)})`
+      : '';
+  return (
+    `You're the only person on ${plural(w.projects, 'project', 'projects')} that ${one ? "isn't" : "aren't"} part of a company, ` +
+    `so deleting your account also permanently deletes ${one ? 'it' : 'them'} with ${one ? 'its' : 'their'} ` +
+    `daily reports (including locked and signed reports) and photos${counts}.`
+  );
+}
+
+/** One sentence per company, then the no-company one; empty string when there is nothing to warn about. */
+export function deleteWarningText(
+  entries: readonly DeleteWarningEntry[],
+  noCompany?: NoCompanyWarning,
+): string {
+  const companies = entries.map((e) => {
+    if (e.state === 'maybe') {
       return (
-        `You're the only person in ${e.name}, so deleting your account also permanently deletes ` +
-        `${e.name} and everything in it${counts}: its projects, daily reports (including locked and signed reports) and photos.`
+        `If you're the only person in ${e.name}, deleting your account also permanently deletes ` +
+        `${e.name} with all its projects, daily reports (including locked and signed reports) and photos.`
       );
-    })
-    .join(' ');
+    }
+    const sealed = sealedClause(e.sealedReports);
+    const counts =
+      e.reports !== null && e.projects > 0
+        ? ` (${plural(e.projects, 'project', 'projects')}, ${plural(e.reports, 'daily report', 'daily reports')}${sealed})`
+        : '';
+    return (
+      `You're the only person in ${e.name}, so deleting your account also permanently deletes ` +
+      `${e.name} and everything in it${counts}: its projects, daily reports (including locked and signed reports) and photos.`
+    );
+  });
+  return [...companies, ...(noCompany ? [noCompanySentence(noCompany)] : [])].join(' ');
 }
 
 /**
