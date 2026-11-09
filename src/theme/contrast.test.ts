@@ -102,15 +102,11 @@ describe('report-status colours stay graphical indicators', () => {
    * Delete an entry when the underlying decision is made; do not add one
    * without an issue.
    *
-   * `beton.amended` (#E8531F) fails against ALL THREE beton surfaces —
-   * 2.20:1 on bg, 2.44:1 on surface, 2.00:1 on surface2 — so the colour itself
-   * is the problem, not one pairing. It cannot be recoloured in isolation:
-   * `amended` is documented as taking each theme's `accent` (tokens.ts), and
-   * beton's accent IS #E8531F, so changing it re-tints the whole theme. That is
-   * a brand decision, not a contrast fix.
+   * Currently empty. `beton.amended` (#E8531F, 2.00-2.44:1 on every beton
+   * surface) was the last entry; it was resolved by moving beton's accent to
+   * PunchLog's Rust Iron (#8A2F0A), which clears 3:1 on all three surfaces.
    */
-  const KNOWN_BELOW_FLOOR = new Set(['beton.amended']);
-
+  const KNOWN_BELOW_FLOOR = new Set<string>([]);
   it.each(THEME_NAMES)('%s: every status colour clears 3:1 on all surfaces', (theme) => {
     const palette = PALETTES[theme];
     for (const [status, color] of Object.entries(REPORT_STATUS_COLORS[theme])) {
@@ -128,8 +124,8 @@ describe('report-status colours stay graphical indicators', () => {
   });
 
   it('every known-below-floor entry is still genuinely below the floor', () => {
-    // Stops the exception list outliving the problem: once beton's accent is
-    // resolved, this fails and forces the entry to be deleted.
+    // Stops the exception list outliving the problem: an entry that starts
+    // passing fails here and forces its deletion. Vacuous while the list is empty.
     for (const key of KNOWN_BELOW_FLOOR) {
       const [theme, status] = key.split('.') as [
         (typeof THEME_NAMES)[number],

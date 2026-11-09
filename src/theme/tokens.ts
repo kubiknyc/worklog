@@ -64,12 +64,12 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
     muted: '#4A4945', // WCAG AA: 6.0:1 on surface, 5.4:1 on bg (was #7E7D78, 2.5:1 — failed)
     faint: '#525147', // WCAG AA: 5.3:1 on surface, 4.8:1 on bg (was #9A988F, 1.7:1 — failed)
     border: 'rgba(28,26,23,0.12)',
-    accent: '#E8531F',
-    // WCAG AA: 5.21:1 on accent (was #FFFFFF, 3.69:1 — under AC-S1's 4.5 floor
-    // for text on a fill). This is the value `onFillColor(accent)` picks, i.e.
-    // ON_FILL_DARK: beton's accent is a mid-tone orange, light enough that
-    // white text on it is the same class of bug as #18.
-    accentInk: '#0B0F14',
+    // Rust Iron, matching PunchLog's beton accent: 8.4:1 under white ink, and 5.0 /
+    // 5.6 / 4.6:1 on bg / surface / surface2 (was #E8531F: 3.7:1 under white,
+    // 2.0-2.4:1 as the `amended` indicator, which failed the 3:1 floor).
+    accent: '#8A2F0A',
+    // ON_FILL_LIGHT: what `onFillColor(accent)` picks for Rust Iron.
+    accentInk: '#FFFFFF',
     scheme: 'light',
   },
 } as const;
@@ -77,8 +77,7 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
 // Status/priority colors are per-theme: a single shared set cannot meet WCAG
 // contrast (>=3:1 for these graphical indicators) against both the dark Blueprint
 // surface and the light Editorial/Beton surfaces at once. Each value below clears
-// 3:1 against its theme's surface, bg, and surface2 (verified, ratios in review),
-// with one accepted exception: see `beton.amended` below.
+// 3:1 against its theme's surface, bg, and surface2 (verified in `contrast.test.ts`).
 //
 // ReportStatus rename (PRD §3 M0 note): reuses PunchLog's ItemStatus palette
 // by lifecycle position — earliest stage (`open`) -> `draft`, next (`in_progress`)
@@ -87,24 +86,20 @@ export const PALETTES: Readonly<Record<ThemeName, Palette>> = {
 // display state, not a lifecycle stage, so it takes each theme's `accent` color
 // (PALETTES[name].accent) rather than an item-status value.
 //
-// The "verified" claim above is NOT true of `beton.amended`: the raw accent is
-// 2.00–2.44:1 against beton's light surfaces. That is a known, deliberate
-// exception — recolouring it means re-tinting the theme's accent, a brand
-// decision rather than a contrast fix — and it is pinned as such in
-// `contrast.test.ts`'s KNOWN_BELOW_FLOOR, which also fails if the problem ever
-// resolves so the exemption cannot outlive it. Status-colour contrast is owned
-// there; `tokens.test.ts` deliberately does not restate it.
+// `beton.amended` was the one exception (the old #E8531F accent, 2.0-2.4:1). Moving
+// beton's accent to PunchLog's Rust Iron resolved it. Status-colour contrast is
+// owned by `contrast.test.ts`; `tokens.test.ts` deliberately does not restate it.
 export const REPORT_STATUS_COLORS: Readonly<
   Record<ThemeName, Readonly<Record<ReportStatus, string>>>
 > = {
   blueprint: { draft: '#FF6B6F', submitted: '#8AA6F7', locked: '#46C98A', amended: '#4FC3F7' },
   editorial: { draft: '#E5484D', submitted: '#3E63DD', locked: '#1F8A50', amended: '#9A3B2E' },
-  beton: { draft: '#BE3137', submitted: '#2F50C0', locked: '#1A7745', amended: '#E8531F' },
+  beton: { draft: '#BE3137', submitted: '#2F50C0', locked: '#1A7745', amended: '#8A2F0A' },
 } as const;
 
 export const PRIORITY_COLORS: Readonly<Record<ThemeName, Readonly<Record<Priority, string>>>> = {
   blueprint: { high: '#FF6B6F', medium: '#E8A100', low: '#9AA7B4' },
-  editorial: { high: '#E5484D', medium: '#A36C00', low: '#697787' },
+  editorial: { high: '#E5484D', medium: '#9E6900', low: '#697787' },
   beton: { high: '#BE3137', medium: '#855700', low: '#586470' },
 } as const;
 
