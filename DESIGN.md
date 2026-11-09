@@ -214,8 +214,7 @@ Three tonally coherent palettes (ink-blue, warm paper, concrete) sharing one rol
 - Error text has its own per-theme token at AA 4.5:1.
 
 ### Known drift in WorkLog code
-- **Béton accent:** `src/theme/tokens.ts` still uses `#E8531F` with dark ink (`#0B0F14`). PunchLog replaced that orange with **Rust Iron** (`#8A2F0A`, white ink) because it failed contrast, and WorkLog pins its 2.0–2.4:1 Amended chip as a known exception in `contrast.test.ts`. Adopting PunchLog's value removes the exception.
-- **Editorial medium priority:** WorkLog uses `#A36C00`; PunchLog uses `#9E6900`.
+- **Béton accent** (`#E8531F` → Rust Iron `#8A2F0A`) and **Editorial medium priority** (`#A36C00` → `#9E6900`) are aligned to PunchLog in kubiknyc/worklog#46. Delete this subsection once #46 merges.
 
 ### Fixed (theme-invariant)
 - **Camera Blue** (`camera-blue`): reserved for camera capture, matching PunchLog.
