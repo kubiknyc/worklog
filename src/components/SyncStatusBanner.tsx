@@ -103,7 +103,7 @@ export function SyncStatusBanner({ syncState, degraded = false, onPress }: Props
   // degraded fallback — are normal, explained states, never conveyed as an
   // error; PRD §9: never red for anything but a genuine unwedging need).
   // `attention` reuses the per-theme amber priority.medium token (AC-S1 ratios
-  // for this usage: #E8A100 ≈6.8:1 on Blueprint's dark surface, #A36C00 ≈4:1
+  // for this usage: #E8A100 ≈6.8:1 on Blueprint's dark surface, #9E6900 ≈4.3:1
   // on Editorial, #855700 ≈5.6:1 on Béton — all clear the ≥3:1 UI floor and
   // the state is never conveyed by color alone, AC-S2: dot + label).
   const color = state === 'attention' ? priority.medium : colors.muted;

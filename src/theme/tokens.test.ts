@@ -10,7 +10,8 @@
  * documented as "Foreground color to use on top of `accent`", and beton's was
  * #FFFFFF on a mid-tone orange — 3.69:1, under the 4.5 floor AC-S1 requires
  * for text on a fill. Exactly the #18 pairing in a place #18 did not look.
- * It is now ON_FILL_DARK (5.21:1), and the assertion below is what keeps it so.
+ * It became ON_FILL_DARK (5.21:1); beton now uses Rust Iron (#8A2F0A) with
+ * white ink (8.43:1), matching PunchLog. The assertion below keeps it legible.
  *
  * Scope is chosen to avoid overlapping `contrast.test.ts`, which owns
  * report-status contrast and its documented exemptions. What lives here is
@@ -94,7 +95,7 @@ describe('text foregrounds clear WCAG AA (4.5:1) — PRD AC-S1', () => {
 
   it.each(THEME_NAMES)('%s: accentInk is legible on the accent fill', (theme) => {
     // The #18 pairing, generalised: a foreground documented as sitting on a
-    // fill is text on that fill and owes 4.5:1. beton failed this at 3.69.
+    // fill is text on that fill and owes 4.5:1. beton once failed this at 3.69.
     const ratio = contrastRatio(PALETTES[theme].accentInk, PALETTES[theme].accent);
     expect({ theme, pass: ratio >= AA_TEXT_CONTRAST }).toEqual({ theme, pass: true });
   });
@@ -117,12 +118,10 @@ describe('text foregrounds clear WCAG AA (4.5:1) — PRD AC-S1', () => {
 
 describe('graphical indicators clear WCAG AA (3:1)', () => {
   // Report-status contrast is deliberately NOT restated here. `contrast.test.ts`
-  // already owns it, together with the `KNOWN_BELOW_FLOOR` exemption for
-  // `beton.amended` (2.00–2.44:1 — recolouring it re-tints the theme's accent,
-  // a brand decision) and a second test that fails once that stops being true,
-  // so the exemption cannot outlive the problem. Duplicating the check here
-  // would mean maintaining the same exemption twice and getting it wrong once.
-
+  // already owns it, together with the `KNOWN_BELOW_FLOOR` exemption list
+  // (now empty) and a second test that fails if an exemption outlives its
+  // problem. Duplicating the check here would mean maintaining the same
+  // exemptions twice and getting them wrong once.
   it.each(THEME_NAMES)('%s: every priority colour clears 3:1 on all surfaces', (theme) => {
     for (const [priority, colour] of Object.entries(PRIORITY_COLORS[theme])) {
       for (const [surface, backdrop] of surfacesOf(theme)) {
