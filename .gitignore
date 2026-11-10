@@ -12,3 +12,8 @@ coverage/
 # Generated native projects (CNG / prebuild)
 android/
 ios/
+
+# Impeccable design skill, installed per machine by `npx impeccable install`.
+# PRODUCT.md, DESIGN.md and .impeccable/design.json stay tracked.
+.claude/skills/impeccable/
+.claude/agents/impeccable-*.md
