@@ -173,7 +173,7 @@ components:
 
 # Design System: WorkLog
 
-> WorkLog (App #2) shares PunchLog's design system and colors with no accent of its own, so the two JobSight Suite apps look like one product. PunchLog's `DESIGN.md` is the reference; this file restates it with WorkLog's report statuses and screens. When the two disagree, PunchLog's values win and WorkLog's code should be brought into line.
+> WorkLog (App #2) shares PunchLog's design system and colors with no accent of its own, so the two JobSight Suite apps look like one product. PunchLog's `DESIGN.md` is the reference; this file restates it with WorkLog's report statuses and screens. When the two disagree, PunchLog's values win.
 
 ## Overview
 
@@ -212,9 +212,6 @@ Three tonally coherent palettes (ink-blue, warm paper, concrete) sharing one rol
 - Report lifecycle per theme: **Draft** (PunchLog's Open red), **Submitted** (In-progress blue), **Locked** (Closed green). **Amended** is a derived display state for a locked report with amendments, drawn in the theme accent.
 - Priority matches PunchLog: **High** red, **Medium** amber, **Low** slate.
 - Error text has its own per-theme token at AA 4.5:1.
-
-### Known drift in WorkLog code
-- **Béton accent** (`#E8531F` → Rust Iron `#8A2F0A`) and **Editorial medium priority** (`#A36C00` → `#9E6900`) are aligned to PunchLog in kubiknyc/worklog#46. Delete this subsection once #46 merges.
 
 ### Fixed (theme-invariant)
 - **Camera Blue** (`camera-blue`): reserved for camera capture, matching PunchLog.
