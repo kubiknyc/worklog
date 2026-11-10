@@ -820,11 +820,7 @@
         "purpose": "No layout-property animation, no bounce or elastic easing."
       }
     ],
-    "themes": [
-      "blueprint (default, dark)",
-      "editorial (light)",
-      "beton (light)"
-    ],
+    "themes": ["blueprint (default, dark)", "editorial (light)", "beton (light)"],
     "density": {
       "comfortable": {
         "rowPad": "15px",
