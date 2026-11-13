@@ -167,3 +167,94 @@ cd qa/web && npm install && node smoke-local.mjs smoke.png
 It uses the installed Chrome (`QA_BROWSER_CHANNEL=chrome`). Set
 `QA_BROWSER_CHANNEL=` to use Playwright's own Chromium instead
 (`npx playwright install chromium`).
+
+## 6. Android emulator (dev build, local stack)
+
+Reuses the PunchLog QA setup (Multica MULT-12): AVD `PunchLog_QA`
+(Pixel 7, android-36.1 google_apis_playstore x86_64, WHPX), Maestro 2.7.0 at
+`C:\maestro`, portable Temurin 17 at `~/tools/jdk-17.0.21+9` (not on PATH; the
+system JDK is 21). Before using the emulator, check that MULT-7 is not
+in_progress.
+
+**Env (`~/wlqa-logs/env.sh`, no secrets, anon key read from the running stack):**
+
+```bash
+export JAVA_HOME="$(cygpath -w ~/tools/jdk-17.0.21+9)"
+export PATH="$HOME/tools/jdk-17.0.21+9/bin:$PATH"
+export ANDROID_HOME="$(cygpath -w "$LOCALAPPDATA/Android/Sdk")"
+export PATH="$(cygpath -u "$ANDROID_HOME")/platform-tools:$(cygpath -u "$ANDROID_HOME")/emulator:$PATH"
+BACKEND=<path to ../jobsight-backend>
+export EXPO_PUBLIC_SUPABASE_ANON_KEY="$(cd "$BACKEND" && supabase status -o env 2>/dev/null | sed -nE 's/^ANON_KEY="?([^"]+)"?/\1/p')"
+export EXPO_PUBLIC_SUPABASE_URL=http://10.0.2.2:54321
+export EXPO_NO_DOTENV=1 EXPO_PUBLIC_SENTRY_DSN= SENTRY_DISABLE_AUTO_UPLOAD=true EXPO_PUBLIC_DEMO_LOGINS=off
+```
+
+**Build tree.** The Multica workdir path is too long for RN's CMake on
+Windows, so build in a short-path detached worktree of the app commit under
+test. Prebuild rewrites `package.json` there: never commit from it.
+
+```bash
+git worktree add --detach ~/wlqa <app-sha>      # e.g. origin/main
+cd ~/wlqa && npm ci
+CI=1 npx expo prebuild --platform android --no-install
+cd android && ./gradlew app:assembleDebug -PreactNativeArchitectures=x86_64
+```
+
+That is the same Gradle task `npx expo run:android` runs (never `eas build`).
+`expo run:android` itself crashes on this machine during device discovery
+(see adb below). First build is long (~30 min); run it detached with output
+to a log.
+
+**adb.** Something unrelated listens on `127.0.0.1:5555`, so adb shows an
+offline ghost `emulator-5554`, and Maestro drops the whole device list when
+one device is offline. Restart adb with the port scan capped and connect the
+emulator's adb port (console port + 1) directly. The serial is then
+`127.0.0.1:<port>`, not `emulator-<port>`:
+
+```bash
+. ~/wlqa-logs/env.sh
+adb kill-server && ADB_LOCAL_TRANSPORT_MAX_PORT=5553 adb start-server
+adb connect 127.0.0.1:5557          # emulator on console port 5556
+SERIAL=127.0.0.1:5557
+```
+
+**Boot (PowerShell, detached), if no PunchLog_QA emulator is running:**
+
+```powershell
+Start-Process "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -ArgumentList '-avd','PunchLog_QA','-no-snapshot-save','-no-boot-anim','-port','5556' -WindowStyle Hidden
+```
+
+Only one instance of an AVD can run. If one is already up, reuse it.
+
+**Install, Metro, bundle check, smoke:**
+
+```bash
+adb -s $SERIAL install -r "$(cygpath -w ~/wlqa/android/app/build/outputs/apk/debug/app-debug.apk)"
+adb -s $SERIAL reverse tcp:8081 tcp:8081
+cd ~/wlqa && CI=1 npx expo start --dev-client --port 8081 --clear     # keep running
+curl -s 'http://localhost:8081/node_modules/expo-router/entry.bundle?platform=android&dev=true&hot=false&lazy=true&transform.routerRoot=app' -o bundle.js
+grep -c '10.0.2.2:54321' bundle.js                         # expect > 0
+grep -oE '[a-z0-9]{20}\.supabase\.co' bundle.js | wc -l    # expect 0
+# from this repo:
+maestro --device $SERIAL test qa/maestro/smoke-signin-open-report.yaml
+```
+
+`qa/maestro/smoke-signin-open-report.yaml` signs in by email/password as
+`qa-wl-super` (asserting the demo rows are hidden), checks Today shows
+QA-WL Riverside Tower with today's draft, and opens the report. The
+`.maestro/` flows sign in through the demo rows, so QA does not run them.
+
+**Shut down:** stop the Metro node PID, `(cd ~/wlqa/android && ./gradlew --stop)`,
+stop leftover JDK 17 Kotlin daemons by PID, `adb kill-server`, and
+`adb -s $SERIAL emu kill` only for an emulator you started.
+
+**Troubleshooting.** If `adb exec-out screencap` returns 0 bytes, `uiautomator dump`
+says "null root node", or Maestro gets an empty hierarchy, the emulator's
+graphics are wedged (`graphics.composer3-service.ranchu` pinned at ~100% CPU).
+In order: `am force-stop com.jobsight.worklog`, then `adb reboot`, then stop
+the instance and cold-boot it (try `-gpu swiftshader_indirect`). Re-run
+`adb reverse tcp:8081 tcp:8081` after any reboot. On 2026-11-13 (MULT-52) none
+of these helped. After the wedged instance was stopped, every AVD's
+`qemu-system-x86_64-headless` hung with no output right after launch
+(`-accel-check` still reports WHPX usable), which points at host hypervisor
+state that only a Windows restart clears.

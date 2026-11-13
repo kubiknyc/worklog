@@ -1,0 +1,85 @@
+# WorkLog QA Android smoke (MULT-52): local dev build, local Supabase only.
+#
+# Signs in by email/password as the seeded local account qa-wl-super (never a
+# demo / App Review account), lands on Today for QA-WL Riverside Tower and
+# opens today's seeded draft report.
+#
+# Preconditions (qa/README.md section 6):
+#   - local stack up and seeded today: node qa/seed/seed-local.mjs
+#   - dev-client debug APK installed, Metro on :8081 started with the
+#     local-stack env (EXPO_PUBLIC_DEMO_LOGINS=off), adb reverse tcp:8081
+#
+# Run:  maestro --device <serial> test qa/maestro/smoke-signin-open-report.yaml
+#
+# Lives in qa/, not .maestro/: the .maestro flows sign in through the demo
+# rows, which QA must never use, and .maestro is wired into the app's CI.
+appId: com.jobsight.worklog
+env:
+  QA_EMAIL: qa-wl-super@worklog.test
+  QA_PASSWORD: qa-local-only-2026
+---
+- launchApp:
+    clearState: true
+
+# Dev-client launcher (same handling as .maestro/_launch-and-signin.yaml):
+# deep-link to Metro over adb reverse, then dismiss the first-run dev menu.
+- extendedWaitUntil:
+    visible: '.*:8081.*'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: '.*:8081.*'
+    commands:
+      - openLink: 'worklog://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+      - extendedWaitUntil:
+          visible: 'Continue'
+          timeout: 120000
+          optional: true
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+            - back
+
+# Login screen. Demo rows must be hidden (EXPO_PUBLIC_DEMO_LOGINS=off).
+- extendedWaitUntil:
+    visible:
+      id: 'login-submit'
+    timeout: 120000
+- assertNotVisible:
+    id: 'login-demo-superintendent'
+- tapOn:
+    id: 'login-email'
+- inputText: ${QA_EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${QA_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+
+# Today: seeded project and today's draft.
+- extendedWaitUntil:
+    visible:
+      id: 'screen-today'
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: 'today-open-report'
+    timeout: 30000
+- assertVisible: 'QA-WL Riverside Tower'
+- assertVisible:
+    id: 'today-status-draft'
+- tapOn:
+    id: 'today-open-report'
+
+# Report detail opens on the seeded draft.
+- extendedWaitUntil:
+    visible:
+      id: 'screen-report'
+    timeout: 15000
+- assertVisible:
+    id: 'report-status-draft'
+- takeScreenshot: smoke-android
