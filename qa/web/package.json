@@ -1,0 +1,9 @@
+{
+  "name": "worklog-qa-web",
+  "private": true,
+  "type": "module",
+  "description": "QA-only Playwright harness; kept out of the app package.json.",
+  "devDependencies": {
+    "playwright": "^1.65.0"
+  }
+}
