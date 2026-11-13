@@ -149,6 +149,9 @@ npx expo start --web --port 8081
 never with `eas build`. The `EXPO_PUBLIC_*` values are inlined at bundle time,
 so restart Metro with `--clear` after changing them.
 
+`expo start` rewrites `tsconfig.json` (drops `.expo/types` from `include`).
+Run `git checkout -- tsconfig.json` afterwards, and never commit that change.
+
 ## 5. Web smoke
 
 With Expo web running (§4):
