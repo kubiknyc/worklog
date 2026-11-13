@@ -26,6 +26,8 @@ const EXPECT = {
   'qa-wl-super': { projects: 1, reports: 4, statuses: 'draft,locked,locked,submitted', photos: 4, signatures: 4, amendments: 1, photoRead: true },
   'qa-wl-pm': { projects: 2, reports: 6, statuses: 'draft,locked,locked,locked,submitted,submitted', photos: 5, signatures: 6, amendments: 1, photoRead: true },
   'qa-wl-sub': { projects: 1, reports: 0, statuses: '', photos: 0, signatures: 0, amendments: 0, photoRead: false },
+  'qa-wl-owner': { projects: 1, reports: 0, statuses: '', photos: 0, signatures: 0, amendments: 0, photoRead: false },
+  'qa-wl-architect': { projects: 1, reports: 0, statuses: '', photos: 0, signatures: 0, amendments: 0, photoRead: false },
   'qa-wl-b-admin': { projects: 1, reports: 1, statuses: 'submitted', photos: 1, signatures: 1, amendments: 0, photoRead: false },
   'qa-wl-member': { projects: 0, reports: 0, statuses: '', photos: 0, signatures: 0, amendments: 0, photoRead: false },
   'qa-wl-new': { projects: 0, reports: 0, statuses: '', photos: 0, signatures: 0, amendments: 0, photoRead: false },
@@ -110,7 +112,7 @@ async function check(anon, name) {
     got.deletion = impact.kind + (impact.sealed === undefined ? '' : ` (${impact.sealed} sealed)`);
   }
   const summary = `projects=${got.projects} reports=${got.reports} [${got.statuses}] photos=${got.photos} sigs=${got.signatures} amends=${got.amendments} photoRead=${got.photoRead}${got.deletion ? ` deletion=${got.deletion}` : ''}`;
-  console.log(`${diffs.length ? 'FAIL' : 'PASS'} ${name.padEnd(13)} ${summary}${diffs.length ? `\n     ${diffs.join('\n     ')}` : ''}`);
+  console.log(`${diffs.length ? 'FAIL' : 'PASS'} ${name.padEnd(15)} ${summary}${diffs.length ? `\n     ${diffs.join('\n     ')}` : ''}`);
   return diffs.length === 0;
 }
 
@@ -122,7 +124,7 @@ async function main() {
     try {
       if (await check(anon, name)) pass += 1;
     } catch (err) {
-      console.log(`FAIL ${name.padEnd(13)} ${err.message}`);
+      console.log(`FAIL ${name.padEnd(15)} ${err.message}`);
     }
   }
   const total = Object.keys(EXPECT).length;

@@ -21,6 +21,8 @@
 --   06 qa-wl-member   company member (A); no projects
 --   07 qa-wl-new      brand-new user: no company, no projects
 --   08 qa-wl-solo     no company; creator of the company-less Solo Garage (one locked + signed report)
+--   10 qa-wl-owner    no company; project OWNER on Riverside (PunchLog Client/Owner) — must see ZERO reports (PRD §10)
+--   11 qa-wl-architect no company; project OWNER on Riverside (PunchLog Design Team) — must see ZERO reports
 --   09 qa-wl-soloco   sole admin AND sole member of QA-WL Solo Co (C); one project with a locked report
 --                     (the PR #44 "deleting your account deletes the company" warning)
 --
@@ -91,7 +93,9 @@ insert into qa_wl_users values
  ('0b000000-0000-4000-8000-000000000006','qa-wl-member@worklog.test', 'Mo Member',     '+1 555 020 0006','QA-WL Granite Builders'),
  ('0b000000-0000-4000-8000-000000000007','qa-wl-new@worklog.test',    'Nell New',      null,             null),
  ('0b000000-0000-4000-8000-000000000008','qa-wl-solo@worklog.test',   'Sol Solo',      '+1 555 020 0008','Sol Solo Remodeling'),
- ('0b000000-0000-4000-8000-000000000009','qa-wl-soloco@worklog.test', 'Cora Solo',     '+1 555 020 0009','QA-WL Solo Co');
+ ('0b000000-0000-4000-8000-000000000009','qa-wl-soloco@worklog.test', 'Cora Solo',     '+1 555 020 0009','QA-WL Solo Co'),
+ ('0b000000-0000-4000-8000-000000000010','qa-wl-owner@worklog.test',  'Owen Owner',    '+1 555 020 0010','QA-WL Owner Holdings'),
+ ('0b000000-0000-4000-8000-000000000011','qa-wl-architect@worklog.test','Ari Architect','+1 555 020 0011','QA-WL Studio Architects');
 
 -- ── wipe ────────────────────────────────────────────────────────────────────
 -- Locked reports have signed, append-only children guarded by
@@ -202,6 +206,8 @@ insert into public.project_members (project_id,user_id,role) values
  ('0b000000-0000-4000-8000-00000000a001','0b000000-0000-4000-8000-000000000002','super'),
  ('0b000000-0000-4000-8000-00000000a001','0b000000-0000-4000-8000-000000000003','super'),
  ('0b000000-0000-4000-8000-00000000a001','0b000000-0000-4000-8000-000000000004','sub'),
+ ('0b000000-0000-4000-8000-00000000a001','0b000000-0000-4000-8000-000000000010','owner'),
+ ('0b000000-0000-4000-8000-00000000a001','0b000000-0000-4000-8000-000000000011','owner'),
  ('0b000000-0000-4000-8000-00000000a002','0b000000-0000-4000-8000-000000000003','super')
 on conflict (project_id,user_id) do update set role = excluded.role;
 

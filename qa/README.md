@@ -56,7 +56,7 @@ http://127.0.0.1:54324 and is never delivered for real.
 
 ```bash
 node qa/seed/seed-local.mjs      # re-runnable; wipes and rebuilds only the WorkLog QA namespace
-node qa/seed/verify-roles.mjs    # signs in as every account; expects 9/9 PASS
+node qa/seed/verify-roles.mjs    # signs in as every account; expects 11/11 PASS
 ```
 
 The seed drives the report lifecycle through the **real** SECURITY DEFINER
@@ -73,7 +73,8 @@ set leaves that namespace, and the seed fails if any `0a` row count changes.
 **Auto-lock:** `lock_stale_submitted_reports()` locks submitted reports after
 24 h (`worklog_config.lock_grace_hours`), when pg_cron is present. The two
 "submitted" reports are created at seed time, so re-seed before a run that
-needs them still submitted.
+needs them still submitted. Seeded dates are relative to the seed day, so
+**re-seed at the start of every test day** (otherwise "today's draft" is yesterday's).
 
 ### Accounts (password `qa-local-only-2026`, local only)
 
@@ -83,6 +84,8 @@ needs them still submitted.
 | `qa-wl-super@worklog.test` | Company member of A, super on Riverside, title "Superintendent" | 1 project, 4 reports |
 | `qa-wl-pm@worklog.test` | Company member of A, super on Riverside + Depot, title "Project Manager" (PM = super + display title, PRD §10) | 2 projects, 6 reports |
 | `qa-wl-sub@worklog.test` | No company; **sub** on Riverside | the project, **0** reports/photos/signatures; photo download denied |
+| `qa-wl-owner@worklog.test` | No company; project **owner** on Riverside (PunchLog Client/Owner contact) | the project, **0** reports. Owners have no in-app report access (PRD §10) |
+| `qa-wl-architect@worklog.test` | No company; project **owner** on Riverside (PunchLog Design Team) | the project, **0** reports |
 | `qa-wl-b-admin@worklog.test` | Company admin of B (QA-WL Harbor Works), super on Pier 9 | only Pier 9: 1 report. Cross-tenant canary |
 | `qa-wl-member@worklog.test` | Company member of A, no projects | nothing |
 | `qa-wl-new@worklog.test` | Brand-new: no company, no projects | nothing (empty states, create-project) |
