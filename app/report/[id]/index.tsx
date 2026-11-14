@@ -37,7 +37,12 @@ import { VisitorsSectionSheet } from '../../../src/components/report/VisitorsSec
 import { WeatherSectionSheet } from '../../../src/components/report/WeatherSectionSheet';
 import { useAuth } from '../../../src/auth';
 import { useRepository } from '../../../src/data';
-import { canEditSection, canLock, canSubmit } from '../../../src/data/lifecycleGuards';
+import {
+  canEditSection,
+  canLock,
+  canSubmit,
+  displayStatus,
+} from '../../../src/data/lifecycleGuards';
 import type {
   CrewContent,
   DelaysContent,
@@ -405,7 +410,7 @@ export default function ReportDetailScreen() {
             <Text style={[styles.date, { color: colors.text, fontFamily: fonts.serif.semibold }]}>
               {formatReportDate(data.report.report_date)}
             </Text>
-            <ReportStatusChip status={data.report.status} testID="report-status" />
+            <ReportStatusChip status={displayStatus(data.report)} testID="report-status" />
           </View>
 
           <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />

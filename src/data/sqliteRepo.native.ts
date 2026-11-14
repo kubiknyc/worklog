@@ -33,6 +33,10 @@ export type { Db };
 
 const noop = (): void => {};
 
+/** Shared DailyReportRow projection; amendment_count is derived, never stored. */
+const REPORT_COLUMNS = `id, project_id, report_date, status,
+  (SELECT COUNT(*) FROM report_amendments a WHERE a.report_id = daily_reports.id) AS amendment_count`;
+
 // ── Raw row shapes as SQLite returns them (JSON as TEXT, booleans as 0/1) ─────
 
 interface SectionRowRaw {
@@ -69,7 +73,7 @@ export function createSqliteRepo(
   async function getOrCreateReport(projectId: string, reportDate: string): Promise<DailyReportRow> {
     // A local hit short-circuits with no INSERT and no enqueue.
     const existing = await db.getFirstAsync<DailyReportRow>(
-      `SELECT id, project_id, report_date, status FROM daily_reports
+      `SELECT ${REPORT_COLUMNS} FROM daily_reports
          WHERE project_id = ? AND report_date = ?`,
       [projectId, reportDate],
     );
@@ -81,6 +85,7 @@ export function createSqliteRepo(
       project_id: projectId,
       report_date: reportDate,
       status: 'draft',
+      amendment_count: 0,
     };
 
     // One transaction: the local row, its 1:1 weather seed (mirrors the RPC),
@@ -122,7 +127,7 @@ export function createSqliteRepo(
 
     async getReportByDate(projectId: string, reportDate: string): Promise<DailyReportRow | null> {
       return db.getFirstAsync<DailyReportRow>(
-        `SELECT id, project_id, report_date, status FROM daily_reports
+        `SELECT ${REPORT_COLUMNS} FROM daily_reports
          WHERE project_id = ? AND report_date = ?`,
         [projectId, reportDate],
       );
@@ -137,7 +142,7 @@ export function createSqliteRepo(
 
     async getReport(reportId: string): Promise<DailyReportRow | null> {
       return db.getFirstAsync<DailyReportRow>(
-        'SELECT id, project_id, report_date, status FROM daily_reports WHERE id = ?',
+        `SELECT ${REPORT_COLUMNS} FROM daily_reports WHERE id = ?`,
         [reportId],
       );
     },
@@ -159,7 +164,7 @@ export function createSqliteRepo(
 
     async listReports(projectId: string): Promise<readonly DailyReportRow[]> {
       return db.getAllAsync<DailyReportRow>(
-        `SELECT id, project_id, report_date, status FROM daily_reports
+        `SELECT ${REPORT_COLUMNS} FROM daily_reports
          WHERE project_id = ? ORDER BY report_date DESC`,
         [projectId],
       );
@@ -280,7 +285,7 @@ export function createSqliteRepo(
 
     async submitReport(reportId: string, input: SubmitReportInput): Promise<void> {
       const row = await db.getFirstAsync<DailyReportRow>(
-        'SELECT id, project_id, report_date, status FROM daily_reports WHERE id = ?',
+        `SELECT ${REPORT_COLUMNS} FROM daily_reports WHERE id = ?`,
         [reportId],
       );
       if (!row) throw new Error('Report not found.');
@@ -314,7 +319,7 @@ export function createSqliteRepo(
 
     async lockReport(reportId: string): Promise<void> {
       const row = await db.getFirstAsync<DailyReportRow>(
-        'SELECT id, project_id, report_date, status FROM daily_reports WHERE id = ?',
+        `SELECT ${REPORT_COLUMNS} FROM daily_reports WHERE id = ?`,
         [reportId],
       );
       if (!row) throw new Error('Report not found.');

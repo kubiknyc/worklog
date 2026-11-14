@@ -150,6 +150,7 @@ describe('useReparentRedirect', () => {
       project_id: 'p1',
       report_date: '2026-07-29',
       status: 'draft',
+      amendment_count: 0,
     };
     const getReportByDate = jest.fn().mockResolvedValue(row);
     const repo = makeRepo({ getReportByDate });
@@ -179,6 +180,7 @@ describe('useReparentRedirect', () => {
       project_id: 'p1',
       report_date: '2026-07-29',
       status: 'draft',
+      amendment_count: 0,
     };
     const getReportByDate = jest.fn().mockResolvedValue(row);
     const repo = makeRepo({ getReportByDate });
@@ -204,6 +206,7 @@ describe('useReparentRedirect', () => {
       project_id: 'p1',
       report_date: '2026-07-29',
       status: 'draft',
+      amendment_count: 0,
     };
     const getReportByDate = jest.fn().mockResolvedValue(row);
     const repo = makeRepo({ getReportByDate });
@@ -240,6 +243,7 @@ describe('useReparentRedirect', () => {
       project_id: 'p1',
       report_date: '2026-07-29',
       status: 'draft',
+      amendment_count: 0,
     };
     // A persistent base (mockResolvedValue) plus a one-time reject means the
     // FIRST call rejects and every call after — including the deliberate
@@ -283,6 +287,7 @@ describe('useReparentRedirect', () => {
       project_id: 'p1',
       report_date: '2026-07-29',
       status: 'draft',
+      amendment_count: 0,
     };
     // The first call's promise deliberately never settles — it simulates a
     // still-in-flight request that gets cancelled by the effect re-run
