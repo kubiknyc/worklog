@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
+import { TextInput } from 'react-native';
 
 import { ThemeProvider } from '../../theme';
 import { flushSectionDraft, withFakeTimers } from './sectionDraftTestUtils';
@@ -50,4 +51,35 @@ test('Add delay writes the new row with its defaults', async () => {
       false,
     );
   });
+});
+
+test('readOnly exposes no add, remove, or editable controls', () => {
+  const { queryByTestId, queryByLabelText, UNSAFE_getAllByType, getByLabelText } = render(
+    <ThemeProvider>
+      <DelaysSectionSheet
+        visible
+        reportId="r1"
+        initial={{
+          rows: [
+            {
+              id: 'd1',
+              cause: 'Weather',
+              responsible_party: null,
+              duration_hours: 1,
+              is_ongoing: false,
+              note: null,
+            },
+          ],
+        }}
+        onClose={jest.fn()}
+        readOnly
+      />
+    </ThemeProvider>,
+  );
+  expect(queryByTestId('sheet-delays-add')).toBeNull();
+  expect(queryByLabelText('Remove Delay 1')).toBeNull();
+  const inputs = UNSAFE_getAllByType(TextInput);
+  expect(inputs.length).toBeGreaterThan(0);
+  inputs.forEach((input) => expect(input.props.editable).toBe(false));
+  expect(getByLabelText('Ongoing').props.disabled).toBe(true);
 });

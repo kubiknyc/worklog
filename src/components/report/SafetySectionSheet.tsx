@@ -96,22 +96,24 @@ export function SafetySectionSheet({ visible, reportId, initial, onClose, readOn
           </Text>
         </EntryCard>
       ))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add observation"
-        testID="sheet-safety-add"
-        onPress={add}
-        style={({ pressed }) => [
-          styles.addBtn,
-          { borderColor: colors.border },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Ionicons name="add" size={18} color={colors.accent} />
-        <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
-          Add observation
-        </Text>
-      </Pressable>
+      {!readOnly ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add observation"
+          testID="sheet-safety-add"
+          onPress={add}
+          style={({ pressed }) => [
+            styles.addBtn,
+            { borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="add" size={18} color={colors.accent} />
+          <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
+            Add observation
+          </Text>
+        </Pressable>
+      ) : null}
     </SectionSheetScaffold>
   );
 }

@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 
 import { useTheme } from '../theme';
+import { useSectionReadOnly } from './report/SectionReadOnlyContext';
 
 type Props = {
   readonly label: string;
@@ -54,6 +55,7 @@ export function TextField({
   testID,
 }: Props) {
   const { colors, fonts, radii, sizes } = useTheme();
+  const readOnly = useSectionReadOnly();
 
   return (
     <View style={styles.field}>
@@ -65,6 +67,7 @@ export function TextField({
           testID={testID}
           accessibilityLabel={label}
           value={value}
+          editable={!readOnly}
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.faint}

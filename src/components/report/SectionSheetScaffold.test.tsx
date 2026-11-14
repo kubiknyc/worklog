@@ -10,6 +10,7 @@ import { Text } from 'react-native';
 import { render, screen } from '@testing-library/react-native';
 
 import { ThemeProvider } from '../../theme';
+import { TextField } from '../TextField';
 import { SectionSheetScaffold } from './SectionSheetScaffold';
 
 function renderScaffold(readOnly: boolean) {
@@ -24,6 +25,7 @@ function renderScaffold(readOnly: boolean) {
         testID="sheet-test"
       >
         <Text>body content</Text>
+        <TextField label="Field" value="x" onChangeText={jest.fn()} testID="field" />
       </SectionSheetScaffold>
     </ThemeProvider>,
   );
@@ -35,7 +37,7 @@ describe('SectionSheetScaffold read-only notice', () => {
 
     expect(screen.getByTestId('sheet-readonly')).toBeTruthy();
     expect(
-      screen.getByText('This report is locked. Changes need a formal amendment.'),
+      screen.getByText('This report has been submitted. Changes need a formal amendment.'),
     ).toBeTruthy();
   });
 
@@ -53,5 +55,17 @@ describe('SectionSheetScaffold read-only notice', () => {
 
     renderScaffold(false);
     expect(screen.getByTestId('sheet-test-none')).toBeTruthy();
+  });
+});
+
+describe('SectionSheetScaffold read-only inputs', () => {
+  it('makes TextField children non-editable when readOnly', () => {
+    renderScaffold(true);
+    expect(screen.getByTestId('field').props.editable).toBe(false);
+  });
+
+  it('keeps TextField children editable otherwise', () => {
+    renderScaffold(false);
+    expect(screen.getByTestId('field').props.editable).toBe(true);
   });
 });

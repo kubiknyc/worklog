@@ -98,22 +98,24 @@ export function InspectionsSectionSheet({ visible, reportId, initial, onClose, r
           />
         </EntryCard>
       ))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add inspection"
-        testID="sheet-inspections-add"
-        onPress={add}
-        style={({ pressed }) => [
-          styles.addBtn,
-          { borderColor: colors.border },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Ionicons name="add" size={18} color={colors.accent} />
-        <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
-          Add inspection
-        </Text>
-      </Pressable>
+      {!readOnly ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add inspection"
+          testID="sheet-inspections-add"
+          onPress={add}
+          style={({ pressed }) => [
+            styles.addBtn,
+            { borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="add" size={18} color={colors.accent} />
+          <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
+            Add inspection
+          </Text>
+        </Pressable>
+      ) : null}
     </SectionSheetScaffold>
   );
 }

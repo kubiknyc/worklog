@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '../theme';
+import { useSectionReadOnly } from './report/SectionReadOnlyContext';
 
 type Props = {
   readonly value: number;
@@ -42,8 +43,10 @@ export function Stepper({
   unitLabel,
   accessibilityLabel,
   formatValue,
-  disabled = false,
+  disabled: disabledProp = false,
 }: Props) {
+  const readOnly = useSectionReadOnly();
+  const disabled = disabledProp || readOnly;
   const { colors, fonts, radii } = useTheme();
 
   const atMin = disabled || value <= min;
