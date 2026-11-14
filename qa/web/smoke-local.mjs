@@ -33,7 +33,12 @@ try {
   console.log(`PASS qa-wl-super signed in on web, sees today's draft on "${PROJECT}" and opens it`);
 } catch (err) {
   console.error(`FAIL ${err.message.split('\n')[0]}`);
-  if (SHOT) await browser.contexts()[0]?.pages()[0]?.screenshot({ path: SHOT }).catch(() => {});
+  if (SHOT)
+    await browser
+      .contexts()[0]
+      ?.pages()[0]
+      ?.screenshot({ path: SHOT })
+      .catch(() => {});
   process.exitCode = 1;
 } finally {
   await browser.close();

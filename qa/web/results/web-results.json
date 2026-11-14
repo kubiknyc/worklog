@@ -1,0 +1,740 @@
+{
+  "LIFE-009": {
+    "result": "Pass",
+    "evidence": "insert_daily_reports: 42501; update_daily_reports: 42501; delete_daily_reports: 42501; insert_report_sections: 42501; update_report_sections: 42501; delete_report_signatures: 42501; draft unchanged, T1 signatures intact (1)",
+    "bug": "",
+    "at": "2026-11-14T04:27:15.506Z"
+  },
+  "LIFE-010": {
+    "result": "Pass",
+    "evidence": "refused P0001: report 0b000000-0000-4000-8000-00000000d104 is locked — post-submit changes require an amendment; sections unchanged",
+    "bug": "",
+    "at": "2026-11-14T04:27:15.550Z"
+  },
+  "PERM-007": {
+    "result": "Pass",
+    "evidence": "{\"daily_reports\":0,\"report_sections\":0,\"report_weather\":0,\"report_signatures\":0,\"report_amendments\":0,\"report_photos\":0}",
+    "bug": "",
+    "at": "2026-11-14T04:27:15.770Z"
+  },
+  "PERM-008": {
+    "result": "Pass",
+    "evidence": "sub.create_report=42501 sub.update_section=42501 sub.submit_report=42501 sub.lock_report=42501 sub.amend_report=42501 owner.create_report=42501 owner.update_section=42501 owner.submit_report=42501 owner.lock_report=42501 owner.amend_report=42501; stray=0 draft=draft t1=submitted",
+    "bug": "",
+    "at": "2026-11-14T04:27:16.025Z"
+  },
+  "PERM-009": {
+    "result": "Pass",
+    "evidence": "sub sees 0/2, super sees 2/2",
+    "bug": "",
+    "at": "2026-11-14T04:27:16.093Z"
+  },
+  "PERM-012-API": {
+    "result": "Pass",
+    "evidence": "b-admin sees A reports/projects/members/sections=0,0,0,0; super sees Pier9=0",
+    "bug": "",
+    "at": "2026-11-14T04:27:16.267Z"
+  },
+  "PERM-013-API": {
+    "result": "Pass",
+    "evidence": "member sees reports=0 projects=0",
+    "bug": "",
+    "at": "2026-11-14T04:27:16.398Z"
+  },
+  "PERM-015": {
+    "result": "Pass",
+    "evidence": "sub: reportIds rows=0, 1001 ids=22023; super: reportIds rows=0, 1001 ids=22023",
+    "bug": "",
+    "at": "2026-11-14T04:27:16.448Z"
+  },
+  "PHOTO-012": {
+    "result": "Pass",
+    "evidence": "{\"super\":\"ok 21108b\",\"sub\":\"denied\",\"b-admin\":\"denied\"}; sub list=0",
+    "bug": "",
+    "at": "2026-11-14T04:27:16.607Z"
+  },
+  "WEATH-005": {
+    "result": "Pass",
+    "evidence": "HTTP 200 {\"status\":\"report_locked\"}; row unchanged=true",
+    "bug": "",
+    "at": "2026-11-14T04:27:17.346Z"
+  },
+  "WEATH-008": {
+    "result": "Pass",
+    "evidence": "anon=401 b-admin=403 sub=200 {\"status\":\"already_located\",\"lat\":40.7128,\"lng\":-74.006} super=200 {\"status\":\"already_located\",\"lat\":40.7128,\"lng\":-74.006}",
+    "bug": "",
+    "at": "2026-11-14T04:27:17.946Z"
+  },
+  "PDF-008": {
+    "result": "Pass",
+    "evidence": "anon=401, user JWT no secret=401 {\"error\":\"unauthorized\"}, wrong secret=401",
+    "bug": "",
+    "at": "2026-11-14T04:27:18.046Z"
+  },
+  "LIFE-008": {
+    "result": "Pass",
+    "evidence": "lock_stale_submitted_reports() -> 1; b-admin sees status=locked",
+    "bug": "",
+    "at": "2026-11-14T04:27:18.356Z"
+  },
+  "AUTH-004": {
+    "result": "Pass",
+    "evidence": "login-demo-* rows rendered: 0",
+    "bug": "",
+    "at": "2026-11-14T04:38:03.818Z"
+  },
+  "AUTH-002": {
+    "result": "Pass",
+    "evidence": "login-error=\"Invalid email or password.\", still on login=true",
+    "bug": "",
+    "at": "2026-11-14T04:38:08.247Z"
+  },
+  "AUTH-003": {
+    "result": "Pass",
+    "evidence": "\"\": Enter a valid email address.; \"not-an-email\": Enter a valid email address.; token requests=0",
+    "bug": "",
+    "at": "2026-11-14T04:38:15.832Z"
+  },
+  "AUTH-006": {
+    "result": "Pass",
+    "evidence": "message=\"Enter your email above first, then tap \"Forgot password?\".\", recover requests=0",
+    "bug": "",
+    "at": "2026-11-14T04:38:22.143Z"
+  },
+  "AUTH-007": {
+    "result": "Pass",
+    "evidence": "register opened=true, back to login=true",
+    "bug": "",
+    "at": "2026-11-14T04:38:26.587Z"
+  },
+  "AUTH-008": {
+    "result": "Pass",
+    "evidence": "done heading=false, function calls=0, inline copy: Enter your company name. | Enter your name. | Enter a valid email address.",
+    "bug": "",
+    "at": "2026-11-14T04:38:33.514Z"
+  },
+  "AUTH-012": {
+    "result": "Pass",
+    "evidence": "set-password-error=true \"This link is no longer valid. Request a new reset link from the sign-in screen, or ask your superintendent for a fresh invite.\", raw \"EVIL\" shown=false",
+    "bug": "",
+    "at": "2026-11-14T04:38:41.354Z"
+  },
+  "AUTH-013": {
+    "result": "Pass",
+    "evidence": "\"\": \"Open the confirmation link from your email on this phone to finish setting up your account\" back=true signedIn=false; \"#garbage=1&access_token=nope\": \"Open the confirmation link from your email on this phone to finish setting up your account\" back=true signedIn=false",
+    "bug": "",
+    "at": "2026-11-14T04:38:51.214Z"
+  },
+  "NAV-002": {
+    "result": "Pass",
+    "evidence": "redirect to login=true, history flashed=false",
+    "bug": "",
+    "at": "2026-11-14T04:38:59.624Z"
+  },
+  "NAV-001": {
+    "result": "Pass",
+    "evidence": "signed out / -> login=true; signed in / -> Today=true",
+    "bug": "",
+    "at": "2026-11-14T04:39:17.727Z"
+  },
+  "AUTH-001": {
+    "result": "Pass",
+    "evidence": "UI sign-in as qa-wl-super -> screen-today, Riverside=true",
+    "bug": "",
+    "at": "2026-11-14T04:39:23.875Z"
+  },
+  "AUTH-015": {
+    "result": "Pass",
+    "evidence": "after reload Today=true, login flashed=false",
+    "bug": "",
+    "at": "2026-11-14T04:39:33.726Z"
+  },
+  "NAV-003": {
+    "result": "Pass",
+    "evidence": "/login->Today=true /register->Today=true",
+    "bug": "",
+    "at": "2026-11-14T04:39:47.211Z"
+  },
+  "NAV-004": {
+    "result": "Pass",
+    "evidence": "{\"tab-today\":true,\"tab-history\":true,\"tab-settings\":true,\"tab-camera\":false,\"tab-photos\":false}",
+    "bug": "",
+    "at": "2026-11-14T04:39:56.369Z"
+  },
+  "NAV-005": {
+    "result": "Pass",
+    "evidence": "screen-camera=true screen-photos=true",
+    "bug": "",
+    "at": "2026-11-14T04:40:10.664Z"
+  },
+  "NAV-008": {
+    "result": "Fail",
+    "evidence": "/report/<unknown id> opened by URL shows \"Report not found\" without crash, but the header back chevron (report-back) does nothing: router.back() has no history on a direct web load, user is stuck on the screen (tab bar hidden). [screenshot results/NAV-008-1.png]",
+    "bug": "",
+    "at": "2026-11-14T04:51:18.262Z"
+  },
+  "TODAY-001": {
+    "result": "Pass",
+    "evidence": "draft chip=true, opens report=true. Today: All saved to the cloud / TODAY / Friday, November 13 / QA-WL Riverside Tower / Today's report / Draft",
+    "bug": "",
+    "at": "2026-11-14T04:40:41.180Z"
+  },
+  "SECT-001": {
+    "result": "Pass",
+    "evidence": "10 rows in PRD order with seed summaries: Weather windy · 49°F | Crew & work 3 trades · 13 on site · 2 logged | Deliveries 2 | Equipment 2 items on site | Inspections 1 | Safety None today | Delays 1 · 1 ongoing | Visitors 2 | RFIs 1 item | General notes text; report-status-draft. (first auto-check tripped on a leading icon glyph)",
+    "bug": "",
+    "at": "2026-11-14T04:51:18.248Z"
+  },
+  "SECT-015": {
+    "result": "Fail",
+    "evidence": "All 20 sheets on today-1 (submitted) and today-2 (locked) show sheet-readonly \"This report is locked. Changes need a formal amendment.\" but text fields stay editable: e.g. locked crew sheet accepted typing \"QA TAMPER\" in Area and showed it; on Done the edit is silently dropped (DB unchanged, server refuses). Enabled inputs per sheet up to 6 (crew), trash icons rendered; steppers not clickable. [screenshot results/SECT-015-probe.png]",
+    "bug": "",
+    "at": "2026-11-14T04:51:18.254Z"
+  },
+  "LIFE-007": {
+    "result": "Pass",
+    "evidence": "locked chip=true, lifecycle buttons=false; sheets read-only per SECT-015",
+    "bug": "",
+    "at": "2026-11-14T04:41:19.110Z"
+  },
+  "LIFE-011": {
+    "result": "Fail",
+    "evidence": "today-3 has 1 amendment(s); detail chip report-status-locked \"Locked\"; History row \" Tue, Nov 10 Locked\" [screenshot results/LIFE-011-4.png]",
+    "bug": "",
+    "at": "2026-11-14T04:41:32.748Z"
+  },
+  "LIFE-015": {
+    "result": "Pass",
+    "evidence": "d101: submit=false lock=false; d102: submit=false lock=false",
+    "bug": "",
+    "at": "2026-11-14T04:41:49.902Z"
+  },
+  "LIFE-016": {
+    "result": "Pass",
+    "evidence": "chip text labels: Draft, Submitted, Locked, Locked",
+    "bug": "",
+    "at": "2026-11-14T04:42:11.532Z"
+  },
+  "HIST-001": {
+    "result": "Pass",
+    "evidence": "d101:Report for Fri, Nov 13, draft | d102:Report for Thu, Nov 12, submitted | d104:Report for Wed, Nov 11, locked | d103:Report for Tue, Nov 10, locked; tap opens report=true",
+    "bug": "",
+    "at": "2026-11-14T04:42:19.931Z"
+  },
+  "HIST-002-new": {
+    "result": "Pass",
+    "evidence": "history-empty=true \" No project yet Create or join a project to see its past reports.\"",
+    "bug": "",
+    "at": "2026-11-14T04:42:27.228Z"
+  },
+  "HIST-002-member": {
+    "result": "Pass",
+    "evidence": "history-empty=true \" No project yet Create or join a project to see its past reports.\"",
+    "bug": "",
+    "at": "2026-11-14T04:42:34.491Z"
+  },
+  "HIST-004": {
+    "result": "Not built",
+    "evidence": "admin History lists 4 of 6 reports; Depot reports reachable only by URL, no project filter or switcher (TODAY-007)",
+    "bug": "",
+    "at": "2026-11-14T04:42:41.502Z"
+  },
+  "TODAY-004": {
+    "result": "Pass",
+    "evidence": "No project yet=true company card=true create-project=true card above=true",
+    "bug": "",
+    "at": "2026-11-14T04:42:48.092Z"
+  },
+  "TODAY-005": {
+    "result": "Pass",
+    "evidence": "No project yet=true company card=false create-project=true",
+    "bug": "",
+    "at": "2026-11-14T04:42:56.218Z"
+  },
+  "TODAY-007": {
+    "result": "Not built",
+    "evidence": "admin Today: \"All saved to the cloud / TODAY / Friday, November 13\"; switcher/Depot controls found: 0",
+    "bug": "",
+    "at": "2026-11-14T04:43:02.769Z"
+  },
+  "TODAY-008": {
+    "result": "Not built",
+    "evidence": "no \"Start from last report\" entry on Today (0 matches)",
+    "bug": "",
+    "at": "2026-11-14T04:43:08.876Z"
+  },
+  "PROJ-002": {
+    "result": "Pass",
+    "evidence": "\"Enter a project name.\" shown=true; QA-WL projects in DB=5 (seed 5)",
+    "bug": "",
+    "at": "2026-11-14T04:43:19.192Z"
+  },
+  "PROJ-005": {
+    "result": "Pass",
+    "evidence": "members screen: Members | Ada Admin | Super | Ari Architect | Owner | Owen Owner | Owner | Priya Manager — Project Manager | Super | Sam Super — Superintendent | Super | Sully Sub | Sub | INVITE A TEAMMATE | EMAIL |  | Sub | Super | Send invite",
+    "bug": "",
+    "at": "2026-11-14T04:43:28.547Z"
+  },
+  "PROJ-008": {
+    "result": "Pass",
+    "evidence": "message=true, invite requests=0",
+    "bug": "",
+    "at": "2026-11-14T04:43:39.377Z"
+  },
+  "PROJ-009": {
+    "result": "Pass",
+    "evidence": "settings-members-link visible=false",
+    "bug": "",
+    "at": "2026-11-14T04:43:47.450Z"
+  },
+  "SYNC-001": {
+    "result": "Pass",
+    "evidence": "web half: sync-status-synced=true \"All saved to the cloud\". Queued/offline states are Android (stage 4)",
+    "bug": "",
+    "at": "2026-11-14T04:43:57.283Z"
+  },
+  "SYNC-008": {
+    "result": "Pass",
+    "evidence": "queue screen=true \"Sync queue / Sync runs automatically while online\", back=true",
+    "bug": "",
+    "at": "2026-11-14T04:44:04.166Z"
+  },
+  "PHOTO-006": {
+    "result": "Not built",
+    "evidence": "report detail has no photo strip (0 <img> on page; 2 seeded photos)",
+    "bug": "",
+    "at": "2026-11-14T04:44:14.677Z"
+  },
+  "PHOTO-007": {
+    "result": "Not built",
+    "evidence": "/photos placeholder photos-empty=true; admin can read 5 seeded photos",
+    "bug": "",
+    "at": "2026-11-14T04:44:25.152Z"
+  },
+  "PHOTO-008": {
+    "result": "Not built",
+    "evidence": "no photo route or lightbox (nothing to open, see PHOTO-006)",
+    "bug": "",
+    "at": "2026-11-14T04:44:31.200Z"
+  },
+  "HIST-005": {
+    "result": "Not built",
+    "evidence": "History is a flat list; calendar/filter/rollup controls found: 0",
+    "bug": "",
+    "at": "2026-11-14T04:44:38.476Z"
+  },
+  "HIST-006": {
+    "result": "Not built",
+    "evidence": "History is a flat list; calendar/filter/rollup controls found: 0",
+    "bug": "",
+    "at": "2026-11-14T04:44:44.820Z"
+  },
+  "HIST-007": {
+    "result": "Not built",
+    "evidence": "History is a flat list; calendar/filter/rollup controls found: 0",
+    "bug": "",
+    "at": "2026-11-14T04:44:51.881Z"
+  },
+  "SET-001": {
+    "result": "Pass",
+    "evidence": " Sync queue:62px,  Project members:62px,  Terms of Service:62px,  Privacy Policy:62px,  Sign out:62px,  Delete account:62px",
+    "bug": "",
+    "at": "2026-11-14T04:44:58.589Z"
+  },
+  "SET-002": {
+    "result": "Pass",
+    "evidence": "settings-terms-link: new tab=true https://worklog-site.vercel.app/terms HTTP 200; settings-privacy-link: new tab=true https://worklog-site.vercel.app/privacy HTTP 200",
+    "bug": "",
+    "at": "2026-11-14T04:45:06.057Z"
+  },
+  "SET-003": {
+    "result": "Not built",
+    "evidence": "Settings has no Appearance… entry (0 matches)",
+    "bug": "",
+    "at": "2026-11-14T04:45:12.603Z"
+  },
+  "SET-004": {
+    "result": "Not built",
+    "evidence": "Settings has no Branding… entry (0 matches)",
+    "bug": "",
+    "at": "2026-11-14T04:45:19.666Z"
+  },
+  "SET-005": {
+    "result": "Not built",
+    "evidence": "Settings has no Customiz… entry (0 matches)",
+    "bug": "",
+    "at": "2026-11-14T04:45:25.906Z"
+  },
+  "SET-007": {
+    "result": "Not built",
+    "evidence": "Settings has no Profile… entry (0 matches)",
+    "bug": "",
+    "at": "2026-11-14T04:45:32.845Z"
+  },
+  "DEL-001": {
+    "result": "Pass",
+    "evidence": "Today -> Settings tab -> Delete account (2 taps) opens \"Delete your account?\"; cancel closes=true",
+    "bug": "",
+    "at": "2026-11-14T04:45:43.396Z"
+  },
+  "DEL-002": {
+    "result": "Pass",
+    "evidence": "\"You're the only person on 1 project that isn't part of a company, so deleting your account also permanently deletes it with its daily reports (including locked and signed reports) and photos (2 daily reports, 1 of them locked or signed). This permanently deletes your account and removes your access. It cannot be undone.\"",
+    "bug": "",
+    "at": "2026-11-14T04:45:55.012Z"
+  },
+  "DEL-003": {
+    "result": "Pass",
+    "evidence": "\"You're the only person in QA-WL Solo Co, so deleting your account also permanently deletes QA-WL Solo Co and everything in it (1 project, 1 daily report, 1 of them locked or signed): its projects, daily reports (including locked and signed reports) and photos. This permanently deletes your account and removes your access. It cannot be undone.\"",
+    "bug": "",
+    "at": "2026-11-14T04:46:05.994Z"
+  },
+  "DEL-004": {
+    "result": "Pass",
+    "evidence": "\"This permanently deletes your account and removes your access to this company's reports. It cannot be undone.\"",
+    "bug": "",
+    "at": "2026-11-14T04:46:17.553Z"
+  },
+  "DEL-012": {
+    "result": "Fail",
+    "evidence": "PunchLog/JobSight named=false: \"This permanently deletes your account and removes your access to this company's reports. It cannot be undone.\" [screenshot results/DEL-012-5.png]",
+    "bug": "",
+    "at": "2026-11-14T04:46:28.501Z"
+  },
+  "DEL-013": {
+    "result": "Not built",
+    "evidence": "only full account deletion in Settings (0 \"WorkLog data\" entries)",
+    "bug": "",
+    "at": "2026-11-14T04:46:35.686Z"
+  },
+  "PERM-001": {
+    "result": "Pass",
+    "evidence": "Today \"All saved to the cloud / TODAY / Friday, November 13\"; Riverside draft opens=true editable=true; Depot report by URL=true; 6 reports by API (verify-roles). Submit/lock buttons: Android stage",
+    "bug": "",
+    "at": "2026-11-14T04:46:51.511Z"
+  },
+  "PERM-002": {
+    "result": "Pass",
+    "evidence": "Depot report by URL as super -> \"Report not found\"=true; 1 project / 4 reports (HIST-001)",
+    "bug": "",
+    "at": "2026-11-14T04:47:01.597Z"
+  },
+  "PERM-003": {
+    "result": "Pass",
+    "evidence": "web half: pm edits Riverside draft=true, invite form=true. Submit/lock and signer-title prefill are Android-only",
+    "bug": "",
+    "at": "2026-11-14T04:47:18.103Z"
+  },
+  "PERM-004": {
+    "result": "Pass",
+    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false",
+    "bug": "",
+    "at": "2026-11-14T04:47:39.654Z"
+  },
+  "PERM-010": {
+    "result": "Pass",
+    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false",
+    "bug": "",
+    "at": "2026-11-14T04:48:02.905Z"
+  },
+  "PERM-011": {
+    "result": "Pass",
+    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false",
+    "bug": "",
+    "at": "2026-11-14T04:48:27.674Z"
+  },
+  "PERM-005": {
+    "result": "Fail",
+    "evidence": "qa-wl-sub Today on Riverside says \"No report for today yet\" (a draft exists, sub can't see it) and offers Start today's report; tapping it does nothing visible: no message, no navigation. create_report refused server-side (42501, PERM-008), Riverside still 4 reports. Same for owner/architect (start offered=true in PERM-010/011). [screenshot results/PERM-005-6.png]",
+    "bug": "",
+    "at": "2026-11-14T04:51:18.265Z"
+  },
+  "PERM-006": {
+    "result": "Pass",
+    "evidence": "invite form=false; owner/architect names shown=[] of [\"Owen Owner\",\"Ari Architect\"]; emails shown=false; list: Members | Ada Admin | Super | Priya Manager | Super | Sam Super | Super | Sully Sub | Sub",
+    "bug": "",
+    "at": "2026-11-14T04:48:51.322Z"
+  },
+  "PERM-012": {
+    "result": "Pass",
+    "evidence": "Today=Pier 9: true; Riverside draft by URL not found=true; Riverside members leaks=[]",
+    "bug": "",
+    "at": "2026-11-14T04:49:09.590Z"
+  },
+  "PERM-013": {
+    "result": "Pass",
+    "evidence": "No project yet=true; Riverside draft by URL not found=true; API 0 rows (PERM-013-API)",
+    "bug": "",
+    "at": "2026-11-14T04:49:20.139Z"
+  },
+  "LIFE-008-UI": {
+    "result": "Pass",
+    "evidence": "Pier 9 today-1 after auto-lock: locked chip=true",
+    "bug": "",
+    "at": "2026-11-14T04:49:30.666Z"
+  },
+  "SECT-002": {
+    "result": "Fail",
+    "evidence": "Manual weather is saved (report_weather source=manual, override rain then fog) but the Weather row summary on report detail keeps the old value after Done: still \"rain · 52°F\" at 1 s, 5 s and 15 s after picking Fog; it only updates after another sheet is opened/closed or the page reloads. Other sections refresh on Done. [screenshot results/SECT-002-1.png]",
+    "bug": "",
+    "at": "2026-11-14T05:04:44.436Z"
+  },
+  "SECT-003": {
+    "result": "Pass",
+    "evidence": "summary \" Crew & work by trade 4 trades · 13 on site · 3 logged \"; Plumbing {\"id\":\"6261ed1e-b039-4884-b26e-23ac142a6316\",\"hours\":7.5,\"trade\":\"Plumbing\",\"headcount\":2,\"is_carried_forward\":false} (12x decrement then +2, hours 8-0.5); work line saved=true persisted on reopen=true",
+    "bug": "",
+    "at": "2026-11-14T04:52:27.822Z"
+  },
+  "SECT-004": {
+    "result": "Pass",
+    "evidence": "summary \" Deliveries 3 deliveries \"; entry {\"id\":\"7f9302df-0b1e-452f-85f3-d18e2c4f6ff2\",\"unit\":\"pallets\",\"material\":\"2x6 studs\",\"quantity\":2,\"supplier\":\"QA Lumber Co\"}",
+    "bug": "",
+    "at": "2026-11-14T04:52:41.570Z"
+  },
+  "SECT-005": {
+    "result": "Pass",
+    "evidence": "summary \" Equipment 2 items on site \"; lift {\"id\":\"d10b68aa-22c6-4d5e-9b0d-2bf65b4e6034\",\"name\":\"QA Scissor lift\",\"status\":\"idle\",\"on_site\":true}; crane on_site=false",
+    "bug": "",
+    "at": "2026-11-14T04:52:55.462Z"
+  },
+  "SECT-006": {
+    "result": "Pass",
+    "evidence": "summary \" Inspections 2 inspections \"; {\"entries\":[{\"id\":\"0b000000-0000-4000-8000-ed1010800001\",\"note\":\"Level 2 framing passed; Level 3 re-inspect.\",\"agency\":\"DOB\",\"result\":\"partial\",\"inspector\":\"QA Inspector\"},{\"id\":\"558bebe8-6169-4cf7-9f7e-23cf011e90c4\",\"note\":null,\"agency\":\"FDNY\",\"result\":\"partial\",\"inspector\":\"QA Insp. Rivera\"}]}",
+    "bug": "",
+    "at": "2026-11-14T04:53:09.043Z"
+  },
+  "SECT-007": {
+    "result": "Pass",
+    "evidence": "start \"None today\" payload {\"rows\":[]}; added \"Near miss\" -> \" Safety 1 observation \" {\"rows\":[{\"id\":\"bcae2ef7-27a3-4aee-a620-894f9ff60a13\",\"obs_type\":\"near_miss\",\"description\":\"QA near miss: unsecured ladder\",\"is_incident\":false}]}",
+    "bug": "",
+    "at": "2026-11-14T05:00:41.522Z"
+  },
+  "SECT-008": {
+    "result": "Pass",
+    "evidence": "summary \" Delays & impacts 2 delays · 1 ongoing \"; [{\"id\":\"0b000000-0000-4000-8000-ed1010400001\",\"note\":\"Level 4 windows not delivered; framing crew re-sequenced.\",\"cause\":\"material_delivery\",\"is_ongoing\":true,\"duration_hours\":null,\"responsible_party\":\"QA Window Co.\"},{\"id\":\"2488e467-8faa-46de-a15a-b983b1c3523f\",\"note\":null,\"cause\":\"material_deliver",
+    "bug": "",
+    "at": "2026-11-14T05:00:58.089Z"
+  },
+  "SECT-009": {
+    "result": "Pass",
+    "evidence": "summary \" Visitors 3 visitors \"; entry {\"id\":\"44d76bcc-4b9c-43bc-866b-a44cbe82197b\",\"name\":\"QA Visitor Chen\",\"role\":\"engineer\",\"time\":\"10:07\"} (typed 10:07 against a 15-min rule)",
+    "bug": "",
+    "at": "2026-11-14T04:54:09.716Z"
+  },
+  "SECT-010": {
+    "result": "Pass",
+    "evidence": "summary \" RFIs / issues 2 items \"; {\"entries\":[{\"id\":\"0b000000-0000-4000-8000-ed1010900001\",\"title\":\"Header size at grid C4\",\"trade\":\"Framing\",\"needs_answer_from\":\"Architect\"},{\"id\":\"5c6742c8-a320-4184-8f5d-9ac0bd45c2f9\",\"title\":\"QA RFI: header size at grid C\",\"trade\":\"Framing\",\"needs",
+    "bug": "",
+    "at": "2026-11-14T05:01:15.829Z"
+  },
+  "SECT-011": {
+    "result": "Pass",
+    "evidence": "typed 2000 chars (emoji, accents, newlines); saved 2000, verbatim=true",
+    "bug": "",
+    "at": "2026-11-14T04:54:38.394Z"
+  },
+  "SECT-013": {
+    "result": "Pass",
+    "evidence": "reload 3 s after typing, no Done: summary \" General notes QA autosave 1794632089850 \", db \"QA autosave 1794632089850\"",
+    "bug": "",
+    "at": "2026-11-14T04:54:57.282Z"
+  },
+  "SYNC-014": {
+    "result": "Fail",
+    "evidence": "DevTools offline, typed \"QA offline edit\" in General notes and tapped Done: no error copy anywhere, sync pill keeps saying \"All saved to the cloud\", row summary shows the old text. Back online with no further edit: the offline text never reaches the server (db unchanged after 8 s and after reload). Typed text is silently discarded while the app claims it is saved. [screenshot results/SYNC-014-2.png]",
+    "bug": "",
+    "at": "2026-11-14T05:04:44.445Z"
+  },
+  "SECT-012": {
+    "result": "Fail",
+    "evidence": "deliveries: -none=false -> \" Deliveries Tap to add \"; equipment: -none=false -> \" Equipment Tap to add \"; inspections: -none=false -> \" Inspections Tap to add \"; delays: -none=false -> \" Delays & impacts Tap to add \"; visitors: -none=false -> \" Visitors Tap to add \"; rfis: -none=false -> \" RFIs / issues Tap to add \"; general_notes: -none=false -> \" General notes Tap to add \" [screenshot results/SECT-012-6.png]",
+    "bug": "",
+    "at": "2026-11-14T04:56:14.372Z"
+  },
+  "TODAY-002": {
+    "result": "Blocked",
+    "evidence": "pm Today always shows Riverside (today draft exists), and the web has no project switcher (TODAY-007), so Start today's report on Depot cannot be reached from Today on web. create_report get-or-create on Depot exercised by API in SECT-012.",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.642Z"
+  },
+  "PROJ-001": {
+    "result": "Fail",
+    "evidence": "Create works (row created, creator role super, Today lists it after manual navigation) but when /project/new is opened directly (the only route for a user who already has a project; no in-app entry) Create project leaves the user on the New project form: returns to Today=false. Same root cause as NAV-008 (router.back with no history on a direct web load). From the in-app entry (empty state) it returns fine (PROJ-004, PERM-014). [screenshot results/PROJ-001-3.png]",
+    "bug": "",
+    "at": "2026-11-14T05:04:44.441Z"
+  },
+  "WEATH-006": {
+    "result": "Pass",
+    "evidence": "in-app create by qa-wl-new with '350 5th Ave, New York, NY 10118': project lat=40.748442 lng=-73.985659 geocode_source=geocoded_address; first report weather \" Weather Overcast · 43°F \" {\"weather_source\":\"auto\",\"auto_condition\":\"Overcast\",\"auto_temp_f\":43.1}",
+    "bug": "",
+    "at": "2026-11-14T05:11:00.632Z"
+  },
+  "PROJ-004": {
+    "result": "Pass",
+    "evidence": "company_id=null timezone=America/New_York (browser America/New_York) geocode_source=null",
+    "bug": "",
+    "at": "2026-11-14T04:57:25.879Z"
+  },
+  "WEATH-007": {
+    "result": "Pass",
+    "evidence": "visible errors []; manual weather \" Weather snow \"; geocode_source=geocode_failed",
+    "bug": "",
+    "at": "2026-11-14T04:57:41.408Z"
+  },
+  "WEATH-001": {
+    "result": "Pass",
+    "evidence": "report opened in 142 ms; weather \" Weather Rain · 60°F \"; report_weather {\"report_id\":\"30b1bdaa-9e36-4594-b0f5-b3064a929128\",\"weather_source\":\"auto\",\"auto_condition\":\"Rain\",\"auto_temp_f\":59.9,\"auto_fetched_at\":\"2026-11-14T04:57:48.795+00:00\",\"auto_raw_r",
+    "bug": "",
+    "at": "2026-11-14T04:58:03.304Z"
+  },
+  "WEATH-003": {
+    "result": "Pass",
+    "evidence": "worklog-weather on the Riverside draft after the manual edit (SECT-002): HTTP 200 {\"status\":\"manual_override\"}; row {\"report_id\":\"0b000000-0000-4000-8000-00000000d101\",\"weather_source\":\"manual\",\"auto_condition\":null,\"auto_temp_f\":null,\"auto_fetched_at\":nul",
+    "bug": "",
+    "at": "2026-11-14T05:02:49.721Z"
+  },
+  "WEATH-004": {
+    "result": "Pass",
+    "evidence": "Depot (no geo) weather \" Weather Will fill when online \", source=none; visible errors []",
+    "bug": "",
+    "at": "2026-11-14T04:58:18.098Z"
+  },
+  "PROJ-006": {
+    "result": "Pass",
+    "evidence": "toast=true; member role on Riverside=sub",
+    "bug": "",
+    "at": "2026-11-14T04:58:29.303Z"
+  },
+  "PROJ-007": {
+    "result": "Pass",
+    "evidence": "toast seen=true; copy: [\"qa-wl-invite1@worklog.test\",\"INVITE A TEAMMATE\",\"EMAIL\",\"Invite created — email delivery is not configured for this instance.\"]",
+    "bug": "",
+    "at": "2026-11-14T05:03:01.391Z"
+  },
+  "A11Y-004": {
+    "result": "Pass",
+    "evidence": "every web edit (SECT-002..013), project create and invite driven by click and typing only; no long-press, drag or swipe needed",
+    "bug": "",
+    "at": "2026-11-14T05:03:01.400Z"
+  },
+  "AUTH-009": {
+    "result": "Blocked",
+    "evidence": "Blocked on the local stack: worklog-register-company refuses every call (edge log: \"canonical origin rejected WORKLOG_WEBSITE_URL rejected: unset or empty\"); that env var is not set on the local functions runtime and setting it means restarting the shared edge runtime. App shows \"Couldn't create your account. Check your connection and try again.\" (generic copy for a server config error). Needs WORKLOG_WEBSITE_URL on local functions, or check on the real backend (For Eli).",
+    "bug": "",
+    "at": "2026-11-14T05:10:26.383Z"
+  },
+  "AUTH-011": {
+    "result": "Pass",
+    "evidence": "via password-reset mail for qa-wl-pm (register blocked locally; re-seed restores the password): link redirects to https://worklog-site.vercel.app/welcome (fragment replayed on local /set-password); strength \"Strength: Very weak — Common character sequences like \"abc\" are easy to guess.\" -> \"Strength: Strong\"; mismatch \"Those passwords don't match.\"; lands on Today=true \"All saved to the cloud / TODAY / 󰃶\"",
+    "bug": "",
+    "at": "2026-11-14T05:10:12.172Z"
+  },
+  "AUTH-010": {
+    "result": "Blocked",
+    "evidence": "Blocked on the local stack: worklog-register-company refuses every call (edge log: \"canonical origin rejected WORKLOG_WEBSITE_URL rejected: unset or empty\"); that env var is not set on the local functions runtime and setting it means restarting the shared edge runtime. App shows \"Couldn't create your account. Check your connection and try again.\" (generic copy for a server config error). Needs WORKLOG_WEBSITE_URL on local functions, or check on the real backend (For Eli).",
+    "bug": "",
+    "at": "2026-11-14T05:10:26.390Z"
+  },
+  "AUTH-005": {
+    "result": "Pass",
+    "evidence": "login-notice \"If that email has an account, a reset link is on its way. Open it in your browser to choose a new password, then come back here and sign in.\"; Mailpit \"Reset your password\"; redirect_to=https://worklog-site.vercel.app/welcome",
+    "bug": "",
+    "at": "2026-11-14T05:05:17.190Z"
+  },
+  "AUTH-016": {
+    "result": "Pass",
+    "evidence": "cancel keeps session=true; copy \"Reports waiting to sync are stored on this device and will be cleared.\"; confirm -> login=true",
+    "bug": "",
+    "at": "2026-11-14T05:05:37.663Z"
+  },
+  "PERM-014": {
+    "result": "Pass",
+    "evidence": "creator role=super; draft 2bf292e3-2566-4f1b-a822-c23d7230ac52; notes saved=\"QA new user first note\"",
+    "bug": "",
+    "at": "2026-11-14T05:11:00.702Z"
+  },
+  "TODAY-006": {
+    "result": "Pass",
+    "evidence": "toast=true ; card hidden=true; company role=admin",
+    "bug": "",
+    "at": "2026-11-14T05:11:20.491Z"
+  },
+  "DEL-006": {
+    "result": "Pass",
+    "evidence": "double-click sent 1 delete-account request(s); \"Deleting…\" shown=true",
+    "bug": "",
+    "at": "2026-11-14T05:11:45.655Z"
+  },
+  "DEL-005": {
+    "result": "Pass",
+    "evidence": "title changed=true; message \"You're the only administrator of QA-WL Granite Builders, and other people still use it. Make another person an administrator first, then delete your account.\"; buttons Try again / Close; account still exists=true",
+    "bug": "",
+    "at": "2026-11-14T05:11:55.644Z"
+  },
+  "DEL-008": {
+    "result": "Pass",
+    "evidence": "before {\"project\":1,\"reports\":2,\"signatures\":1,\"photoRows\":1,\"storage\":1}; signed out=true; re-sign-in refused=true; after {\"project\":0,\"reports\":0,\"signatures\":0,\"photoRows\":0,\"storage\":0}",
+    "bug": "",
+    "at": "2026-11-14T05:12:07.188Z"
+  },
+  "DEL-011": {
+    "result": "Pass",
+    "evidence": "After DEL-008 deleted qa-wl-solo through the app: signInWithPassword(qa-wl-solo) -> \"Invalid login credentials\" (shared JobSight auth that PunchLog also uses).",
+    "bug": "",
+    "at": "2026-11-14T05:13:14.735Z"
+  },
+  "DEL-010": {
+    "result": "Pass",
+    "evidence": "signed out=true; Riverside reports kept=4 (draft,locked,locked,submitted), rows still holding super's id=4; profile row=present, personal fields [\"full_name=Deleted user\",\"email=deleted-0b000000-0000-4000-8000-000000000002@punchlist.invalid\"]; auth user=gone; pm opens today-1=true; \"Deleted user\" on report=false",
+    "bug": "",
+    "at": "2026-11-14T05:13:00.951Z"
+  },
+  "STORE-001": {
+    "result": "Fail",
+    "evidence": "npm ci && npm run verify at 585f52f: typecheck pass, prettier pass (after formatting 3 harness files under qa/, no app files), lint 0 errors / 1 warning (src/report/sectionMeta.ts _AllKindsCovered unused), jest 1203/1205 pass, coverage All files 92.56% stmts / 86.52% branch, thresholds met. 2 tests fail by 30 s timeout under the full parallel run: NotesSectionSheet.test.tsx \"typing autosaves the note text, with no Save button in the flow\" and CrewWorkSheet.test.tsx \"adding a trade writes the crew row with its defaults\" (suites took ~90 s); both suites pass alone in ~13 s. package.json _testTim",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.602Z"
+  },
+  "STORE-002": {
+    "result": "Pass",
+    "evidence": "npm run check:web (expo export --platform web) exported .web-export, exit 0, with EXPO_PUBLIC_SUPABASE_URL/ANON_KEY set in the shell (CI sets placeholders the same way; without them the static render throws \"Missing Supabase env vars\").",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.609Z"
+  },
+  "STORE-003": {
+    "result": "Pass",
+    "evidence": "npm run check:parity against ../jobsight-backend 6496a6c (the running stack): regenerated src/db/serverColumns.generated.json, git diff --exit-code clean, exit 0.",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.615Z"
+  },
+  "STORE-005": {
+    "result": "Pass",
+    "evidence": "node scripts/check-submission.mjs: \"legal pages gate passed — both URLs are live.\" exit 0 (read-only HTTP GETs).",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.620Z"
+  },
+  "LIFE-013": {
+    "result": "Not built",
+    "evidence": "report detail for today-3 (locked + amended) shows no amendment trail (status chip reads Locked, see LIFE-011); no who/when/what UI.",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.625Z"
+  },
+  "SECT-014": {
+    "result": "Not testable on web",
+    "evidence": "Cross-device row: needs the Android client to edit offline/online and compare with web. Runs in stage 4 (MULT-54).",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.631Z"
+  },
+  "SYNC-010": {
+    "result": "Not testable on web",
+    "evidence": "Cross-device row: needs the Android client to edit offline/online and compare with web. Runs in stage 4 (MULT-54).",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.634Z"
+  },
+  "SYNC-011": {
+    "result": "Not testable on web",
+    "evidence": "Cross-device row: needs the Android client to edit offline/online and compare with web. Runs in stage 4 (MULT-54).",
+    "bug": "",
+    "at": "2026-11-14T05:14:21.638Z"
+  }
+}

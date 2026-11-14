@@ -1,0 +1,24 @@
+Fail   SECT-002  summary " Weather windy · 49°F "; report_weather {"report_id":"0b000000-0000-4000-8000-00000000d101","weather_source":"manual","auto_condition":null,"auto_tem
+Pass   SECT-003  summary " Crew & work by trade 4 trades · 13 on site · 3 logged "; Plumbing {"id":"6261ed1e-b039-4884-b26e-23ac142a6316","hours":7.5,"trade":"Plumbing","headc
+Pass   SECT-004  summary " Deliveries 3 deliveries "; entry {"id":"7f9302df-0b1e-452f-85f3-d18e2c4f6ff2","unit":"pallets","material":"2x6 studs","quantity":2,"supplier":"QA Lu
+Pass   SECT-005  summary " Equipment 2 items on site "; lift {"id":"d10b68aa-22c6-4d5e-9b0d-2bf65b4e6034","name":"QA Scissor lift","status":"idle","on_site":true}; crane on_si
+Pass   SECT-006  summary " Inspections 2 inspections "; {"entries":[{"id":"0b000000-0000-4000-8000-ed1010800001","note":"Level 2 framing passed; Level 3 re-inspect.","agency":
+Fail   SECT-007  locator.click: Timeout 20000ms exceeded. [screenshot results/SECT-007-2.png]
+Fail   SECT-008  summary " Delays & impacts 1 delay · 1 ongoing "; [{"id":"0b000000-0000-4000-8000-ed1010400001","note":"Level 4 windows not delivered; framing crew re-sequenc
+Pass   SECT-009  summary " Visitors 3 visitors "; entry {"id":"44d76bcc-4b9c-43bc-866b-a44cbe82197b","name":"QA Visitor Chen","role":"engineer","time":"10:07"} (typed 10:07 ag
+Fail   SECT-010  summary " RFIs / issues 1 item "; {"entries":[{"id":"0b000000-0000-4000-8000-ed1010900001","title":"Header size at grid C4","trade":"Framing","needs_answer_fr
+Pass   SECT-011  typed 2000 chars (emoji, accents, newlines); saved 2000, verbatim=true
+Pass   SECT-013  reload 3 s after typing, no Done: summary " General notes QA autosave 1794632089850 ", db "QA autosave 1794632089850"
+Fail   SYNC-014  offline: pill "All saved to the cloud" then "All saved to the cloud"; error copy []; back online db="QA back online" [screenshot results/SYNC-014-5.png]
+Fail   SECT-012  deliveries: -none=false -> " Deliveries Tap to add "; equipment: -none=false -> " Equipment Tap to add "; inspections: -none=false -> " Inspections Tap to 
+Blocked TODAY-002  pm's Today shows Riverside Tower with an existing report card; Depot can't be made active on web (no switcher, TODAY-007), so get-or-create from Today can't be 
+Fail   PROJ-001  locator.waitFor: Timeout 30000ms exceeded. [screenshot results/PROJ-001-7.png]
+Fail   WEATH-006  no start-report button for the new project [screenshot results/WEATH-006-8.png]
+Pass   PROJ-004  company_id=null timezone=America/New_York (browser America/New_York) geocode_source=null
+Pass   WEATH-007  visible errors []; manual weather " Weather snow "; geocode_source=geocode_failed
+Pass   WEATH-001  report opened in 142 ms; weather " Weather Rain · 60°F "; report_weather {"report_id":"30b1bdaa-9e36-4594-b0f5-b3064a929128","weather_source":"auto","auto_con
+Pass   WEATH-003  worklog-weather on the Riverside draft after the manual edit (SECT-002): HTTP 200 {"status":"manual_override"}; row {"report_id":"0b000000-0000-4000-8000-000000
+Pass   WEATH-004  Depot (no geo) weather " Weather Will fill when online ", source=none; visible errors []
+Pass   PROJ-006  toast=true; member role on Riverside=sub
+Fail   PROJ-007  copy: ["qa-wl-invite1@worklog.test","INVITE A TEAMMATE","EMAIL"] [screenshot results/PROJ-007-9.png]
+Pass   A11Y-004  every web edit (SECT-002..013), project create and invite driven by click and typing only; no long-press, drag or swipe needed

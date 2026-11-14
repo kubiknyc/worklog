@@ -31,7 +31,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
 const ASSETS = join(HERE, 'assets');
 
-export const URL_BASE = (process.env.QA_SUPABASE_URL ?? 'http://127.0.0.1:54321').replace(/\/+$/, '');
+export const URL_BASE = (process.env.QA_SUPABASE_URL ?? 'http://127.0.0.1:54321').replace(
+  /\/+$/,
+  '',
+);
 const CONTAINER = process.env.QA_DB_CONTAINER ?? 'supabase_db_PUNCH-LOG-NEW';
 const BACKEND_DIR = process.env.QA_BACKEND_DIR ?? resolve(REPO, '..', 'jobsight-backend');
 
@@ -47,13 +50,22 @@ export function assertLocal(url) {
 /** Local keys from `supabase status` (local demo keys — not secrets). */
 export function localKeys() {
   const out = execFileSync('supabase', ['status', '-o', 'env'], {
-    cwd: BACKEND_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32',
+    cwd: BACKEND_DIR,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    shell: process.platform === 'win32',
   });
   const env = Object.fromEntries(
-    out.split(/\r?\n/).map((l) => l.match(/^([A-Z_]+)="?(.*?)"?$/)).filter(Boolean).map((m) => [m[1], m[2]]),
+    out
+      .split(/\r?\n/)
+      .map((l) => l.match(/^([A-Z_]+)="?(.*?)"?$/))
+      .filter(Boolean)
+      .map((m) => [m[1], m[2]]),
   );
   if (!env.API_URL || !LOOPBACK.has(new URL(env.API_URL).hostname)) {
-    throw new Error('`supabase status` did not report a local API_URL; is the local stack running?');
+    throw new Error(
+      '`supabase status` did not report a local API_URL; is the local stack running?',
+    );
   }
   return {
     anon: process.env.QA_ANON_KEY ?? env.ANON_KEY,
@@ -87,14 +99,20 @@ async function storage(key, method, path, body, headers = {}) {
     headers: { Authorization: `Bearer ${key}`, apikey: key, ...headers },
     body,
   });
-  if (!res.ok) throw new Error(`storage ${method} ${path} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(`storage ${method} ${path} failed: ${res.status} ${await res.text()}`);
   return res.json().catch(() => null);
 }
 
 /** Every object name under `prefix` (folders recursed). */
 async function listAll(key, bucket, prefix) {
-  const entries = await storage(key, 'POST', `object/list/${bucket}`,
-    JSON.stringify({ prefix, limit: 1000, offset: 0 }), { 'Content-Type': 'application/json' });
+  const entries = await storage(
+    key,
+    'POST',
+    `object/list/${bucket}`,
+    JSON.stringify({ prefix, limit: 1000, offset: 0 }),
+    { 'Content-Type': 'application/json' },
+  );
   const names = [];
   for (const e of entries ?? []) {
     const name = `${prefix}/${e.name}`;
@@ -110,8 +128,9 @@ async function wipeStorage(key) {
     for (const project of QA_PROJECTS) {
       const names = await listAll(key, bucket, project);
       if (names.length === 0) continue;
-      await storage(key, 'DELETE', `object/${bucket}`, JSON.stringify({ prefixes: names }),
-        { 'Content-Type': 'application/json' });
+      await storage(key, 'DELETE', `object/${bucket}`, JSON.stringify({ prefixes: names }), {
+        'Content-Type': 'application/json',
+      });
       removed += names.length;
     }
   }
@@ -123,8 +142,21 @@ function runSql() {
   const sigHex = readFileSync(join(ASSETS, 'signature.png')).toString('hex');
   const out = execFileSync(
     'docker',
-    ['exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q',
-      '-v', `qa_password=${QA_PASSWORD}`],
+    [
+      'exec',
+      '-i',
+      CONTAINER,
+      'psql',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-q',
+      '-v',
+      `qa_password=${QA_PASSWORD}`,
+    ],
     // sig_hex goes in on stdin (\set) so a failure message doesn't echo 2 KB of hex.
     { input: `\\set sig_hex '${sigHex}'\n${sql}`, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
   );
@@ -138,8 +170,13 @@ async function main() {
   console.log(`Removed ${await wipeStorage(service)} old QA storage objects.`);
   runSql();
   for (const [project, report, photo, asset] of PHOTOS) {
-    await storage(service, 'POST', `object/worklog-photos/${project}/${report}/${photo}.jpg`,
-      readFileSync(join(ASSETS, asset)), { 'Content-Type': 'image/jpeg', 'x-upsert': 'true' });
+    await storage(
+      service,
+      'POST',
+      `object/worklog-photos/${project}/${report}/${photo}.jpg`,
+      readFileSync(join(ASSETS, asset)),
+      { 'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
+    );
   }
   console.log(`Uploaded ${PHOTOS.length} report photos.`);
   console.log(`WorkLog QA seed done. Accounts: qa-wl-*@worklog.test / ${QA_PASSWORD}`);

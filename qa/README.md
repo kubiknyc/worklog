@@ -258,3 +258,40 @@ of these helped. After the wedged instance was stopped, every AVD's
 `qemu-system-x86_64-headless` hung with no output right after launch
 (`-accel-check` still reports WHPX usable), which points at host hypervisor
 state that only a Windows restart clears.
+
+## 7. Web functional pass (MULT-53)
+
+With the stack seeded (§3) and Expo web running (§4). Run the phases in order and
+re-seed where noted, because they share the seeded state:
+
+```bash
+node qa/web/api-checks.mjs               # RLS, grants, RPC authority, storage, edge-function auth
+node qa/web/ui-pass.mjs read             # read-only UI rows
+node qa/seed/seed-local.mjs && node qa/web/ui-pass.mjs mutate
+node qa/web/ui-pass.mjs mail             # Mailpit: forgot password, set-password
+node qa/seed/seed-local.mjs && node qa/web/ui-pass.mjs newuser
+node qa/seed/seed-local.mjs && node qa/web/ui-pass.mjs company
+node qa/seed/seed-local.mjs && node qa/web/ui-pass.mjs destructive
+node qa/seed/seed-local.mjs              # leave a clean seed for the next stage
+node qa/web/merge-results.mjs            # fold results into qa/matrix.csv
+```
+
+- `ONLY=ID1,ID2` re-runs selected UI rows.
+- Verdicts are written to `qa/web/results/web-results.json`, and every Fail
+  gets a screenshot in `qa/web/results/`.
+- `matrix.csv` gains `Web Result`, `Web Evidence`, `Bug`, `Android Result`
+  and `Android Evidence`. Stage 4 fills the last two.
+- Vocabulary: Pass / Fail / Not built / Blocked / Not testable on web / Manual (Eli).
+- The one-off probes behind three verdicts are kept: `probe-locked.mjs`
+  (SECT-015), `probe-weather.mjs` (SECT-002) and `explore-sheets.mjs`
+  (selector discovery).
+
+Local gaps found in this pass:
+
+- `worklog-register-company` refuses every call on the local stack:
+  `WORKLOG_WEBSITE_URL rejected: unset or empty`. AUTH-009/010 stay Blocked
+  until that var is set on the local functions runtime.
+- The `email_sent = 2` per hour auth limit allows about two auth mails per
+  hour (forgot password, set-password).
+- `npm run check:web` needs `EXPO_PUBLIC_SUPABASE_URL` and
+  `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the shell. CI sets placeholders for them.
