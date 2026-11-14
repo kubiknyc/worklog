@@ -24,15 +24,22 @@ import { useAuth } from '../auth';
 import { syncStatusHub } from '../sync/statusHub';
 import type { SyncEngineApi } from '../sync/engineApi';
 import { useTheme } from '../theme';
-import { clearHeldWrites, countHeldWrites } from './onlineOutbox';
+import {
+  clearHeldWrites,
+  countHeldWrites,
+  discardHeldWrite,
+  retryHeldWrites,
+} from './onlineOutbox';
 import { createPlatformRepository, INITIAL_REPOSITORY } from './platformRepo';
 import type { Repository } from './types';
 import { supabaseRepository } from './supabaseRepo';
 
 /**
  * Sync actions exposed to screens (e.g. the parked-mutations unwedging UI).
- * No-ops on web / before the engine attaches — `discardSync`'s `0` return
- * mirrors `SyncEngineApi.discardParked`'s "no-op, not a real discard" signal.
+ * With an engine they drive its queue. Without one (web, the native fallback)
+ * they drive the online outbox's held/parked section writes — an empty outbox
+ * makes both no-ops. `discardSync`'s `0` return mirrors
+ * `SyncEngineApi.discardParked`'s "no-op, not a real discard" signal.
  */
 export interface SyncActions {
   retrySync(): Promise<void>;
@@ -186,8 +193,9 @@ export function RepositoryProvider({ children, repository }: Props) {
 
   const syncActions = useMemo<SyncActions>(
     () => ({
-      retrySync: () => engineRef.current?.retryParked() ?? Promise.resolve(),
-      discardSync: (clientId) => engineRef.current?.discardParked(clientId) ?? Promise.resolve(0),
+      retrySync: () => engineRef.current?.retryParked() ?? retryHeldWrites(),
+      discardSync: (clientId) =>
+        engineRef.current?.discardParked(clientId) ?? Promise.resolve(discardHeldWrite(clientId)),
       degraded,
     }),
     [degraded],

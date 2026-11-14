@@ -109,7 +109,8 @@ export interface Repository {
   /**
    * Every queued mutation (Task 8's retry/discard surface), newest first.
    * Native delegates to the store's `all()`; web is online-only and has no
-   * local queue, so it always returns `[]`.
+   * local queue, so it lists only the section writes the online outbox is
+   * holding for resend or has parked after a refused resend (MULT-56).
    */
   listMutations(): Promise<readonly Mutation[]>;
 

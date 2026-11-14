@@ -18,7 +18,12 @@ import { Text } from 'react-native';
 
 import { syncStatusHub } from '../sync/statusHub';
 import { clearHeldWrites, countHeldWrites, sendLatest } from './onlineOutbox';
-import { RepositoryProvider, useRepository } from './RepositoryProvider';
+import {
+  RepositoryProvider,
+  useRepository,
+  useSyncActions,
+  type SyncActions,
+} from './RepositoryProvider';
 
 const webRepo = { __sentinel: 'web' };
 const nativeRepo = { __sentinel: 'native' };
@@ -138,6 +143,13 @@ describe('offline-held writes on the online repo (MULT-56)', () => {
   // The real outbox and hub: the point is that the pill's producer is wired.
   const offline = () =>
     Promise.resolve({ error: { message: 'TypeError: Failed to fetch' }, status: 0 });
+  const heldNotes = {
+    reportId: 'report-1',
+    section: 'general_notes',
+    content: { text: 'x' },
+    isComplete: false,
+    send: offline,
+  } as const;
 
   afterEach(() => {
     clearHeldWrites();
@@ -149,7 +161,7 @@ describe('offline-held writes on the online repo (MULT-56)', () => {
     const { rerender } = render(<Tree />);
     expect(syncStatusHub.hasProducer()).toBe(true);
 
-    await sendLatest('report-1:general_notes', offline);
+    await sendLatest(heldNotes);
     await waitFor(() => expect(syncStatusHub.getState().pending).toBe(1));
 
     // user A's held text must never resend under user B's session.
@@ -162,7 +174,7 @@ describe('offline-held writes on the online repo (MULT-56)', () => {
   it('web: removes the counter and the held writes on unmount', async () => {
     mockInitial = webRepo;
     const { unmount } = render(<Tree />);
-    await sendLatest('report-1:general_notes', offline);
+    await sendLatest(heldNotes);
 
     unmount();
 
@@ -177,8 +189,37 @@ describe('offline-held writes on the online repo (MULT-56)', () => {
     render(<Tree />);
     await waitFor(() => expect(screen.getByText('repo:fallback')).toBeTruthy());
 
-    await sendLatest('report-1:general_notes', offline);
+    await sendLatest(heldNotes);
     await waitFor(() => expect(syncStatusHub.getState().pending).toBe(1));
+    warn.mockRestore();
+  });
+
+  it('web: Discard and Retry drive the outbox, not a no-op', async () => {
+    mockInitial = webRepo;
+    const grabbed: { current: SyncActions | null } = { current: null };
+    function Grab() {
+      grabbed.current = useSyncActions();
+      return null;
+    }
+    render(
+      <RepositoryProvider>
+        <Grab />
+      </RepositoryProvider>,
+    );
+    // Held offline, then refused on the resend: parked.
+    const refused = jest
+      .fn()
+      .mockResolvedValueOnce({ error: { message: 'offline' }, status: 0 })
+      .mockResolvedValue({ error: { message: 'report is locked' }, status: 400 });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await sendLatest({ ...heldNotes, send: refused });
+    const actions = grabbed.current as SyncActions;
+    await actions.retrySync();
+    expect(await countHeldWrites()).toEqual({ pending: 0, parked: 1 });
+
+    expect(await actions.discardSync('report-1:general_notes')).toBe(1);
+    expect(await actions.discardSync('report-1:general_notes')).toBe(0);
+    expect(await countHeldWrites()).toEqual({ pending: 0, parked: 0 });
     warn.mockRestore();
   });
 });

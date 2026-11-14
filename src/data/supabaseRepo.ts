@@ -11,7 +11,7 @@ import { uuidv4 } from '../lib/uuid';
 import { base64ToByteaHex, sectionWirePayload } from '../sync/rpcMap';
 import type { Mutation } from '../sync/types';
 import { supabase } from '../supabase/client';
-import { sendLatest } from './onlineOutbox';
+import { listHeldWrites, sendLatest } from './onlineOutbox';
 import { fillWeather } from './weatherFill';
 import type {
   DailyReportRow,
@@ -120,8 +120,9 @@ class SupabaseRepository implements Repository {
   }
 
   async listMutations(): Promise<readonly Mutation[]> {
-    // Web is online-only — no local queue to list.
-    return [];
+    // Online-only — no local queue. The only queued work is the outbox's
+    // network-held and server-refused section writes (MULT-56).
+    return listHeldWrites();
   }
 
   async listMembers(projectId: string): Promise<readonly MemberRow[]> {
@@ -201,9 +202,15 @@ class SupabaseRepository implements Repository {
     };
     // A network failure (offline) is held by the outbox and resent later —
     // it resolves null here. Only a server refusal comes back as an error.
-    const error = await sendLatest(`${reportId}:${section}`, () =>
-      supabase.rpc('update_section', args),
-    );
+    // The ORIGINAL content rides along so a held/parked write can be listed
+    // on the sync queue screen and re-seed a reopened section sheet.
+    const error = await sendLatest({
+      reportId,
+      section,
+      content,
+      isComplete,
+      send: () => supabase.rpc('update_section', args),
+    });
     if (error) fail('updateSection', error, WRITE_FAILED);
   }
 

@@ -18,6 +18,8 @@ let mockRepo: Repository;
 jest.mock('../../data', () => ({ useRepository: () => mockRepo }));
 
 // eslint-disable-next-line import/first
+import { clearHeldWrites, sendLatest } from '../../data/onlineOutbox';
+// eslint-disable-next-line import/first
 import { SECTION_DRAFT_DEBOUNCE_MS, useSectionDraft } from './useSectionDraft';
 
 type Content = { readonly count: number };
@@ -221,4 +223,42 @@ test('readOnly: unmount does not flush the pending tail edit', async () => {
     unmount();
   });
   expect(updateSection).not.toHaveBeenCalled();
+});
+
+describe('reopening a section whose edit is held offline (MULT-56)', () => {
+  const offline = () =>
+    Promise.resolve({ error: { message: 'TypeError: Failed to fetch' }, status: 0 });
+
+  afterEach(() => clearHeldWrites());
+
+  test('seeds draft and completeness from the held write, not the stale initial', async () => {
+    await sendLatest({
+      reportId: 'r1',
+      section: 'crew',
+      content: { count: 9 },
+      isComplete: true,
+      send: offline,
+    });
+
+    const { result } = setup({ count: 0 });
+    expect(result.current.draft).toEqual({ count: 9 });
+
+    // The next edit builds on the held text and keeps its completeness.
+    act(() => result.current.setDraft({ count: 10 }));
+    await settle();
+    expect(updateSection).toHaveBeenCalledWith('r1', 'crew', { count: 10 }, true);
+  });
+
+  test('another section is unaffected and seeds from initial', async () => {
+    await sendLatest({
+      reportId: 'r1',
+      section: 'general_notes',
+      content: { count: 9 },
+      isComplete: true,
+      send: offline,
+    });
+
+    const { result } = setup({ count: 2 });
+    expect(result.current.draft).toEqual({ count: 2 });
+  });
 });
