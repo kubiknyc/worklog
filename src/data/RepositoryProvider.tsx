@@ -24,14 +24,22 @@ import { useAuth } from '../auth';
 import { syncStatusHub } from '../sync/statusHub';
 import type { SyncEngineApi } from '../sync/engineApi';
 import { useTheme } from '../theme';
+import {
+  clearHeldWrites,
+  countHeldWrites,
+  discardHeldWrite,
+  retryHeldWrites,
+} from './onlineOutbox';
 import { createPlatformRepository, INITIAL_REPOSITORY } from './platformRepo';
 import type { Repository } from './types';
 import { supabaseRepository } from './supabaseRepo';
 
 /**
  * Sync actions exposed to screens (e.g. the parked-mutations unwedging UI).
- * No-ops on web / before the engine attaches — `discardSync`'s `0` return
- * mirrors `SyncEngineApi.discardParked`'s "no-op, not a real discard" signal.
+ * With an engine they drive its queue. Without one (web, the native fallback)
+ * they drive the online outbox's held/parked section writes — an empty outbox
+ * makes both no-ops. `discardSync`'s `0` return mirrors
+ * `SyncEngineApi.discardParked`'s "no-op, not a real discard" signal.
  */
 export interface SyncActions {
   retrySync(): Promise<void>;
@@ -112,10 +120,21 @@ export function RepositoryProvider({ children, repository }: Props) {
   const [degraded, setDegraded] = useState(false);
 
   useEffect(() => {
-    // Override (tests/explicit) and any platform with a first-render repo (web:
-    // online-only, RLS-enforced, no local cache to reconcile) never rebuild on
-    // account change.
-    if (override || INITIAL_REPOSITORY) return;
+    // Override (tests/explicit) never rebuilds and never touches the hub.
+    if (override) return;
+    // A platform with a first-render repo (web: online-only, RLS-enforced, no
+    // local cache to reconcile) never rebuilds on account change — but its
+    // offline-held writes belong to the session that made them, so they are
+    // dropped on every account change (user A's text must never resend under
+    // user B's session). The held count is the pill's only producer here.
+    if (INITIAL_REPOSITORY) {
+      clearHeldWrites();
+      syncStatusHub.setCounter(countHeldWrites);
+      return () => {
+        syncStatusHub.setCounter(null);
+        clearHeldWrites();
+      };
+    }
 
     let active = true;
     // Gate children while the switch reconciles ownership, so the previous
@@ -148,8 +167,10 @@ export function RepositoryProvider({ children, repository }: Props) {
         fellBackToOnlineOnly = true;
         if (active) {
           engineRef.current = null;
-          // Never leave a counter over a queue nothing will write to or drain.
-          syncStatusHub.setCounter(null);
+          // The device queue is unreachable now; the only pending work is the
+          // online repo's network-held writes, so count those (never a counter
+          // over a queue nothing will write to or drain).
+          syncStatusHub.setCounter(countHeldWrites);
           setDegraded(true);
           setResolved(supabaseRepository);
         }
@@ -164,6 +185,7 @@ export function RepositoryProvider({ children, repository }: Props) {
       engineRef.current?.stop();
       engineRef.current = null;
       syncStatusHub.setCounter(null);
+      clearHeldWrites(); // a fallback's held writes belong to this user only
     };
     // userId in deps: re-run (rebuild + reconcile) whenever the account
     // changes. A token refresh keeps the same userId and does not re-run.
@@ -171,8 +193,9 @@ export function RepositoryProvider({ children, repository }: Props) {
 
   const syncActions = useMemo<SyncActions>(
     () => ({
-      retrySync: () => engineRef.current?.retryParked() ?? Promise.resolve(),
-      discardSync: (clientId) => engineRef.current?.discardParked(clientId) ?? Promise.resolve(0),
+      retrySync: () => engineRef.current?.retryParked() ?? retryHeldWrites(),
+      discardSync: (clientId) =>
+        engineRef.current?.discardParked(clientId) ?? Promise.resolve(discardHeldWrite(clientId)),
       degraded,
     }),
     [degraded],

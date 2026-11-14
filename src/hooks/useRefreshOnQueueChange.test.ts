@@ -113,4 +113,25 @@ describe('useRefreshOnQueueChange', () => {
     expect(refetch).toHaveBeenCalledTimes(2);
     act(() => detach());
   });
+
+  test('drainsOnly: refetches when a count drops, never when one rises', () => {
+    const refetch = jest.fn();
+    const engine = fakeEngine({ ...IDLE_SYNC_STATE, pending: 0, parked: 0 });
+    const detach = syncStatusHub.attachEngine(engine.api);
+
+    renderHook(() => useRefreshOnQueueChange(refetch, { drainsOnly: true }));
+
+    // A write was just held (web went offline): nothing to refetch yet.
+    act(() => {
+      engine.publish({ ...IDLE_SYNC_STATE, pending: 1, parked: 0 });
+    });
+    expect(refetch).not.toHaveBeenCalled();
+
+    // The resend landed.
+    act(() => {
+      engine.publish({ ...IDLE_SYNC_STATE, pending: 0, parked: 0 });
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+    act(() => detach());
+  });
 });
