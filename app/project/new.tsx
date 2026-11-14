@@ -8,7 +8,6 @@
  * immediately — `useActiveProjectSync` then mirrors it into the repo/pull
  * cursor on its own).
  */
-import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth';
 import { PrimaryButton, TextField, useToast } from '../../src/components';
 import { createProject } from '../../src/data/createProject';
+import { goBackOr } from '../../src/lib/navigation';
 import { useActiveProject } from '../../src/project';
 import { useTheme } from '../../src/theme';
 import { hitSlopFor } from '../../src/theme/touchTarget';
@@ -44,7 +44,7 @@ export default function NewProjectScreen() {
       const projectId = await createProject({ name, address: address.trim() || null });
       await refresh();
       setActiveProject(projectId);
-      router.back();
+      goBackOr('/(tabs)');
     } catch (err) {
       toast.showError(err instanceof Error ? err.message : 'Could not create the project.');
     } finally {
@@ -63,7 +63,7 @@ export default function NewProjectScreen() {
           testID="project-new-back"
           accessibilityRole="button"
           accessibilityLabel="Back"
-          onPress={() => router.back()}
+          onPress={() => goBackOr('/(tabs)')}
           hitSlop={hitSlopFor(BACK_ICON_SIZE)}
           style={({ pressed }) => pressed && styles.pressed}
         >

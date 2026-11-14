@@ -15,7 +15,6 @@
  * side by side in the pre-auth stack and should be visually indistinguishable
  * in chrome.
  */
-import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import {
@@ -35,6 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { registerCompany, validateRegistration } from '../../src/auth';
 import type { FieldErrors, RegisterInput } from '../../src/auth';
 import { BrandMark } from '../../src/components/BrandMark';
+import { goBackOr } from '../../src/lib/navigation';
 import { PRIVACY_URL, TERMS_URL } from '../../src/lib/legal';
 import { FIXED_COLORS, FONTS, PALETTES } from '../../src/theme';
 
@@ -77,7 +77,6 @@ const FIELDS: readonly FieldSpec[] = [
 ];
 
 export default function RegisterScreen() {
-  const router = useRouter();
   const [form, setForm] = useState<RegisterInput>(EMPTY_FORM);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [topError, setTopError] = useState<string | null>(null);
@@ -133,7 +132,7 @@ export default function RegisterScreen() {
 
   // back() pops to the login instance we were pushed from; replace would stack
   // a second login. The fallback covers a direct web navigation to /register.
-  const backToSignIn = () => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'));
+  const backToSignIn = () => goBackOr('/(auth)/login');
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
