@@ -22,6 +22,7 @@ import {
   useToast,
 } from '../../src/components';
 import { useRepository, useSyncActions } from '../../src/data';
+import { displayStatus } from '../../src/data/lifecycleGuards';
 import { computeReportDate } from '../../src/data/reportDate';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useRefreshOnFocusAndSync } from '../../src/hooks/useRefreshOnFocusAndSync';
@@ -161,7 +162,11 @@ export default function TodayScreen() {
                   >
                     {"Today's report"}
                   </Text>
-                  <ReportStatusChip status={data.report.status} size="sm" testID="today-status" />
+                  <ReportStatusChip
+                    status={displayStatus(data.report)}
+                    size="sm"
+                    testID="today-status"
+                  />
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.faint} />
               </Pressable>

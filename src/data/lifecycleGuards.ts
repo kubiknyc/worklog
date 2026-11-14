@@ -7,6 +7,7 @@
  * fed by membership data; these functions answer only "does the status allow
  * it".
  */
+import type { ReportStatus as ThemeReportStatus } from '../theme/tokens';
 import type { DailyReportRow } from './types';
 
 export type ReportStatus = DailyReportRow['status'];
@@ -24,4 +25,11 @@ export function canSubmit(status: ReportStatus): boolean {
 /** submitted → locked is the only legal manual-lock transition. */
 export function canLock(status: ReportStatus): boolean {
   return status === 'submitted';
+}
+
+/** 'amended' is derived, never stored: a locked report with >=1 amendment. */
+export function displayStatus(
+  report: Pick<DailyReportRow, 'status' | 'amendment_count'>,
+): ThemeReportStatus {
+  return report.status === 'locked' && report.amendment_count > 0 ? 'amended' : report.status;
 }

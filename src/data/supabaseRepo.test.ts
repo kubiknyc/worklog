@@ -114,7 +114,13 @@ describe('SupabaseRepository read path', () => {
 
   it('getReportByDate filters on both project and date and returns at most one row', async () => {
     tableResults.set('daily_reports', {
-      data: { id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'draft' },
+      data: {
+        id: 'r1',
+        project_id: 'p1',
+        report_date: '2026-08-03',
+        status: 'draft',
+        report_amendments: [{ count: 2 }],
+      },
       error: null,
     });
 
@@ -125,7 +131,10 @@ describe('SupabaseRepository read path', () => {
       project_id: 'p1',
       report_date: '2026-08-03',
       status: 'draft',
+      amendment_count: 2,
     });
+    // The embedded count is how a locked report becomes 'amended' on web.
+    expect(argsOf('daily_reports', 'select')[0]).toContain('report_amendments(count)');
     // Both filters are load-bearing: dropping either returns another project's
     // report or another day's, which the caller would treat as today's.
     expect(chainFor('daily_reports').ops.filter(([name]) => name === 'eq')).toEqual([
@@ -150,12 +159,29 @@ describe('SupabaseRepository read path', () => {
     expect(argsOf('projects', 'eq')).toEqual(['id', 'p1']);
   });
 
+  it('maps the embedded amendment count and defaults a missing embed to 0', async () => {
+    const base = { id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'locked' };
+    tableResults.set('daily_reports', {
+      data: [
+        { ...base, report_amendments: [{ count: 2 }] },
+        { ...base, id: 'r2', report_amendments: [] },
+        { ...base, id: 'r3' },
+      ],
+      error: null,
+    });
+
+    const rows = await supabaseRepository.listReports('p1');
+
+    expect(rows.map((r) => r.amendment_count)).toEqual([2, 0, 0]);
+    expect(rows[0]).not.toHaveProperty('report_amendments');
+  });
+
   it('getReport looks the report up by id', async () => {
     tableResults.set('daily_reports', { data: { id: 'r1', status: 'draft' }, error: null });
 
     const row = await supabaseRepository.getReport('r1');
 
-    expect(row).toEqual({ id: 'r1', status: 'draft' });
+    expect(row).toEqual({ id: 'r1', status: 'draft', amendment_count: 0 });
     expect(argsOf('daily_reports', 'eq')).toEqual(['id', 'r1']);
   });
 
@@ -188,7 +214,13 @@ describe('SupabaseRepository read path', () => {
     const rows = await supabaseRepository.listReports('p1');
 
     expect(rows).toEqual([
-      { id: 'r1', project_id: 'p1', report_date: '2026-08-03', status: 'draft' },
+      {
+        id: 'r1',
+        project_id: 'p1',
+        report_date: '2026-08-03',
+        status: 'draft',
+        amendment_count: 0,
+      },
     ]);
     expect(argsOf('daily_reports', 'eq')).toEqual(['project_id', 'p1']);
     // Newest-first: reversing this silently buries the current report at the
@@ -323,6 +355,7 @@ describe('SupabaseRepository.createReport', () => {
       project_id: 'p1',
       report_date: '2026-08-03',
       status: 'draft',
+      amendment_count: 0,
     });
     // p_client_id is what makes the RPC idempotent under retry — without it a
     // double-tap creates two reports for one day.
