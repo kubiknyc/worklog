@@ -304,11 +304,13 @@ describe('deleteWarningText', () => {
 });
 
 describe('deleteAccountMessage', () => {
-  const ORIGINAL =
-    "This permanently deletes your account and removes your access to this company's reports. It cannot be undone.";
+  const SUITE =
+    'This permanently deletes your JobSight account, which is also used by PunchLog, so you will no longer be able to sign in to either app.';
 
-  it('is the original text when there is no company warning', () => {
-    expect(deleteAccountMessage('')).toBe(ORIGINAL);
+  it('is the suite-scope text when there is no company warning', () => {
+    expect(deleteAccountMessage('')).toBe(
+      `${SUITE} You lose access to this company's reports. It cannot be undone.`,
+    );
   });
 
   it('uses the replacement base sentence for a no-company-only warning', () => {
@@ -319,17 +321,23 @@ describe('deleteAccountMessage', () => {
       sealedReports: null,
     });
     const msg = deleteAccountMessage(warning);
-    expect(msg).toBe(
-      `${warning}\n\nThis permanently deletes your account and removes your access. It cannot be undone.`,
-    );
+    expect(msg).toBe(`${warning}\n\n${SUITE} It cannot be undone.`);
     expect(msg).not.toContain("company's reports");
   });
 
   it('leads with the warning and no longer says the company reports merely become inaccessible', () => {
     const msg = deleteAccountMessage('You are alone in Harbor.');
-    expect(msg).toBe(
-      'You are alone in Harbor.\n\nThis permanently deletes your account and removes your access. It cannot be undone.',
-    );
+    expect(msg).toBe(`You are alone in Harbor.\n\n${SUITE} It cannot be undone.`);
     expect(msg).not.toContain("company's reports");
+  });
+
+  it('names PunchLog and JobSight in both branches', () => {
+    for (const msg of [
+      deleteAccountMessage(''),
+      deleteAccountMessage('You are alone in Harbor.'),
+    ]) {
+      expect(msg).toContain('PunchLog');
+      expect(msg).toContain('JobSight');
+    }
   });
 });

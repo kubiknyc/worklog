@@ -225,14 +225,20 @@ export function deleteWarningText(
   return [...companies, ...(noCompany ? [noCompanySentence(noCompany)] : [])].join(' ');
 }
 
+const SUITE_SCOPE =
+  'This permanently deletes your JobSight account, which is also used by PunchLog, so you will no longer be able to sign in to either app.';
+
 /**
- * Delete-account confirm copy. With a company-deletion warning, the base
- * sentence must not promise that the company's reports merely become
- * inaccessible — they are deleted.
+ * Delete-account confirm copy. Discloses that the account is the shared
+ * JobSight account also used by PunchLog (PRD §12.1 #2). With a
+ * company-deletion warning, the base sentence must not promise that the
+ * company's reports merely become inaccessible — they are deleted. Company
+ * records are otherwise retained per the shared-record policy (§12.1 #3), so
+ * no blanket data-removal claim is made.
  */
 export function deleteAccountMessage(warning: string): string {
   if (!warning) {
-    return "This permanently deletes your account and removes your access to this company's reports. It cannot be undone.";
+    return `${SUITE_SCOPE} You lose access to this company's reports. It cannot be undone.`;
   }
-  return `${warning}\n\nThis permanently deletes your account and removes your access. It cannot be undone.`;
+  return `${warning}\n\n${SUITE_SCOPE} It cannot be undone.`;
 }
