@@ -12,9 +12,14 @@
  * these tests assert the actual query shape (columns, filters, ordering) rather
  * than just that something was called.
  */
+import { clearHeldWrites, countHeldWrites } from './onlineOutbox';
 import { supabaseRepository } from './supabaseRepo';
 
-type QueryResult = { data: unknown; error: { message: string } | null };
+type QueryResult = {
+  data: unknown;
+  error: { message: string; code?: string } | null;
+  status?: number;
+};
 
 const OK: QueryResult = { data: null, error: null };
 
@@ -73,7 +78,7 @@ beforeEach(() => {
   chains = [];
   tableResults.clear();
   mockFrom.mockClear();
-  mockRpc.mockClear();
+  mockRpc.mockReset(); // also drops any unconsumed mockImplementationOnce
   mockRpc.mockImplementation(() => Promise.resolve(OK));
   mockFillWeather.mockClear();
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -431,6 +436,197 @@ describe('SupabaseRepository.updateSection', () => {
     await expect(
       supabaseRepository.updateSection('report-1', 'crew', { headcount: 3 }, true),
     ).rejects.toThrow(WRITE_MASKED);
+  });
+});
+
+describe('SupabaseRepository.updateSection while offline (MULT-56)', () => {
+  // What postgrest-js resolves when fetch itself throws: no HTTP status at all.
+  const NETWORK: QueryResult = {
+    data: null,
+    error: { message: 'TypeError: Failed to fetch', code: '' },
+    status: 0,
+  };
+  // The server answered and refused (e.g. the report is locked).
+  const SERVER: QueryResult = {
+    data: null,
+    error: { message: 'report is locked', code: 'P0001' },
+    status: 400,
+  };
+
+  const heldCount = async () => (await countHeldWrites()).pending;
+  const sentPayloads = () =>
+    mockRpc.mock.calls.map((call) => (call[1] as { p_payload: unknown }).p_payload);
+  const editCrew = (headcount: number) =>
+    supabaseRepository.updateSection('report-1', 'crew', { headcount }, false);
+
+  /** A pending rpc result the test settles by hand, to hold a send in flight. */
+  function gateNextRpc() {
+    let settle: (r: QueryResult) => void = () => {};
+    mockRpc.mockImplementationOnce(
+      () =>
+        new Promise<QueryResult>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    return (r: QueryResult) => settle(r);
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    clearHeldWrites();
+    jest.useRealTimers();
+  });
+
+  it('holds a network failure instead of rejecting, latest edit wins per section', async () => {
+    mockRpc.mockImplementation(() => Promise.resolve(NETWORK));
+
+    await expect(editCrew(1)).resolves.toBeUndefined();
+    expect(await heldCount()).toBe(1);
+
+    await expect(editCrew(2)).resolves.toBeUndefined();
+    // Same report + section: the newer edit replaced the held one.
+    expect(await heldCount()).toBe(1);
+
+    mockRpc.mockImplementation(() => Promise.resolve(OK));
+    await jest.advanceTimersByTimeAsync(2_000);
+
+    expect(sentPayloads()).toEqual([{ headcount: 1 }, { headcount: 2 }, { headcount: 2 }]);
+    expect(await heldCount()).toBe(0);
+    expect(jest.getTimerCount()).toBe(0); // nothing held, nothing ticking
+  });
+
+  it('holds separate sections separately', async () => {
+    mockRpc.mockImplementation(() => Promise.resolve(NETWORK));
+
+    await editCrew(1);
+    await supabaseRepository.updateSection('report-1', 'general_notes', { text: 'x' }, false);
+
+    expect(await heldCount()).toBe(2);
+  });
+
+  it('treats a thrown rpc as a network failure too', async () => {
+    mockRpc.mockImplementationOnce(() => Promise.reject(new Error('fetch failed')));
+
+    await expect(editCrew(1)).resolves.toBeUndefined();
+    expect(await heldCount()).toBe(1);
+  });
+
+  it('backs off between retries while still offline', async () => {
+    mockRpc.mockImplementation(() => Promise.resolve(NETWORK));
+    await editCrew(1);
+
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+
+    await jest.advanceTimersByTimeAsync(3_999);
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(mockRpc).toHaveBeenCalledTimes(3);
+    expect(await heldCount()).toBe(1);
+  });
+
+  it('resends on the browser online event', async () => {
+    const target = globalThis as {
+      addEventListener?: unknown;
+      removeEventListener?: unknown;
+    };
+    const original = { add: target.addEventListener, remove: target.removeEventListener };
+    const listeners = new Map<string, () => void>();
+    target.addEventListener = jest.fn((type: string, fn: () => void) => listeners.set(type, fn));
+    target.removeEventListener = jest.fn((type: string) => listeners.delete(type));
+    try {
+      mockRpc.mockImplementationOnce(() => Promise.resolve(NETWORK));
+      await editCrew(1);
+      expect(listeners.has('online')).toBe(true);
+
+      listeners.get('online')?.();
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(mockRpc).toHaveBeenCalledTimes(2);
+      expect(await heldCount()).toBe(0);
+      expect(listeners.has('online')).toBe(false);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      target.addEventListener = original.add;
+      target.removeEventListener = original.remove;
+    }
+  });
+
+  it('rejects a server refusal as before and never retries it', async () => {
+    mockRpc.mockImplementationOnce(() => Promise.resolve(SERVER));
+
+    await expect(editCrew(1)).rejects.toThrow(WRITE_MASKED);
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(await heldCount()).toBe(0);
+  });
+
+  it('drops a held write the server refuses on retry', async () => {
+    mockRpc
+      .mockImplementationOnce(() => Promise.resolve(NETWORK))
+      .mockImplementationOnce(() => Promise.resolve(SERVER));
+    await editCrew(1);
+
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(await heldCount()).toBe(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('rejected; dropped'),
+      SERVER.error,
+    );
+
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('clearHeldWrites empties the held set and cancels the retry', async () => {
+    mockRpc.mockImplementation(() => Promise.resolve(NETWORK));
+    await editCrew(1);
+
+    clearHeldWrites();
+    expect(await heldCount()).toBe(0);
+
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('never re-holds a send that was in flight when the writes were cleared', async () => {
+    const settle = gateNextRpc();
+    const write = editCrew(1);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(mockRpc).toHaveBeenCalledTimes(1); // the request is out
+
+    clearHeldWrites(); // account change while it is in flight
+    settle(NETWORK);
+    await write;
+
+    expect(await heldCount()).toBe(0);
+  });
+
+  it('a stale in-flight retry cannot land after a newer edit', async () => {
+    mockRpc.mockImplementationOnce(() => Promise.resolve(NETWORK));
+    await editCrew(1);
+
+    const settleRetry = gateNextRpc();
+    await jest.advanceTimersByTimeAsync(2_000); // retry of edit 1 is now out
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+
+    const newer = editCrew(2);
+    await jest.advanceTimersByTimeAsync(0);
+    // Serialized per section: edit 2 waits for the retry rather than racing it.
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+
+    settleRetry(NETWORK); // the stale retry fails, and must not be re-held
+    await newer;
+
+    expect(sentPayloads()).toEqual([{ headcount: 1 }, { headcount: 1 }, { headcount: 2 }]);
+    expect(await heldCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(mockRpc).toHaveBeenCalledTimes(3);
   });
 });
 

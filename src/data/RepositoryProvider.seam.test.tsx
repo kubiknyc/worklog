@@ -16,6 +16,8 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 import { Text } from 'react-native';
 
+import { syncStatusHub } from '../sync/statusHub';
+import { clearHeldWrites, countHeldWrites, sendLatest } from './onlineOutbox';
 import { RepositoryProvider, useRepository } from './RepositoryProvider';
 
 const webRepo = { __sentinel: 'web' };
@@ -129,5 +131,54 @@ describe('an explicit repository override', () => {
     // selection must not be made to wait on a device DB that is never opened.
     expect(screen.getByText('repo:override')).toBeTruthy();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('offline-held writes on the online repo (MULT-56)', () => {
+  // The real outbox and hub: the point is that the pill's producer is wired.
+  const offline = () =>
+    Promise.resolve({ error: { message: 'TypeError: Failed to fetch' }, status: 0 });
+
+  afterEach(() => {
+    clearHeldWrites();
+  });
+
+  it('web: counts held writes on the pill and drops them on account change', async () => {
+    mockInitial = webRepo;
+    mockUserId = 'user-A';
+    const { rerender } = render(<Tree />);
+    expect(syncStatusHub.hasProducer()).toBe(true);
+
+    await sendLatest('report-1:general_notes', offline);
+    await waitFor(() => expect(syncStatusHub.getState().pending).toBe(1));
+
+    // user A's held text must never resend under user B's session.
+    mockUserId = 'user-B';
+    rerender(<Tree />);
+    await waitFor(() => expect(syncStatusHub.getState().pending).toBe(0));
+    expect((await countHeldWrites()).pending).toBe(0);
+  });
+
+  it('web: removes the counter and the held writes on unmount', async () => {
+    mockInitial = webRepo;
+    const { unmount } = render(<Tree />);
+    await sendLatest('report-1:general_notes', offline);
+
+    unmount();
+
+    expect(syncStatusHub.hasProducer()).toBe(false);
+    expect((await countHeldWrites()).pending).toBe(0);
+  });
+
+  it('native fallback: counts the online repo held writes instead of nothing', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockCreate.mockImplementationOnce(() => Promise.reject(new Error('db open failed')));
+    mockUserId = 'user-A';
+    render(<Tree />);
+    await waitFor(() => expect(screen.getByText('repo:fallback')).toBeTruthy());
+
+    await sendLatest('report-1:general_notes', offline);
+    await waitFor(() => expect(syncStatusHub.getState().pending).toBe(1));
+    warn.mockRestore();
   });
 });

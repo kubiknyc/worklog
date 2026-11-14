@@ -107,9 +107,10 @@ export function useSectionDraft<T extends Json>(
       })
       .catch((error: unknown) => {
         // Autosave has no UI affordance to fail into (there is no Save button
-        // to re-enable). Native enqueues, so a real failure here is a web/
-        // fallback-path server rejection: log it, keep the optimistic state,
-        // and let the next edit retry.
+        // to re-enable). Native enqueues, and the online repo (web/fallback)
+        // holds network failures for resend and counts them on the sync pill
+        // (onlineOutbox.ts), so a rejection here is a SERVER refusal: log it,
+        // keep the optimistic state, and let the next edit retry.
         console.warn(`[useSectionDraft] updateSection(${section}) failed:`, error);
       });
   }, [reportId, section]);

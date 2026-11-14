@@ -11,6 +11,7 @@ import { uuidv4 } from '../lib/uuid';
 import { base64ToByteaHex, sectionWirePayload } from '../sync/rpcMap';
 import type { Mutation } from '../sync/types';
 import { supabase } from '../supabase/client';
+import { sendLatest } from './onlineOutbox';
 import { fillWeather } from './weatherFill';
 import type {
   DailyReportRow,
@@ -186,7 +187,7 @@ class SupabaseRepository implements Repository {
     content: Json,
     isComplete: boolean,
   ): Promise<void> {
-    const { error } = await supabase.rpc('update_section', {
+    const args = {
       p_report_id: reportId,
       p_section: section,
       // The generated RPC arg type uses supabase-js's own `Json` (mutable
@@ -197,7 +198,12 @@ class SupabaseRepository implements Repository {
       // push handler, so the two paths can't drift on the rename.
       p_payload: sectionWirePayload(section, content) as never,
       p_is_complete: isComplete,
-    });
+    };
+    // A network failure (offline) is held by the outbox and resent later —
+    // it resolves null here. Only a server refusal comes back as an error.
+    const error = await sendLatest(`${reportId}:${section}`, () =>
+      supabase.rpc('update_section', args),
+    );
     if (error) fail('updateSection', error, WRITE_FAILED);
   }
 
