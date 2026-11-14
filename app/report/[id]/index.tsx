@@ -10,7 +10,7 @@
  * not yet built would render dimmed with "Soon" via `ReportDetailSections`.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -55,6 +55,7 @@ import type { Json, ReportSectionRow } from '../../../src/data/types';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { useRefreshOnFocusAndSync } from '../../../src/hooks/useRefreshOnFocusAndSync';
 import { useReparentRedirect } from '../../../src/hooks/useReparentRedirect';
+import { goBackOr } from '../../../src/lib/navigation';
 import { REPORT_ROWS } from '../../../src/report/sectionMeta';
 import {
   summarizeCrewWork,
@@ -353,7 +354,7 @@ export default function ReportDetailScreen() {
           testID="report-back"
           accessibilityRole="button"
           accessibilityLabel="Back"
-          onPress={() => router.back()}
+          onPress={() => goBackOr('/(tabs)')}
           // 26px icon + 10px slop was 46px — two short of the floor (#19).
           hitSlop={hitSlopFor(BACK_ICON_SIZE)}
           style={({ pressed }) => pressed && styles.pressed}

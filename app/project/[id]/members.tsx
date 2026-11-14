@@ -5,7 +5,7 @@
  * queue (see that file's header). Only a `super` on this project can invite,
  * mirroring the report screen's `isSuper` gate (`app/report/[id]/index.tsx`).
  */
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +25,7 @@ import { useRepository } from '../../../src/data';
 import { inviteMember } from '../../../src/data/inviteMember';
 import type { MemberRow } from '../../../src/data/types';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
+import { goBackOr } from '../../../src/lib/navigation';
 import { useTheme } from '../../../src/theme';
 import { hitSlopFor } from '../../../src/theme/touchTarget';
 
@@ -97,7 +98,7 @@ export default function ProjectMembersScreen() {
           testID="project-members-back"
           accessibilityRole="button"
           accessibilityLabel="Back"
-          onPress={() => router.back()}
+          onPress={() => goBackOr('/(tabs)/settings')}
           hitSlop={hitSlopFor(BACK_ICON_SIZE)}
           style={({ pressed }) => pressed && styles.pressed}
         >

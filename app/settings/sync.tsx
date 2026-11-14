@@ -14,7 +14,6 @@
  * area clears the 48px floor instead of landing at 46px (#19).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -23,6 +22,7 @@ import { useToast } from '../../src/components/ToastProvider';
 import { useRepository, useSyncActions } from '../../src/data';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useRefreshOnQueueChange } from '../../src/hooks/useRefreshOnQueueChange';
+import { goBackOr } from '../../src/lib/navigation';
 import { useTheme } from '../../src/theme';
 import { hitSlopFor } from '../../src/theme/touchTarget';
 
@@ -57,7 +57,7 @@ export default function SyncQueueRoute() {
           testID="sync-back"
           accessibilityRole="button"
           accessibilityLabel="Back"
-          onPress={() => router.back()}
+          onPress={() => goBackOr('/(tabs)/settings')}
           hitSlop={hitSlopFor(BACK_ICON_SIZE)}
           style={({ pressed }) => pressed && styles.pressed}
         >
