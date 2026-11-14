@@ -433,13 +433,13 @@
   },
   "PERM-010": {
     "result": "Pass",
-    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false",
+    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false. Start today's report is also offered to this role, see MULT-59 (tapped as sub only).",
     "bug": "",
     "at": "2026-11-14T04:48:02.905Z"
   },
   "PERM-011": {
     "result": "Pass",
-    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false",
+    "evidence": "project shown=true, report card=false, start offered=true, history rows=0, draft by URL not found=true, invite form=false. Start today's report is also offered to this role, see MULT-59 (tapped as sub only).",
     "bug": "",
     "at": "2026-11-14T04:48:27.674Z"
   },

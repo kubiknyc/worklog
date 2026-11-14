@@ -18,8 +18,6 @@ const BUGS = {
   'LIFE-011': 'MULT-57',
   'SECT-015': 'MULT-58',
   'PERM-005': 'MULT-59',
-  'PERM-010': 'MULT-59',
-  'PERM-011': 'MULT-59',
   'DEL-012': 'MULT-60',
   'NAV-008': 'MULT-61',
   'PROJ-001': 'MULT-61',
