@@ -30,6 +30,11 @@ export interface DailyReportRow {
   readonly project_id: string;
   readonly report_date: string; // YYYY-MM-DD
   readonly status: 'draft' | 'submitted' | 'locked';
+  /**
+   * Count of report_amendments rows visible to the viewer. RLS makes amendments
+   * super-only, so a sub sees 0. Feeds the derived 'amended' display status.
+   */
+  readonly amendment_count: number;
 }
 
 /**
