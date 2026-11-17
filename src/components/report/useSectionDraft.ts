@@ -27,7 +27,11 @@
  *
  * `initial` is read once, at mount. A sheet showing a different report/section
  * must be remounted (give it a `key`) — the hook does not resync from props,
- * which would fight the optimistic local state.
+ * which would fight the optimistic local state. Exception (MULT-56): when the
+ * online outbox still holds an unlanded write for this section (web/fallback,
+ * offline), the mount seeds from THAT content and completeness instead — the
+ * server copy `initial` came from is older, and the next edit (a full
+ * replacement) would otherwise silently throw the offline text away.
  *
  * `options.readOnly` is the client half of the lifecycle guard (§B.7): a
  * non-draft report's sheet may render content but can never produce a
@@ -39,6 +43,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useRepository } from '../../data';
+import { pendingSectionContent } from '../../data/onlineOutbox';
 import type { Json, SectionKind } from '../../data/types';
 
 /** Debounce window for the autosave write. Long enough to swallow a burst of
@@ -63,12 +68,20 @@ export function useSectionDraft<T extends Json>(
 ): SectionDraft<T> {
   const readOnly = options?.readOnly ?? false;
   const repo = useRepository();
-  const [draft, setDraftState] = useState<T>(initial);
+  // Mount-time seed: an unlanded outbox write for this section outranks the
+  // (older) server content in `initial`.
+  const [seed] = useState(() => {
+    const pending = pendingSectionContent(reportId, section);
+    return pending
+      ? { content: pending.content as T, isComplete: pending.isComplete }
+      : { content: initial, isComplete: false };
+  });
+  const [draft, setDraftState] = useState<T>(seed.content);
 
   // Latest values the next write should send, readable from timers/unmount
   // without re-arming effects on every keystroke.
-  const contentRef = useRef<T>(initial);
-  const completeRef = useRef(false);
+  const contentRef = useRef<T>(seed.content);
+  const completeRef = useRef(seed.isComplete);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Serialises writes and lets a superseded one be skipped before it runs.
   const chainRef = useRef<Promise<void>>(Promise.resolve());
@@ -107,9 +120,10 @@ export function useSectionDraft<T extends Json>(
       })
       .catch((error: unknown) => {
         // Autosave has no UI affordance to fail into (there is no Save button
-        // to re-enable). Native enqueues, so a real failure here is a web/
-        // fallback-path server rejection: log it, keep the optimistic state,
-        // and let the next edit retry.
+        // to re-enable). Native enqueues, and the online repo (web/fallback)
+        // holds network failures for resend and counts them on the sync pill
+        // (onlineOutbox.ts), so a rejection here is a SERVER refusal: log it,
+        // keep the optimistic state, and let the next edit retry.
         console.warn(`[useSectionDraft] updateSection(${section}) failed:`, error);
       });
   }, [reportId, section]);

@@ -13,10 +13,12 @@ import {
   EmptyState,
   ListSkeleton,
   PrimaryButton,
+  REPORT_STATUS_LABELS,
   ReportStatusChip,
   SheetRow,
 } from '../../src/components';
 import { useRepository } from '../../src/data';
+import { displayStatus } from '../../src/data/lifecycleGuards';
 import type { DailyReportRow } from '../../src/data/types';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useRefreshOnFocusAndSync } from '../../src/hooks/useRefreshOnFocusAndSync';
@@ -95,10 +97,10 @@ export default function HistoryScreen() {
             <SheetRow
               key={report.id}
               testID={`history-row-${report.id}`}
-              accessibilityLabel={`Report for ${formatRowDate(report.report_date)}, ${report.status}`}
+              accessibilityLabel={`Report for ${formatRowDate(report.report_date)}, ${REPORT_STATUS_LABELS[displayStatus(report)]}`}
               onPress={() => openReport(report.id)}
               icon="document-text-outline"
-              trailing={<ReportStatusChip status={report.status} size="sm" />}
+              trailing={<ReportStatusChip status={displayStatus(report)} size="sm" />}
             >
               <Text
                 numberOfLines={1}

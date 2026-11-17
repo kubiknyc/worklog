@@ -57,8 +57,11 @@ export function rowDetailOf(m: Mutation): string {
 }
 
 /** Discard-confirm body copy: a create_report discard also drops the report's
- * entire queued subtree — that must be stated up front, not discovered after. */
-export function confirmMessageOf(kind: MutationPayload['kind']): string {
+ * entire queued subtree — that must be stated up front, not discovered after.
+ * On the online-only path (web, degraded fallback) there is no device copy to
+ * keep: a discarded section write is simply gone, so say that instead. */
+export function confirmMessageOf(kind: MutationPayload['kind'], onlineOnly = false): string {
+  if (onlineOnly) return "This change hasn't reached the cloud and will be lost.";
   if (kind === 'create_report') {
     return 'This removes the report and its changes from this device.';
   }
@@ -189,7 +192,11 @@ export function SyncQueueScreen({
         // it would be un-catchable by the guard — the same hole as #11.
         testID="sync-discard"
         title="Discard this change?"
-        message={confirmTarget ? confirmMessageOf(confirmTarget.payload.kind) : undefined}
+        message={
+          confirmTarget
+            ? confirmMessageOf(confirmTarget.payload.kind, isWeb || degraded)
+            : undefined
+        }
         confirmLabel="Discard"
         cancelLabel="Cancel"
         onConfirm={() => void handleConfirmDiscard()}

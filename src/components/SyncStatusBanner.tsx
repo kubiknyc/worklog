@@ -34,6 +34,9 @@ export type SyncBannerState =
  * `degraded` (the provider fell back to the online-only Supabase repo)
  * outranks everything below it except an unwedging `parked` row — a fallback
  * changes what the app IS, so it must be visible over a transient sync detail.
+ * Its label still carries the waiting count when `pending > 0` (the fallback's
+ * offline-held writes, MULT-56) — "Online mode — 1 change waiting to send" —
+ * so outranking `queued`/`offline` never hides unsent work.
  * `offline` (`!online && pending > 0`) outranks `syncing`/`countError`/
  * `lastError`/`pending` because those are all sync-in-progress-or-failed
  * states that can't be true while genuinely offline; it's really disambiguating
@@ -69,7 +72,9 @@ export function bannerLabelOf(state: SyncBannerState, s: HubSyncState): string {
     case 'syncing':
       return 'Sending…';
     case 'degraded':
-      return 'Offline features unavailable — using online mode';
+      return s.pending > 0
+        ? `Online mode — ${s.pending} ${s.pending === 1 ? 'change' : 'changes'} waiting to send`
+        : 'Offline features unavailable — using online mode';
     case 'offline':
       // The count IS the message (never-alarm, AC-O6) — being offline with
       // work queued is a normal, expected state, not a problem to flag.
