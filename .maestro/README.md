@@ -56,6 +56,7 @@ The convention, applied as screens are built rather than retrofitted:
 | Submit signature sheet | `submit-<field>` | `submit-signer-title`, `submit-signature-canvas`, `submit-clear-signature`, `submit-confirm` |
 | Repeated row | `<screen>-<kind>-<key>` | `login-demo-superintendent`, `report-section-crew_work` |
 | Status surface | `<screen>-<state>` | `login-error`, `login-notice` |
+| Today empty state | `today-start-report` / `today-no-report-access` | `today-start-report` (Start today's report button — supers only); `today-no-report-access` (plain-language note shown instead to roles that can't create a report: subs, owners, architects) |
 | Lifecycle status chip | `<testID>-<status>` (a `ReportStatusChip` prop, not a fixed prefix) | `report-status-draft`, `report-status-submitted`, `report-status-locked`, `today-status-draft` — the report detail chip and Today's card chip, so a flow can assert lifecycle transitions instead of inferring them from a button's presence |
 | Global status pill | `sync-status` + `sync-status-<state>` | `sync-status-synced`, `sync-status-queued` — deliberate exception to `<screen>-<state>`: the pill is the same surface on every screen |
 | Section sheet | `sheet-<section>` + `-done` / `-none` / `-add` | `sheet-crew-work`, `sheet-crew-work-done`, `sheet-crew-work-none`, `sheet-deliveries-add` |

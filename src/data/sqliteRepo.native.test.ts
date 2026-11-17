@@ -7,10 +7,11 @@ import type { MutationStore } from '../sync/types';
 // recompute) so writes are observable by inspecting the exposed table stores.
 type Row = Record<string, unknown>;
 
-function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
+function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[]; report_amendments?: Row[] } = {}) {
   const tables: Record<string, Row[]> = {
     projects: seed.projects ?? [],
     daily_reports: seed.daily_reports ?? [],
+    report_amendments: seed.report_amendments ?? [],
     report_weather: [],
     report_sections: [],
     report_crew: [],
@@ -20,6 +21,16 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
     report_safety_observations: [],
     sync_meta: [],
   };
+
+  // Mirrors the correlated COUNT(*) subquery; a read that omits it gets no
+  // amendment_count, so a missed query surfaces as undefined in assertions.
+  const withCount = (sql: string, r: Row): Row =>
+    /amendment_count/i.test(sql)
+      ? {
+          ...r,
+          amendment_count: tables.report_amendments.filter((a) => a.report_id === r.id).length,
+        }
+      : r;
 
   async function runAsync(sql: string, params: readonly unknown[] = []): Promise<void> {
     if (/INSERT INTO daily_reports/i.test(sql)) {
@@ -125,7 +136,8 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
         const [projectId] = params;
         return tables.daily_reports
           .filter((r) => r.project_id === projectId)
-          .sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
+          .sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)))
+          .map((r) => withCount(sql, r));
       }
       return [];
     },
@@ -133,14 +145,14 @@ function fakeDb(seed: { projects?: Row[]; daily_reports?: Row[] } = {}) {
       if (!/FROM daily_reports/i.test(sql)) return null;
       if (/WHERE id = \?/i.test(sql)) {
         const [id] = params;
-        return tables.daily_reports.find((r) => r.id === id) ?? null;
+        const found = tables.daily_reports.find((r) => r.id === id);
+        return found ? withCount(sql, found) : null;
       }
       const [projectId, reportDate] = params;
-      return (
-        tables.daily_reports.find(
-          (r) => r.project_id === projectId && r.report_date === reportDate,
-        ) ?? null
+      const found = tables.daily_reports.find(
+        (r) => r.project_id === projectId && r.report_date === reportDate,
       );
+      return found ? withCount(sql, found) : null;
     },
     runAsync,
     withTransactionAsync: async (fn: () => Promise<void>): Promise<void> => fn(),
@@ -253,14 +265,46 @@ describe('sqliteRepo reads', () => {
       fakeDb({ daily_reports: [older, newer, otherProject] }) as never,
       fakeMutations(),
     );
-    expect(await repo.listReports('p1')).toEqual([newer, older]);
+    expect(await repo.listReports('p1')).toEqual([
+      { ...newer, amendment_count: 0 },
+      { ...older, amendment_count: 0 },
+    ]);
   });
 
   it('getReportByDate returns the matching row or null', async () => {
     const report = { id: 'r1', project_id: 'p1', report_date: '2026-07-18', status: 'draft' };
     const repo = createSqliteRepo(fakeDb({ daily_reports: [report] }) as never, fakeMutations());
-    expect(await repo.getReportByDate('p1', '2026-07-18')).toEqual(report);
+    expect(await repo.getReportByDate('p1', '2026-07-18')).toEqual({
+      ...report,
+      amendment_count: 0,
+    });
     expect(await repo.getReportByDate('p1', '2026-07-19')).toBeNull();
+  });
+});
+
+describe('sqliteRepo amendment_count', () => {
+  const locked = { id: 'r1', project_id: 'p1', report_date: '2026-07-18', status: 'locked' };
+  const amendments = [
+    { id: 'a1', report_id: 'r1' },
+    { id: 'a2', report_id: 'r1' },
+    { id: 'a3', report_id: 'other' },
+  ];
+  const makeRepo = () =>
+    createSqliteRepo(
+      fakeDb({ daily_reports: [locked], report_amendments: amendments }) as never,
+      fakeMutations(),
+    );
+
+  it('every report read counts that report’s amendments', async () => {
+    const repo = makeRepo();
+    expect((await repo.getReport('r1'))?.amendment_count).toBe(2);
+    expect((await repo.getReportByDate('p1', '2026-07-18'))?.amendment_count).toBe(2);
+    expect((await repo.listReports('p1'))[0]?.amendment_count).toBe(2);
+  });
+
+  it('a new draft starts with amendment_count 0', async () => {
+    const row = await makeRepo().createReport('p1', '2026-07-20');
+    expect(row.amendment_count).toBe(0);
   });
 });
 
@@ -288,7 +332,7 @@ describe('sqliteRepo createReport', () => {
     const mutations = fakeMutations();
     const repo = createSqliteRepo(db as never, mutations);
     const row = await repo.createReport('p1', '2026-07-19');
-    expect(row).toEqual(existing);
+    expect(row).toEqual({ ...existing, amendment_count: 0 });
     expect(mutations.map.size).toBe(0);
     expect(db.tables.daily_reports).toHaveLength(1);
   });

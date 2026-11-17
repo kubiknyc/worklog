@@ -12,6 +12,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { roleForProject, useAuth } from '../../src/auth';
 import {
   ConnectedSyncStatusBanner,
   CreateCompanySection,
@@ -22,6 +23,7 @@ import {
   useToast,
 } from '../../src/components';
 import { useRepository, useSyncActions } from '../../src/data';
+import { displayStatus } from '../../src/data/lifecycleGuards';
 import { computeReportDate } from '../../src/data/reportDate';
 import { useAsyncData } from '../../src/hooks/useAsyncData';
 import { useRefreshOnFocusAndSync } from '../../src/hooks/useRefreshOnFocusAndSync';
@@ -41,7 +43,12 @@ export default function TodayScreen() {
   const repo = useRepository();
   const toast = useToast();
   const { degraded } = useSyncActions();
+  const { memberships } = useAuth();
   const [starting, setStarting] = useState(false);
+  // Server create_report is super-only (42501 otherwise); memberships already
+  // fold in company admins as super, matching is_super.
+  const canAuthor =
+    activeProjectId !== null && roleForProject(memberships, activeProjectId) === 'super';
 
   const load = useCallback(async () => {
     if (!activeProjectId) return { project: null, report: null, reportDate: null };
@@ -60,7 +67,7 @@ export default function TodayScreen() {
   useRefreshOnFocusAndSync(reload);
 
   const startReport = useCallback(async () => {
-    if (!data?.project || !data.reportDate || starting) return;
+    if (!canAuthor || !data?.project || !data.reportDate || starting) return;
     setStarting(true);
     try {
       const row = await repo.createReport(data.project.id, data.reportDate);
@@ -77,7 +84,7 @@ export default function TodayScreen() {
     } finally {
       setStarting(false);
     }
-  }, [data?.project, data?.reportDate, degraded, repo, starting, toast]);
+  }, [canAuthor, data?.project, data?.reportDate, degraded, repo, starting, toast]);
 
   const openReport = useCallback((reportId: string) => {
     router.push(`/report/${reportId}`);
@@ -161,10 +168,20 @@ export default function TodayScreen() {
                   >
                     {"Today's report"}
                   </Text>
-                  <ReportStatusChip status={data.report.status} size="sm" testID="today-status" />
+                  <ReportStatusChip
+                    status={displayStatus(data.report)}
+                    size="sm"
+                    testID="today-status"
+                  />
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.faint} />
               </Pressable>
+            ) : !canAuthor ? (
+              <View testID="today-no-report-access" style={styles.block}>
+                <Text style={[styles.hint, { color: colors.muted, fontFamily: fonts.ui.regular }]}>
+                  Daily reports on this project are filed by the superintendent.
+                </Text>
+              </View>
             ) : (
               <View style={styles.block}>
                 <Text style={[styles.hint, { color: colors.muted, fontFamily: fonts.ui.regular }]}>

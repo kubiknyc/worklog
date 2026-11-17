@@ -37,7 +37,12 @@ import { VisitorsSectionSheet } from '../../../src/components/report/VisitorsSec
 import { WeatherSectionSheet } from '../../../src/components/report/WeatherSectionSheet';
 import { useAuth } from '../../../src/auth';
 import { useRepository } from '../../../src/data';
-import { canEditSection, canLock, canSubmit } from '../../../src/data/lifecycleGuards';
+import {
+  canEditSection,
+  canLock,
+  canSubmit,
+  displayStatus,
+} from '../../../src/data/lifecycleGuards';
 import type {
   CrewContent,
   DelaysContent,
@@ -54,6 +59,7 @@ import { emptyContentFor } from '../../../src/data/sectionContent';
 import type { Json, ReportSectionRow } from '../../../src/data/types';
 import { useAsyncData } from '../../../src/hooks/useAsyncData';
 import { useRefreshOnFocusAndSync } from '../../../src/hooks/useRefreshOnFocusAndSync';
+import { useRefreshOnQueueChange } from '../../../src/hooks/useRefreshOnQueueChange';
 import { useReparentRedirect } from '../../../src/hooks/useReparentRedirect';
 import { goBackOr } from '../../../src/lib/navigation';
 import { REPORT_ROWS } from '../../../src/report/sectionMeta';
@@ -155,6 +161,13 @@ export default function ReportDetailScreen() {
   // (useSectionDraft) and key off route state, so a refetch can't reset an open
   // sheet, and reload() is the silent mode that never nulls `data`.
   useRefreshOnFocusAndSync(reload);
+  // `completedPulls` never moves on the online path (web/fallback), so a held
+  // offline edit that lands on resend would leave the row summaries stale
+  // (MULT-56). Reload when the queue DRAINS only: a rising count is a write
+  // just queued/held — on web, the device just went offline, where a refetch
+  // would only fail into the error state. On native each drained mutation
+  // costs one silent local-SQLite reload, which never resets an open sheet.
+  useRefreshOnQueueChange(reload, { drainsOnly: true });
 
   // Task 8: follow a same-day reparent off THIS report's loser id onto the
   // winner. The identity pair comes from the already-loaded report (not the
@@ -406,7 +419,7 @@ export default function ReportDetailScreen() {
             <Text style={[styles.date, { color: colors.text, fontFamily: fonts.serif.semibold }]}>
               {formatReportDate(data.report.report_date)}
             </Text>
-            <ReportStatusChip status={data.report.status} testID="report-status" />
+            <ReportStatusChip status={displayStatus(data.report)} testID="report-status" />
           </View>
 
           <ReportDetailSections rows={REPORT_ROWS} summaries={summaries} onOpen={setActiveRowId} />

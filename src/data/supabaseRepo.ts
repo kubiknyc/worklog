@@ -11,6 +11,7 @@ import { uuidv4 } from '../lib/uuid';
 import { base64ToByteaHex, sectionWirePayload } from '../sync/rpcMap';
 import type { Mutation } from '../sync/types';
 import { supabase } from '../supabase/client';
+import { listHeldWrites, sendLatest } from './onlineOutbox';
 import { fillWeather } from './weatherFill';
 import type {
   DailyReportRow,
@@ -45,6 +46,25 @@ function fail(
 
 const PROJECT_COLUMNS = 'id, name, address, timezone, lat, lng';
 
+// report_amendments(count) is PostgREST's embedded aggregate (RLS-scoped: subs get 0).
+const REPORT_COLUMNS = 'id, project_id, report_date, status, report_amendments(count)';
+
+function toReportRow(raw: {
+  id: string;
+  project_id: string;
+  report_date: string;
+  status: DailyReportRow['status'];
+  report_amendments?: readonly { count: number }[] | null;
+}): DailyReportRow {
+  return {
+    id: raw.id,
+    project_id: raw.project_id,
+    report_date: raw.report_date,
+    status: raw.status,
+    amendment_count: raw.report_amendments?.[0]?.count ?? 0,
+  };
+}
+
 class SupabaseRepository implements Repository {
   async listProjects(): Promise<readonly ProjectRow[]> {
     const { data, error } = await supabase
@@ -58,12 +78,12 @@ class SupabaseRepository implements Repository {
   async getReportByDate(projectId: string, reportDate: string): Promise<DailyReportRow | null> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('id, project_id, report_date, status')
+      .select(REPORT_COLUMNS)
       .eq('project_id', projectId)
       .eq('report_date', reportDate)
       .maybeSingle();
     if (error) fail('getReportByDate', error);
-    return data as DailyReportRow | null;
+    return data ? toReportRow(data) : null;
   }
 
   async getProject(projectId: string): Promise<ProjectRow | null> {
@@ -79,11 +99,11 @@ class SupabaseRepository implements Repository {
   async getReport(reportId: string): Promise<DailyReportRow | null> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('id, project_id, report_date, status')
+      .select(REPORT_COLUMNS)
       .eq('id', reportId)
       .maybeSingle();
     if (error) fail('getReport', error);
-    return data as DailyReportRow | null;
+    return data ? toReportRow(data) : null;
   }
 
   async listSections(reportId: string): Promise<readonly ReportSectionRow[]> {
@@ -99,11 +119,11 @@ class SupabaseRepository implements Repository {
   async listReports(projectId: string): Promise<readonly DailyReportRow[]> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('id, project_id, report_date, status')
+      .select(REPORT_COLUMNS)
       .eq('project_id', projectId)
       .order('report_date', { ascending: false });
     if (error) fail('listReports', error);
-    return (data ?? []) as DailyReportRow[];
+    return (data ?? []).map(toReportRow);
   }
 
   async getWeather(reportId: string): Promise<WeatherRow | null> {
@@ -119,8 +139,9 @@ class SupabaseRepository implements Repository {
   }
 
   async listMutations(): Promise<readonly Mutation[]> {
-    // Web is online-only — no local queue to list.
-    return [];
+    // Online-only — no local queue. The only queued work is the outbox's
+    // network-held and server-refused section writes (MULT-56).
+    return listHeldWrites();
   }
 
   async listMembers(projectId: string): Promise<readonly MemberRow[]> {
@@ -186,7 +207,7 @@ class SupabaseRepository implements Repository {
     content: Json,
     isComplete: boolean,
   ): Promise<void> {
-    const { error } = await supabase.rpc('update_section', {
+    const args = {
       p_report_id: reportId,
       p_section: section,
       // The generated RPC arg type uses supabase-js's own `Json` (mutable
@@ -197,6 +218,17 @@ class SupabaseRepository implements Repository {
       // push handler, so the two paths can't drift on the rename.
       p_payload: sectionWirePayload(section, content) as never,
       p_is_complete: isComplete,
+    };
+    // A network failure (offline) is held by the outbox and resent later —
+    // it resolves null here. Only a server refusal comes back as an error.
+    // The ORIGINAL content rides along so a held/parked write can be listed
+    // on the sync queue screen and re-seed a reopened section sheet.
+    const error = await sendLatest({
+      reportId,
+      section,
+      content,
+      isComplete,
+      send: () => supabase.rpc('update_section', args),
     });
     if (error) fail('updateSection', error, WRITE_FAILED);
   }
