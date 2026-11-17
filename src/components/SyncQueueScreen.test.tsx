@@ -91,6 +91,12 @@ describe('confirmMessageOf', () => {
       expect(confirmMessageOf(kind)).toBe('This change stays on this device only.');
     }
   });
+
+  test('online-only (web / degraded) says the discarded change is lost, not kept', () => {
+    expect(confirmMessageOf('update_section', true)).toBe(
+      "This change hasn't reached the cloud and will be lost.",
+    );
+  });
 });
 
 describe('SyncQueueScreen rendering', () => {

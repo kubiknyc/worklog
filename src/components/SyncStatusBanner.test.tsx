@@ -167,6 +167,20 @@ describe('bannerLabelOf copy', () => {
     );
   });
 
+  test('degraded with held writes still says the waiting count (MULT-56)', () => {
+    const one = state({ pending: 1 });
+    expect(bannerStateOf(one, true)).toBe('degraded');
+    expect(bannerLabelOf('degraded', one)).toBe('Online mode — 1 change waiting to send');
+    expect(bannerLabelOf('degraded', state({ online: false, pending: 2 }))).toBe(
+      'Online mode — 2 changes waiting to send',
+    );
+  });
+
+  test('a parked write on the online path reads as attention, never all saved', () => {
+    expect(bannerStateOf(state({ parked: 1 }))).toBe('attention');
+    expect(bannerStateOf(state({ parked: 1 }), true)).toBe('attention');
+  });
+
   test('offline copy carries the queued count, pluralized at n=1 and n=2', () => {
     expect(bannerLabelOf('offline', state({ online: false, pending: 1 }))).toBe(
       '1 change waiting to send — offline',
