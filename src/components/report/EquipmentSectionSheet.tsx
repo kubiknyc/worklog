@@ -85,28 +85,32 @@ export function EquipmentSectionSheet({ visible, reportId, initial, onClose, rea
           />
         </EntryCard>
       ))}
-      <TextField
-        label="Equipment name"
-        placeholder="Equipment name"
-        value={pendingName}
-        onChangeText={setPendingName}
-      />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add equipment"
-        testID="sheet-equipment-add"
-        onPress={add}
-        style={({ pressed }) => [
-          styles.addBtn,
-          { borderColor: colors.border },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Ionicons name="add" size={18} color={colors.accent} />
-        <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
-          Add equipment
-        </Text>
-      </Pressable>
+      {!readOnly ? (
+        <TextField
+          label="Equipment name"
+          placeholder="Equipment name"
+          value={pendingName}
+          onChangeText={setPendingName}
+        />
+      ) : null}
+      {!readOnly ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add equipment"
+          testID="sheet-equipment-add"
+          onPress={add}
+          style={({ pressed }) => [
+            styles.addBtn,
+            { borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="add" size={18} color={colors.accent} />
+          <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
+            Add equipment
+          </Text>
+        </Pressable>
+      ) : null}
     </SectionSheetScaffold>
   );
 }

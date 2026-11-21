@@ -85,22 +85,24 @@ export function VisitorsSectionSheet({ visible, reportId, initial, onClose, read
           />
         </EntryCard>
       ))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add visitor"
-        testID="sheet-visitors-add"
-        onPress={add}
-        style={({ pressed }) => [
-          styles.addBtn,
-          { borderColor: colors.border },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Ionicons name="add" size={18} color={colors.accent} />
-        <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
-          Add visitor
-        </Text>
-      </Pressable>
+      {!readOnly ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add visitor"
+          testID="sheet-visitors-add"
+          onPress={add}
+          style={({ pressed }) => [
+            styles.addBtn,
+            { borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="add" size={18} color={colors.accent} />
+          <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
+            Add visitor
+          </Text>
+        </Pressable>
+      ) : null}
     </SectionSheetScaffold>
   );
 }

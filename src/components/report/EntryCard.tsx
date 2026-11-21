@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '../../theme';
 import { hitSlopFor } from '../../theme/touchTarget';
+import { useSectionReadOnly } from './SectionReadOnlyContext';
 
 /** Kept next to the slop it feeds — changing one without the other is the bug. */
 const REMOVE_ICON_SIZE = 20;
@@ -22,6 +23,7 @@ type Props = {
 
 export function EntryCard({ title, onRemove, carried = false, children }: Props) {
   const { colors, fonts } = useTheme();
+  const readOnly = useSectionReadOnly();
   return (
     <View
       style={[
@@ -39,17 +41,19 @@ export function EntryCard({ title, onRemove, carried = false, children }: Props)
             </Text>
           ) : null}
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Remove ${title}`}
-          onPress={onRemove}
-          // 20px icon + 8px slop was a 36px target. Derived from the icon size
-          // so it stays correct if the icon changes (#19).
-          hitSlop={hitSlopFor(REMOVE_ICON_SIZE)}
-          style={({ pressed }) => pressed && styles.pressed}
-        >
-          <Ionicons name="trash-outline" size={REMOVE_ICON_SIZE} color={colors.faint} />
-        </Pressable>
+        {!readOnly ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${title}`}
+            onPress={onRemove}
+            // 20px icon + 8px slop was a 36px target. Derived from the icon size
+            // so it stays correct if the icon changes (#19).
+            hitSlop={hitSlopFor(REMOVE_ICON_SIZE)}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Ionicons name="trash-outline" size={REMOVE_ICON_SIZE} color={colors.faint} />
+          </Pressable>
+        ) : null}
       </View>
       {children}
     </View>
