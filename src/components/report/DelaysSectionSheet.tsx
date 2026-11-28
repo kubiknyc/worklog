@@ -101,6 +101,7 @@ export function DelaysSectionSheet({ visible, reportId, initial, onClose, readOn
             }
             trackColor={{ true: colors.accent, false: colors.surface2 }}
             thumbColor={colors.surface}
+            disabled={readOnly}
             accessibilityLabel="Ongoing"
           />
           <Text style={[styles.caption, { color: colors.muted, fontFamily: fonts.ui.medium }]}>
@@ -114,22 +115,24 @@ export function DelaysSectionSheet({ visible, reportId, initial, onClose, readOn
           />
         </EntryCard>
       ))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add delay"
-        testID="sheet-delays-add"
-        onPress={add}
-        style={({ pressed }) => [
-          styles.addBtn,
-          { borderColor: colors.border },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Ionicons name="add" size={18} color={colors.accent} />
-        <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
-          Add delay
-        </Text>
-      </Pressable>
+      {!readOnly ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add delay"
+          testID="sheet-delays-add"
+          onPress={add}
+          style={({ pressed }) => [
+            styles.addBtn,
+            { borderColor: colors.border },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="add" size={18} color={colors.accent} />
+          <Text style={[styles.addText, { color: colors.accent, fontFamily: fonts.ui.semibold }]}>
+            Add delay
+          </Text>
+        </Pressable>
+      ) : null}
     </SectionSheetScaffold>
   );
 }

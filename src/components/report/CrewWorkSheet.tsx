@@ -173,7 +173,7 @@ export function CrewWorkSheet({
         </EntryCard>
       ))}
 
-      {available.length > 0 ? (
+      {available.length > 0 && !readOnly ? (
         <View style={styles.add}>
           <Text style={[styles.addLabel, { color: colors.muted, fontFamily: fonts.ui.semibold }]}>
             {crew.draft.rows.length === 0 ? 'Add a trade' : 'Add another trade'}

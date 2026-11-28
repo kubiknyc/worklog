@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { useTheme } from '../theme';
+import { useSectionReadOnly } from './report/SectionReadOnlyContext';
 
 type Props = {
   readonly label: string;
@@ -17,7 +18,9 @@ type Props = {
   readonly disabled?: boolean;
 };
 
-export function Chip({ label, selected, onPress, icon, disabled = false }: Props) {
+export function Chip({ label, selected, onPress, icon, disabled: disabledProp = false }: Props) {
+  const readOnly = useSectionReadOnly();
+  const disabled = disabledProp || readOnly;
   const { colors, fonts, radii } = useTheme();
   const textColor = selected ? colors.accentInk : colors.muted;
 

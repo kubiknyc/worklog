@@ -25,6 +25,7 @@ import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } fr
 import { useTheme } from '../../theme';
 import { BottomSheet } from '../BottomSheet';
 import { PrimaryButton } from '../PrimaryButton';
+import { SectionReadOnlyContext } from './SectionReadOnlyContext';
 
 type Props = {
   readonly visible: boolean;
@@ -36,8 +37,11 @@ type Props = {
   readonly children: ReactNode;
   /**
    * True when the underlying report is not a draft (§B.7): the body renders
-   * but becomes non-interactive, and the "None today" affirmation hides (it
-   * would issue a write the lifecycle guard forbids). The default footer's
+   * but every shared control (inputs, steppers, chips, trash) turns inert via
+   * {@link SectionReadOnlyContext}, with `pointerEvents: none` as a second
+   * layer — that alone blocks taps but not keyboard focus on web. The "None
+   * today" affirmation hides (it would issue a write the lifecycle guard
+   * forbids). The default footer's
    * Done button stays tappable so the sheet can still be closed.
    */
   readonly readOnly?: boolean;
@@ -71,7 +75,7 @@ export function SectionSheetScaffold({
           testID="sheet-readonly"
           style={[styles.readOnlyNotice, { color: colors.muted, fontFamily: fonts.ui.regular }]}
         >
-          This report is locked. Changes need a formal amendment.
+          This report has been submitted. Changes need a formal amendment.
         </Text>
       ) : null}
 
@@ -81,7 +85,9 @@ export function SectionSheetScaffold({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View pointerEvents={readOnly ? 'none' : 'auto'}>{children}</View>
+        <SectionReadOnlyContext.Provider value={readOnly}>
+          <View pointerEvents={readOnly ? 'none' : 'auto'}>{children}</View>
+        </SectionReadOnlyContext.Provider>
       </ScrollView>
 
       {onNoneToday && !readOnly ? (
